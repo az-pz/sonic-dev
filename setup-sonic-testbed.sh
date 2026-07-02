@@ -21,6 +21,8 @@
 #   ./setup-sonic-testbed.sh smoke_test   # just run the BGP verification test
 #   ./setup-sonic-testbed.sh transceiver_tests      # xcvrd/SFP tests (vs-green subset)
 #   ./setup-sonic-testbed.sh transceiver_tests_all  # full xcvrd/SFP set (needs emulator)
+#   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
+#   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #
 # To push+run from a Windows/git-bash workstation:
@@ -249,21 +251,40 @@ verify() {
 }
 
 # ---------------------------------------------------------------------------
-# smoke_test: run a sonic-mgmt pytest against the DUT (framework check)
-#   usage: smoke_test [testpath]   (default bgp/test_bgp_fact.py)
+# smoke_test / transceiver_tests: run sonic-mgmt pytest against the DUT.
+#
+# Verbose mode: set VERBOSE=1 (env) or pass -v/--verbose as the FIRST arg to any
+# of the test phases to get full tracebacks for FAILED *and* ERROR/skipped tests:
+#   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all
+#   ./setup-sonic-testbed.sh transceiver_tests_all -v
+# Verbose adds: --tb=long (full tracebacks), --showlocals (local vars in frames),
+#   -rA (report reason for every outcome incl. errors/skips) and -s (no capture).
 # ---------------------------------------------------------------------------
 run_pytest() {
   # $* = pytest test paths/args
+  local extra="-ra --tb=short"
+  if [ "${VERBOSE:-0}" = "1" ]; then
+    extra="-rA --tb=long --showlocals -s"
+  fi
   docker exec --user "$HOST_USER" "${CONTAINER_ENV[@]}" "${PYTEST_ENV[@]}" "$MGMT_CONTAINER" bash -lc \
     "cd /data/sonic-mgmt/tests && python3 -m pytest $* \
         --inventory ../ansible/$INV --host-pattern $DUT \
         --testbed $TESTBED_NAME --testbed_file ../ansible/$TB_FILE \
-        --skip_sanity --disable_loganalyzer -ra -v"
+        --skip_sanity --disable_loganalyzer $extra -v"
+}
+
+# Consume a leading -v/--verbose arg (sets VERBOSE=1) so `<phase> -v` works.
+parse_verbose() {
+  case "${1:-}" in
+    -v|--verbose) VERBOSE=1; return 0 ;;
+  esac
+  return 1
 }
 
 smoke_test() {
+  parse_verbose "${1:-}" && shift || true
   local tp="${1:-bgp/test_bgp_fact.py}"
-  log "Smoke test: pytest $tp"
+  log "Smoke test: pytest $tp  (verbose=${VERBOSE:-0})"
   run_pytest "$tp"
 }
 
@@ -273,7 +294,8 @@ smoke_test() {
 #    enough for these). This is the green transceiver smoke set.
 # ---------------------------------------------------------------------------
 transceiver_tests() {
-  log "Transceiver tests (vs-compatible subset)"
+  parse_verbose "${1:-}" && shift || true
+  log "Transceiver tests (vs-compatible subset)  (verbose=${VERBOSE:-0})"
   run_pytest \
     "platform_tests/sfp/test_sfpshow.py" \
     "platform_tests/sfp/test_sfputil.py::test_check_sfputil_presence" \
@@ -286,9 +308,11 @@ transceiver_tests() {
 #   many ERROR/skip (api/test_sfp needs the platform-API service;
 #   test_xcvr_info_in_db needs a lab connection graph; some are 'physical'-only).
 #   These are the cases the xcvr-emu emulator is meant to light up later.
+#   Run with VERBOSE=1 (or -v) to see WHY each one errors/skips.
 # ---------------------------------------------------------------------------
 transceiver_tests_all() {
-  log "Transceiver tests (FULL set — expect errors on stock vs; needs emulator/real optics)"
+  parse_verbose "${1:-}" && shift || true
+  log "Transceiver tests (FULL set — expect errors on stock vs; needs emulator/real optics)  (verbose=${VERBOSE:-0})"
   run_pytest \
     "platform_tests/test_xcvr_info_in_db.py" \
     "platform_tests/test_sfp_thermal_state_db.py" \
