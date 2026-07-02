@@ -176,14 +176,20 @@ setup_mgmt_network() {
 download_image() {
   log "Phase 5: download sonic-vs image"
   mkdir -p "$HOME/sonic-vm/images" "$HOME/veos-vm/images"
-  if [ ! -f "$HOME/veos-vm/images/sonic-vs.img" ]; then
-    local tmp="$HOME/sonic-vs.img"
-    wget -q --show-progress -O "$tmp.gz" "$SONIC_VS_URL"
-    gzip -df "$tmp.gz"
-    cp -f "$tmp" "$HOME/sonic-vm/images/"
-    mv -f "$tmp" "$HOME/veos-vm/images/"
+  # Download + decompress DIRECTLY into the (symlinked) veos image dir, which
+  # lives on the big data disk. Doing this in $HOME risks filling the small OS
+  # disk (the 7GB decompressed image won't fit) -> "No space left on device".
+  local dst="$HOME/veos-vm/images/sonic-vs.img"
+  if [ ! -f "$dst" ]; then
+    # clean any stale partials on the OS disk from a previous failed run
+    rm -f "$HOME/sonic-vs.img" "$HOME/sonic-vs.img.gz" 2>/dev/null || true
+    rm -f "$dst.gz" 2>/dev/null || true
+    wget -q --show-progress -O "$dst.gz" "$SONIC_VS_URL"
+    gzip -df "$dst.gz"
   fi
-  ok "sonic-vs.img present ($(du -h "$HOME/veos-vm/images/sonic-vs.img" | awk '{print $1}'))"
+  # second copy for the sonic-vm image dir (also on the data disk via symlink)
+  cp -f "$dst" "$HOME/sonic-vm/images/sonic-vs.img"
+  ok "sonic-vs.img present ($(du -h "$dst" | awk '{print $1}'))"
 }
 
 # ---------------------------------------------------------------------------
