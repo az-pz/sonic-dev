@@ -24,6 +24,11 @@
 #   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
 #   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
+#   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (VM stop/deallocate)
+#
+# IMPORTANT: /mnt/data is an Azure EPHEMERAL "Direct" disk — it is WIPED when the
+# VM is deallocated/stopped. Either keep the VM running, or attach a PERSISTENT
+# Azure managed data disk and mount it at /mnt/data. After any wipe, run `rebuild`.
 #
 # To push+run from a Windows/git-bash workstation:
 #   scp -i ~/Downloads/myVm_key.pem setup-sonic-testbed.sh azureuser@<IP>:~/
@@ -124,7 +129,10 @@ setup_storage() {
     echo "Using spare disk: $dev"
     sudo mkfs.ext4 -F -q "$dev"
     sudo mkdir -p "$DATA" && sudo mount "$dev" "$DATA"
-    echo "$dev $DATA ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+    # Idempotent fstab entry (avoid duplicates across re-runs).
+    if ! grep -qs "[[:space:]]$DATA[[:space:]]" /etc/fstab; then
+      echo "$dev $DATA ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+    fi
   fi
   sudo chown "$HOST_USER:$HOST_USER" "$DATA"
 
@@ -244,10 +252,13 @@ deploy_mg() {
 # ---------------------------------------------------------------------------
 verify() {
   log "Phase 11: verify DUT health"
+  # Force IPv4 (-e ansible_host=$DUT_IP) — the KVM mgmt network has no IPv6 route
+  # from the container, so let ansible use the DUT's IPv4 mgmt address.
+  local DUT_IP="${DUT_IP:-10.250.0.101}"
   dexec "$MGMT_CONTAINER" bash -lc "cd /data/sonic-mgmt/ansible && \
-     ansible -m shell -a 'show version | head -12' -i $INV $DUT -b 2>/dev/null | sed -n '2,14p'; \
+     ansible -m shell -a 'show version | head -12' -i $INV $DUT -b -e ansible_host=$DUT_IP 2>/dev/null | sed -n '2,14p'; \
      echo '--- BGP summary ---'; \
-     ansible -m shell -a 'show ip bgp summary' -i $INV $DUT -b 2>/dev/null | sed -n '/Neighbhor\\|Neighbor/,+8p'"
+     ansible -m shell -a 'show ip bgp summary' -i $INV $DUT -b -e ansible_host=$DUT_IP 2>/dev/null | sed -n '/Neighbhor\\|Neighbor/,+8p'"
 }
 
 # ---------------------------------------------------------------------------
@@ -328,6 +339,27 @@ remove_topo() {
   tbcli "-t $TB_FILE -m $INV -k $VM_TYPE remove-topo $TESTBED_NAME $VAULT_FILE" || true
   tbcli "-t $TB_FILE -m $INV stop-vms $SERVER $VAULT_FILE" || true
   ok "topology removed"
+}
+
+# ---------------------------------------------------------------------------
+# rebuild: recover a testbed after the ephemeral /mnt/data disk was wiped
+#   (Azure Direct/temp disk is erased on VM deallocate/stop). Re-lays storage,
+#   re-downloads the image if missing, and recreates VMs + topology + config.
+#   Also cleans stale (diskless) libvirt domains so start-vms recreates cleanly.
+# ---------------------------------------------------------------------------
+rebuild() {
+  log "Rebuild: recovering testbed after a disk wipe / stop"
+  setup_storage
+  # undefine any leftover diskless domains from a previous (wiped) run
+  for d in $(sudo virsh list --all --name 2>/dev/null); do
+    [ -n "$d" ] && { sudo virsh destroy "$d" 2>/dev/null; sudo virsh undefine "$d" 2>/dev/null; }
+  done
+  download_image
+  start_vms
+  add_topo
+  deploy_mg
+  verify
+  ok "rebuild complete — DUT=$DUT testbed=$TESTBED_NAME"
 }
 
 # ---------------------------------------------------------------------------
