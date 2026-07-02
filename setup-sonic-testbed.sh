@@ -339,15 +339,22 @@ transceiver_tests() {
 }
 
 # ---------------------------------------------------------------------------
-# transceiver_tests_all: the FULL transceiver/xcvrd test set. On a stock vs DUT
-#   many ERROR/skip (api/test_sfp needs the platform-API service;
-#   test_xcvr_info_in_db needs a lab connection graph; some are 'physical'-only).
+# transceiver_tests_all: the FULL transceiver/xcvrd test set. Calls
+#   inject_conn_graph first so the connection-graph fixture resolves for the DUT
+#   (removes the KeyError setup blocker). On a stock vs DUT the remaining
+#   ERROR/FAIL/skip outcomes are all "no transceiver / no platform-API" cases:
+#     - api/test_sfp.*  ERROR at platform-API-service setup (needs the
+#       xcvr-emu-backed sonic_platform bridge + the RPC service on the DUT);
+#     - test_xcvr_info_in_db / sfpshow / sfputil FAIL because no optics are
+#       present (TRANSCEIVER_INFO/EEPROM empty);
+#     - test_sfp_thermal_state_db SKIP (no DOM/TEMPERATURE entries).
 #   These are the cases the xcvr-emu emulator is meant to light up later.
 #   Run with VERBOSE=1 (or -v) to see WHY each one errors/skips.
 # ---------------------------------------------------------------------------
 transceiver_tests_all() {
   parse_verbose "${1:-}" && shift || true
   log "Transceiver tests (FULL set — expect errors on stock vs; needs emulator/real optics)  (verbose=${VERBOSE:-0})"
+  inject_conn_graph
   run_pytest \
     "platform_tests/test_xcvr_info_in_db.py" \
     "platform_tests/test_sfp_thermal_state_db.py" \
@@ -356,7 +363,123 @@ transceiver_tests_all() {
 }
 
 # ---------------------------------------------------------------------------
-# teardown helpers
+# inject_conn_graph: provide a lab connection graph for the KVM DUT (vlab-01).
+#   The stock KVM (vms-kvm-t0) testbed ships NO lab connection graph, so the
+#   pytest `conn_graph_facts` fixture returns an empty dict and every
+#   transceiver test that reads conn_graph_facts["device_conn"][dut] dies at
+#   setup with KeyError('vlab-01') (blocks api/test_sfp + test_xcvr_info_in_db).
+#
+#   We synthesize a graph group "vlab" from the DUT's real front-panel ports and
+#   DEVICE_NEIGHBOR wiring and drop it into the mgmt container's ansible/files/.
+#   This is lab-provisioning DATA (exactly what a real lab supplies), injected at
+#   runtime into the *container copy* only — nothing is committed into the
+#   sonic-mgmt repo. It is idempotent and rebuilt on every testbed rebuild.
+#
+#   The port<->neighbor map below is the standard vms-kvm-t0 wiring (32x40G
+#   Force10-S6000: 24 server downlinks + 4 ARISTA T1 uplinks; Ethernet0/100/104/
+#   108 are unused and intentionally omitted, matching DEVICE_NEIGHBOR).
+# ---------------------------------------------------------------------------
+inject_conn_graph() {
+  log "Inject lab connection graph for $DUT (fixes conn_graph_facts KeyError)"
+  local files_dir="/data/sonic-mgmt/ansible/files"
+  local tmp; tmp="$(mktemp -d)"
+
+  cat > "$tmp/sonic_vlab_devices.csv" <<'CSV'
+Hostname,ManagementIp,HwSku,Type,Protocol,Os,AuthType
+vlab-01,10.250.0.101/24,Force10-S6000,DevSonic,,sonic,
+ARISTA01T1,10.64.1.1/24,Arista-VM,DevSonic,,eos,
+ARISTA02T1,10.64.1.2/24,Arista-VM,DevSonic,,eos,
+ARISTA03T1,10.64.1.3/24,Arista-VM,DevSonic,,eos,
+ARISTA04T1,10.64.1.4/24,Arista-VM,DevSonic,,eos,
+Servers0,10.64.0.1/24,TestServ,Server,,ubuntu,
+Servers1,10.64.0.2/24,TestServ,Server,,ubuntu,
+Servers2,10.64.0.3/24,TestServ,Server,,ubuntu,
+Servers3,10.64.0.4/24,TestServ,Server,,ubuntu,
+Servers4,10.64.0.5/24,TestServ,Server,,ubuntu,
+Servers5,10.64.0.6/24,TestServ,Server,,ubuntu,
+Servers6,10.64.0.7/24,TestServ,Server,,ubuntu,
+Servers7,10.64.0.8/24,TestServ,Server,,ubuntu,
+Servers8,10.64.0.9/24,TestServ,Server,,ubuntu,
+Servers9,10.64.0.10/24,TestServ,Server,,ubuntu,
+Servers10,10.64.0.11/24,TestServ,Server,,ubuntu,
+Servers11,10.64.0.12/24,TestServ,Server,,ubuntu,
+Servers12,10.64.0.13/24,TestServ,Server,,ubuntu,
+Servers13,10.64.0.14/24,TestServ,Server,,ubuntu,
+Servers14,10.64.0.15/24,TestServ,Server,,ubuntu,
+Servers15,10.64.0.16/24,TestServ,Server,,ubuntu,
+Servers16,10.64.0.17/24,TestServ,Server,,ubuntu,
+Servers17,10.64.0.18/24,TestServ,Server,,ubuntu,
+Servers18,10.64.0.19/24,TestServ,Server,,ubuntu,
+Servers19,10.64.0.20/24,TestServ,Server,,ubuntu,
+Servers20,10.64.0.21/24,TestServ,Server,,ubuntu,
+Servers21,10.64.0.22/24,TestServ,Server,,ubuntu,
+Servers22,10.64.0.23/24,TestServ,Server,,ubuntu,
+Servers23,10.64.0.24/24,TestServ,Server,,ubuntu,
+CSV
+
+  cat > "$tmp/sonic_vlab_links.csv" <<'CSV'
+StartDevice,StartPort,EndDevice,EndPort,BandWidth,VlanID,VlanMode,AutoNeg
+vlab-01,Ethernet4,Servers0,eth0,40000,,,
+vlab-01,Ethernet8,Servers1,eth0,40000,,,
+vlab-01,Ethernet12,Servers2,eth0,40000,,,
+vlab-01,Ethernet16,Servers3,eth0,40000,,,
+vlab-01,Ethernet20,Servers4,eth0,40000,,,
+vlab-01,Ethernet24,Servers5,eth0,40000,,,
+vlab-01,Ethernet28,Servers6,eth0,40000,,,
+vlab-01,Ethernet32,Servers7,eth0,40000,,,
+vlab-01,Ethernet36,Servers8,eth0,40000,,,
+vlab-01,Ethernet40,Servers9,eth0,40000,,,
+vlab-01,Ethernet44,Servers10,eth0,40000,,,
+vlab-01,Ethernet48,Servers11,eth0,40000,,,
+vlab-01,Ethernet52,Servers12,eth0,40000,,,
+vlab-01,Ethernet56,Servers13,eth0,40000,,,
+vlab-01,Ethernet60,Servers14,eth0,40000,,,
+vlab-01,Ethernet64,Servers15,eth0,40000,,,
+vlab-01,Ethernet68,Servers16,eth0,40000,,,
+vlab-01,Ethernet72,Servers17,eth0,40000,,,
+vlab-01,Ethernet76,Servers18,eth0,40000,,,
+vlab-01,Ethernet80,Servers19,eth0,40000,,,
+vlab-01,Ethernet84,Servers20,eth0,40000,,,
+vlab-01,Ethernet88,Servers21,eth0,40000,,,
+vlab-01,Ethernet92,Servers22,eth0,40000,,,
+vlab-01,Ethernet96,Servers23,eth0,40000,,,
+vlab-01,Ethernet112,ARISTA01T1,Ethernet1,40000,,,
+vlab-01,Ethernet116,ARISTA02T1,Ethernet1,40000,,,
+vlab-01,Ethernet120,ARISTA03T1,Ethernet1,40000,,,
+vlab-01,Ethernet124,ARISTA04T1,Ethernet1,40000,,,
+CSV
+
+  docker cp "$tmp/sonic_vlab_devices.csv" "$MGMT_CONTAINER:$files_dir/sonic_vlab_devices.csv"
+  docker cp "$tmp/sonic_vlab_links.csv"   "$MGMT_CONTAINER:$files_dir/sonic_vlab_links.csv"
+  rm -rf "$tmp"
+
+  # Register the "vlab" graph group so find_graph() considers it (idempotent).
+  docker exec --user root "$MGMT_CONTAINER" bash -c '
+    GG=/data/sonic-mgmt/ansible/files/graph_groups.yml
+    grep -qE "^[[:space:]]*-[[:space:]]*vlab[[:space:]]*$" "$GG" || echo "  - vlab" >> "$GG"
+  '
+
+  # Verify resolution via the same code path the pytest fixture uses.
+  if docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc '
+        cd /data/sonic-mgmt/ansible
+        python3 - <<PY
+import sys
+sys.path.insert(0, "module_utils"); sys.path.insert(0, "library")
+import conn_graph_facts as c
+c.LAB_GRAPHFILE_PATH = "files/"
+g = c.find_graph(["vlab-01"])
+assert g is not None
+ok, res = g.build_results(["vlab-01"], False)
+assert ok and res["device_conn"]["vlab-01"], "empty device_conn"
+print(len(res["device_conn"]["vlab-01"]))
+PY'; then
+    ok "connection graph injected — vlab-01 resolves in conn_graph_facts"
+  else
+    die "connection graph injection failed to resolve for $DUT"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 remove_topo() {
   log "Teardown: remove-topo + stop-vms"
@@ -383,6 +506,7 @@ rebuild() {
   add_topo
   deploy_mg
   verify
+  inject_conn_graph
   ok "rebuild complete — DUT=$DUT testbed=$TESTBED_NAME"
 }
 
