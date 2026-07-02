@@ -143,12 +143,30 @@ setup_storage() {
     echo "{ \"data-root\": \"$DATA/docker\" }" | sudo tee /etc/docker/daemon.json >/dev/null
     sudo systemctl start docker
   fi
+  # Relocate containerd storage onto the big disk too. Docker (v25+) uses the
+  # containerd image store under /var/lib/containerd, which is NOT covered by the
+  # docker data-root above — image layers there can fill the small OS disk (seen
+  # as "no space left on device" while pulling docker-ptf). Bind-mount it.
+  if ! findmnt /var/lib/containerd >/dev/null 2>&1; then
+    sudo systemctl stop docker docker.socket containerd 2>/dev/null || true
+    sleep 2
+    if [ ! -d "$DATA/containerd" ]; then
+      [ -d /var/lib/containerd ] && sudo mv /var/lib/containerd "$DATA/containerd" || sudo mkdir -p "$DATA/containerd"
+    fi
+    sudo mkdir -p /var/lib/containerd
+    sudo mount --bind "$DATA/containerd" /var/lib/containerd
+    if ! grep -qs '/var/lib/containerd' /etc/fstab; then
+      echo "$DATA/containerd /var/lib/containerd none bind,nofail 0 0" | sudo tee -a /etc/fstab >/dev/null
+    fi
+    sudo systemctl start containerd docker
+    sleep 3
+  fi
   # Relocate testbed image dirs onto the big disk (symlink back to $HOME).
   for d in veos-vm sonic-vm; do
     if [ -d "$HOME/$d" ] && [ ! -L "$HOME/$d" ]; then mv "$HOME/$d" "$DATA/$d"; ln -s "$DATA/$d" "$HOME/$d"; fi
     [ -e "$HOME/$d" ] || { mkdir -p "$DATA/$d"; ln -s "$DATA/$d" "$HOME/$d"; }
   done
-  ok "Docker root: $(sudo docker info --format '{{.DockerRootDir}}' 2>/dev/null); images under $DATA"
+  ok "Docker root: $(sudo docker info --format '{{.DockerRootDir}}' 2>/dev/null); containerd+images under $DATA"
 }
 
 # ---------------------------------------------------------------------------
