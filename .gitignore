@@ -1,0 +1,16 @@
+# temp / scratch scripts (leading underscore convention used during dev)
+_*.sh
+_*.py
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+test-results.xml
+
+# os
+.DS_Store
+Thumbs.db
