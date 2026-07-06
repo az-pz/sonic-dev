@@ -5,7 +5,10 @@
 #
 # Expects the bundle unpacked at /home/admin/emu-bundle/ (sonic_platform/,
 # xcvr_emu/, cmis/, emu_config.yaml). Idempotent: safe to re-run.
-set -e
+#
+# NB: no `set -e` — daemon starts + polls can transiently return non-zero; the
+# critical readiness gates are explicit checks that `exit 1` on real failure.
+set -uo pipefail
 
 BUNDLE=/home/admin/emu-bundle
 PMON=pmon
@@ -18,15 +21,17 @@ for pkg in sonic_platform xcvr_emu cmis; do
   docker cp "$BUNDLE/$pkg" "$PMON:$DP/$pkg"
 done
 docker cp "$BUNDLE/emu_config.yaml" "$PMON:/etc/emu_config.yaml"
-docker exec "$PMON" python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu.proto import emulator_pb2; print("[deploy] imports OK")'
+docker exec "$PMON" python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu.proto import emulator_pb2; print("[deploy] imports OK")' \
+  || { echo "[deploy] ERROR: bridge/emulator imports failed in pmon"; exit 1; }
 
 echo "[deploy] starting xcvr-emud (docker exec -d)"
 docker exec "$PMON" bash -c 'pkill -f xcvr_emu.xcvr_emud 2>/dev/null; sleep 1; true'
 docker exec -d "$PMON" bash -c 'exec python3 -m xcvr_emu.xcvr_emud -c /etc/emu_config.yaml >/tmp/xcvr-emud.log 2>&1'
+sleep 8   # emud registers all CMIS tables + N transceivers before it serves List()
 
 echo "[deploy] waiting until emulator reports $EXPECT_SFPS modules via the bridge..."
 ok=0
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
   sleep 2
   n=$(docker exec "$PMON" python3 -c '
 from sonic_platform.platform import Platform
