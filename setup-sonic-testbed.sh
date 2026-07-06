@@ -23,8 +23,16 @@
 #   ./setup-sonic-testbed.sh transceiver_tests_all  # full xcvrd/SFP set (needs emulator)
 #   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
 #   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
+#   ./setup-sonic-testbed.sh emulator          # deploy xcvr-emu + xcvrd into pmon
+#   ./setup-sonic-testbed.sh transceiver_emu_test  # run test_xcvr_info_in_db (needs emulator)
+#   ./setup-sonic-testbed.sh emulator_e2e      # emulator + test_xcvr_info_in_db in one go
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (VM stop/deallocate)
+#
+# The `emulator` phase needs this script's sibling assets (platform/ and
+# emu-deploy/), so run it from a full sonic-develop checkout on the VM:
+#   git clone git@github.com:t-fhabibi_microsoft/sonic-develop.git
+#   cd sonic-develop/dev && ./setup-sonic-testbed.sh emulator_e2e
 #
 # IMPORTANT: /mnt/data is an Azure EPHEMERAL "Direct" disk — it is WIPED when the
 # VM is deallocated/stopped. Either keep the VM running, or attach a PERSISTENT
@@ -52,6 +60,19 @@ INV="${INV:-veos_vtb}"
 TB_FILE="${TB_FILE:-vtestbed.yaml}"
 VAULT_FILE="${VAULT_FILE:-password.txt}"
 SONIC_VS_URL="${SONIC_VS_URL:-https://sonic-build.azurewebsites.net/api/sonic/artifacts?branchName=master&platform=vs&target=target/sonic-vs.img.gz}"
+
+# --- emulator (xcvr-emu) config, used by the `emulator` phase ----------------
+# Where this script lives, so we can find its sibling assets (platform/ bridge +
+# emu-deploy/ toolkit) that ship in the same sonic-develop checkout.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BRIDGE_DIR="${BRIDGE_DIR:-$SCRIPT_DIR/platform/sonic_platform}"   # the gRPC bridge
+EMU_DEPLOY_DIR="${EMU_DEPLOY_DIR:-$SCRIPT_DIR/emu-deploy}"        # build/ship/deploy scripts
+XCVR_EMU_URL="${XCVR_EMU_URL:-https://github.com/ishidawataru/xcvr-emu.git}"
+XCVR_EMU_DIR="${XCVR_EMU_DIR:-$HOME/xcvr-emu}"                     # cloned on the VM on demand
+EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS modules (0..N-1)
+EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
+DUT_IP="${DUT_IP:-10.250.0.101}"                                  # DUT mgmt IPv4 (from mgmt ctr)
+DUT_PASS="${DUT_PASS:-password}"                                  # DUT admin password
 
 # Env passed into the mgmt container for testbed-cli / pytest (host creds + paths).
 # Host auth to the vm_host is key-based (see setup_ssh); passwords are placeholders.
@@ -477,6 +498,61 @@ PY'; then
   else
     die "connection graph injection failed to resolve for $DUT"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# emulator: deploy the xcvr-emu CMIS emulator + the sonic_platform gRPC bridge
+#   into the DUT's pmon container and launch xcvrd, so TRANSCEIVER_INFO and
+#   TRANSCEIVER_DOM_SENSOR populate in STATE_DB (what test_xcvr_info_in_db needs).
+#
+#   Uses this checkout's sibling assets:
+#     $BRIDGE_DIR      = platform/sonic_platform   (the gRPC bridge)
+#     $EMU_DEPLOY_DIR  = emu-deploy/               (build_bundle.sh, ship_and_deploy.sh,
+#                                                   deploy_on_dut.sh, gen_emu_config.py)
+#   and clones the xcvr-emu emulator ($XCVR_EMU_URL) to $XCVR_EMU_DIR on demand.
+#   Nothing is written into the cloned SONiC repos; the emulator lives only in
+#   the (disposable) pmon container.
+# ---------------------------------------------------------------------------
+ensure_emu_assets() {
+  [ -d "$BRIDGE_DIR" ] || die "bridge not found at $BRIDGE_DIR — run this from a full sonic-develop checkout (git clone) so platform/ and emu-deploy/ sit next to the script, not a lone scp'd copy."
+  [ -d "$EMU_DEPLOY_DIR" ] || die "emu-deploy toolkit not found at $EMU_DEPLOY_DIR — run from a full sonic-develop checkout."
+  if [ ! -d "$XCVR_EMU_DIR/src/xcvr_emu" ]; then
+    log "Cloning xcvr-emu emulator to $XCVR_EMU_DIR"
+    git clone --depth 1 "$XCVR_EMU_URL" "$XCVR_EMU_DIR" || die "git clone $XCVR_EMU_URL failed"
+  fi
+  ok "emulator assets present (bridge + emu-deploy + xcvr-emu)"
+}
+
+emulator() {
+  log "Deploy xcvr-emu emulator + xcvrd into pmon on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
+  ensure_emu_assets
+  log "Building emulator bundle ($EMU_MODULES modules)"
+  bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
+    || die "build_bundle.sh failed"
+  log "Shipping bundle to $DUT and deploying (starts xcvr-emud + xcvrd)"
+  MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
+    bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" \
+    || die "ship_and_deploy.sh failed"
+  ok "emulator deployed — xcvrd should be populating TRANSCEIVER_INFO/DOM in STATE_DB"
+}
+
+# ---------------------------------------------------------------------------
+# transceiver_emu_test: the end-to-end payoff. Ensures the connection graph is
+#   injected (Option A) and runs test_xcvr_info_in_db, which now PASSES because
+#   the emulator+xcvrd have populated TRANSCEIVER_INFO + DOM. Run `emulator`
+#   first (or use the combined `emulator_e2e`).
+# ---------------------------------------------------------------------------
+transceiver_emu_test() {
+  parse_verbose "${1:-}" && shift || true
+  inject_conn_graph
+  log "Running test_xcvr_info_in_db against the emulator-backed DUT"
+  run_pytest "platform_tests/test_xcvr_info_in_db.py"
+}
+
+# emulator_e2e: one-shot — deploy the emulator then run the target test.
+emulator_e2e() {
+  emulator
+  transceiver_emu_test "$@"
 }
 
 # ---------------------------------------------------------------------------
