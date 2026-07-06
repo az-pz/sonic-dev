@@ -6,6 +6,7 @@ it falls back to XCVR_EMU_NUM_SFPS (default 8) placeholder SFPs (the gRPC calls
 just return absent/None until the emulator is up).
 """
 import os
+import time
 
 import grpc
 
@@ -46,3 +47,20 @@ class Chassis(ChassisBase):
             return self._sfp_list[index]
         except IndexError:
             return None
+
+    def get_change_event(self, timeout=0):
+        """Report transceiver hotplug events to xcvrd's SfpStateUpdateTask.
+
+        xcvrd calls this in a loop; if we raised NotImplementedError it would
+        fall back to platform_sfputil.get_transceiver_change_event(), but on
+        this emulated platform platform_sfputil is None -> AttributeError that
+        kills every xcvrd thread (including DomInfoUpdateTask, so DOM never
+        populates). The emulated plant is stable (no insert/remove after init),
+        so we block up to `timeout` ms and report "no change".
+
+        Returns (status, {'sfp': {port: status}, 'sfp_error': {}}).
+        """
+        # timeout is in milliseconds (0 == block "forever"; cap so xcvrd's loop
+        # stays responsive without busy-spinning).
+        time.sleep(min(timeout / 1000.0, 1.0) if timeout else 1.0)
+        return True, {'sfp': {}, 'sfp_error': {}}

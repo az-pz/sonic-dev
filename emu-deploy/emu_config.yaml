@@ -1,0 +1,143 @@
+transceivers:
+  0:
+    present: true
+    defaults: &defaults
+      SFF8024Identifier: "QSFP_DD"
+      SFF8024IdentifierCopy: "QSFP_DD"
+      VendorName: "xcvr-emu"
+      VendorRev: "01"
+      VendorOUI: 0x010203
+      VendorSN: "0123456789"
+      DateCode:
+        Year: "24"
+        Month: "12"
+        DayOfMonth: "14"
+      LengthMultiplier: "MULTIPLIER_100"
+      BaseLength: 1
+      CmisRevision:
+        Major: 5
+        Minor: 2
+      MediaType: "OPTICAL_SMF"
+      ModulePowerClass: "CLASS_8"
+      MaxPower: 40
+      BanksSupported: "BANKS_0_3_SUPPORTED"
+      ConnectorType: "MPO_1X16"
+      ModuleActiveFirmwareMajorRevision: 1
+      ModuleActiveFirmwareMinorRevision: 2
+      ModuleInactiveFirmwareMajorRevision: 1
+      ModuleInactiveFirmwareMinorRevision: 1
+      MemoryModel: "PAGED"
+      MciMaxSpeed: "UP_TO_400_KHZ"
+      ApplicationDescriptor:
+        - HostInterfaceID: 79
+          MediaInterfaceID: 28
+          HostLaneCount: 4
+          MediaLaneCount: 4
+          HostLaneAssignmentOptions: 0b1
+        - HostInterfaceID: 71
+          MediaInterfaceID: 23
+          HostLaneCount: 2
+          MediaLaneCount: 2
+          HostLaneAssignmentOptions: 0b101
+      MediaLaneAssignmentOptions:
+      - 0b001
+      - 0b101
+      MaxDurationDPInit: "BETWEEN_1_AND_5_S"
+      OutputDisableTxSupported: "SUPPORTED"
+      SteppedConfigOnly: "STEP_BY_STEP"
+  1:
+    present: true
+    defaults: *defaults
+  2:
+    present: true
+    defaults: *defaults
+  3:
+    present: true
+    defaults: *defaults
+  4:
+    present: true
+    defaults: *defaults
+  5:
+    present: true
+    defaults: *defaults
+  6:
+    present: true
+    defaults: *defaults
+  7:
+    present: true
+    defaults: *defaults
+  8:
+    present: true
+    defaults: *defaults
+  9:
+    present: true
+    defaults: *defaults
+  10:
+    present: true
+    defaults: *defaults
+  11:
+    present: true
+    defaults: *defaults
+  12:
+    present: true
+    defaults: *defaults
+  13:
+    present: true
+    defaults: *defaults
+  14:
+    present: true
+    defaults: *defaults
+  15:
+    present: true
+    defaults: *defaults
+  16:
+    present: true
+    defaults: *defaults
+  17:
+    present: true
+    defaults: *defaults
+  18:
+    present: true
+    defaults: *defaults
+  19:
+    present: true
+    defaults: *defaults
+  20:
+    present: true
+    defaults: *defaults
+  21:
+    present: true
+    defaults: *defaults
+  22:
+    present: true
+    defaults: *defaults
+  23:
+    present: true
+    defaults: *defaults
+  24:
+    present: true
+    defaults: *defaults
+  25:
+    present: true
+    defaults: *defaults
+  26:
+    present: true
+    defaults: *defaults
+  27:
+    present: true
+    defaults: *defaults
+  28:
+    present: true
+    defaults: *defaults
+  29:
+    present: true
+    defaults: *defaults
+  30:
+    present: true
+    defaults: *defaults
+  31:
+    present: true
+    defaults: *defaults
+  32:
+    present: true
+    defaults: *defaults
