@@ -6,19 +6,27 @@ container, then launches `xcvrd` so it populates `TRANSCEIVER_INFO` and
 `TRANSCEIVER_DOM_SENSOR` in `STATE_DB` — exactly what transceiver tests such as
 `platform_tests/test_xcvr_info_in_db.py` require.
 
-Nothing here modifies the cloned SONiC repos. The bridge + emulator are copied
-into the pmon container at runtime (disposable; rebuilt whenever pmon is
-recreated).
+Nothing here modifies the cloned SONiC repos, and nothing is written into pmon's
+system `dist-packages`. The bridge + emulator are placed in a side directory
+(`/opt/xcvr-emu-bridge`) inside pmon and loaded via `PYTHONPATH` — fully
+reversible and rebuilt whenever pmon is recreated.
 
 ## Architecture
 
 ```
 pmon container (on DUT vlab-01)
- ├─ xcvr-emud            (python3 -m xcvr_emu.xcvr_emud, gRPC :50051, 33 QSFP-DD)
- ├─ sonic_platform/      (bridge: SfpOptoeBase -> gRPC Read/Write/GetInfo)
+ ├─ /opt/xcvr-emu-bridge/     (our python, loaded via PYTHONPATH — NOT dist-packages)
+ │    ├─ xcvr_emu/ + cmis/    (the emulator packages)
+ │    └─ sonic_platform/      (bridge: SfpOptoeBase -> gRPC Read/Write/GetInfo)
+ │
+ ├─ xcvr-emud                 (python3 -m xcvr_emu.xcvr_emud, gRPC :50051, 33 QSFP-DD)
  │    Sfp(i)  <->  emulator module i  <->  Ethernet(i*4)
- └─ xcvrd                (reads platform API -> writes TRANSCEIVER_INFO/DOM)
+ └─ xcvrd                     (PYTHONPATH=/opt/xcvr-emu-bridge; reads bridge ->
+                               writes TRANSCEIVER_INFO / DOM to STATE_DB)
 ```
+
+Both `xcvr-emud` and `xcvrd` are launched inside pmon with
+`PYTHONPATH=/opt/xcvr-emu-bridge` and `XCVR_EMU_ADDR=localhost:50051`.
 
 Key bridge detail: `Chassis.get_change_event()` is implemented to report a
 stable plant (no hotplug). Without it xcvrd falls back to

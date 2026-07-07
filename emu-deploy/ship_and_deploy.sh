@@ -1,10 +1,9 @@
 #!/bin/bash
 # Ship the emulator bundle + deploy script to the DUT and run the deploy.
-# Run this ON the Azure VM (testbed host). Requires the mgmt container up and the
-# DUT (vlab-01) reachable at 10.250.0.101 with admin/password.
+# Run this ON the Azure VM (testbed host). emud runs inside pmon (no docker image).
 #
-# Prereq: emu-bundle.tar.gz built by build_bundle.sh and present in /tmp (or pass
-# its path as $1), plus deploy_on_dut.sh in the same dir as this script.
+# Prereq: emu-bundle.tar.gz built by build_bundle.sh (in /tmp or passed as $1),
+# plus deploy_on_dut.sh in the same dir as this script.
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUNDLE="${1:-/tmp/emu-bundle.tar.gz}"
@@ -20,13 +19,13 @@ echo "[ship] container=$CNAME bundle=$BUNDLE"
 docker cp "$BUNDLE" "$CNAME":/tmp/emu-bundle.tar.gz
 docker cp "$DEPLOY" "$CNAME":/tmp/deploy_on_dut.sh
 
-echo "[ship] scp to DUT"
+echo "[ship] scp bundle + deploy script to DUT"
 docker exec --user azureuser "$CNAME" bash -lc "
   $SSHP scp $SSHOPT /tmp/emu-bundle.tar.gz $DUT:/home/admin/emu-bundle.tar.gz
   $SSHP scp $SSHOPT /tmp/deploy_on_dut.sh   $DUT:/home/admin/deploy_on_dut.sh
 "
 
-echo "[ship] unpack + deploy on DUT (starts emud + xcvrd)"
+echo "[ship] unpack + deploy on DUT (starts emud in pmon + xcvrd)"
 docker exec --user azureuser "$CNAME" bash -lc "
   $SSHP ssh $SSHOPT $DUT 'rm -rf /home/admin/emu-bundle && mkdir -p /home/admin/emu-bundle && tar xzf /home/admin/emu-bundle.tar.gz -C /home/admin/emu-bundle && bash /home/admin/deploy_on_dut.sh'
 "

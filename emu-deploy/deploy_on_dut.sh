@@ -1,61 +1,72 @@
 #!/bin/bash
 # Runs ON the DUT (admin@vlab-01). Deploys the xcvr-emu emulator + sonic_platform
-# bridge into pmon, starts xcvr-emud (detached), waits until the emulator reports
-# all modules, then launches xcvrd (detached) so it populates TRANSCEIVER_INFO/DOM.
+# bridge into the pmon container and starts xcvrd — all loaded via PYTHONPATH from
+# a side directory, so pmon's dist-packages is NEVER modified.
 #
-# Expects the bundle unpacked at /home/admin/emu-bundle/ (sonic_platform/,
-# xcvr_emu/, cmis/, emu_config.yaml). Idempotent: safe to re-run.
+#   * emud runs INSIDE pmon:  PYTHONPATH=/opt/xcvr-emu-bridge python3 -m xcvr_emu.xcvr_emud
+#   * bridge is loaded from the same /opt dir via PYTHONPATH
+#   * xcvrd runs in pmon with the same PYTHONPATH + XCVR_EMU_ADDR=localhost:50051
+#
+# Expects the bundle unpacked at /home/admin/emu-bundle/ (payload/ + emu_config.yaml).
+# Idempotent: safe to re-run.
 #
 # NB: no `set -e` — daemon starts + polls can transiently return non-zero; the
-# critical readiness gates are explicit checks that `exit 1` on real failure.
+# readiness gates below `exit 1` on real failure.
 set -uo pipefail
 
 BUNDLE=/home/admin/emu-bundle
 PMON=pmon
-DP=/usr/local/lib/python3.13/dist-packages
+OPT=/opt/xcvr-emu-bridge              # our python lives here; loaded via PYTHONPATH
+EMU_CFG=/etc/emu_config.yaml
+EMU_ADDR=localhost:50051
 EXPECT_SFPS=33
+PYRUN="PYTHONPATH=$OPT XCVR_EMU_ADDR=$EMU_ADDR"
 
-echo "[deploy] installing python packages into $PMON:$DP"
+echo "[deploy] installing bridge + emulator into $PMON:$OPT (PYTHONPATH — no dist-packages writes)"
+docker exec "$PMON" rm -rf "$OPT"
+docker exec "$PMON" mkdir -p "$OPT"
 for pkg in sonic_platform xcvr_emu cmis; do
-  docker exec "$PMON" rm -rf "$DP/$pkg"
-  docker cp "$BUNDLE/$pkg" "$PMON:$DP/$pkg"
+  docker cp "$BUNDLE/payload/$pkg" "$PMON:$OPT/$pkg"
 done
-docker cp "$BUNDLE/emu_config.yaml" "$PMON:/etc/emu_config.yaml"
-docker exec "$PMON" python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu.proto import emulator_pb2; print("[deploy] imports OK")' \
+docker cp "$BUNDLE/emu_config.yaml" "$PMON:$EMU_CFG"
+# revert any leftovers from an older (dist-packages) deployment model, if present
+docker exec "$PMON" bash -c 'DP=/usr/local/lib/python3.13/dist-packages; rm -rf "$DP/sonic_platform" "$DP/xcvr_emu" "$DP/cmis" 2>/dev/null; true'
+
+docker exec "$PMON" bash -c "$PYRUN python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu import xcvr_emud; from xcvr_emu.proto import emulator_pb2; print(\"[deploy] imports OK\")'" \
   || { echo "[deploy] ERROR: bridge/emulator imports failed in pmon"; exit 1; }
 
-echo "[deploy] starting xcvr-emud (docker exec -d)"
+echo "[deploy] starting xcvr-emud INSIDE pmon (docker exec -d)"
 docker exec "$PMON" bash -c 'pkill -f xcvr_emu.xcvr_emud 2>/dev/null; sleep 1; true'
-docker exec -d "$PMON" bash -c 'exec python3 -m xcvr_emu.xcvr_emud -c /etc/emu_config.yaml >/tmp/xcvr-emud.log 2>&1'
+docker exec -d "$PMON" bash -c "$PYRUN exec python3 -m xcvr_emu.xcvr_emud -c $EMU_CFG >/tmp/xcvr-emud.log 2>&1"
 sleep 8   # emud registers all CMIS tables + N transceivers before it serves List()
 
-echo "[deploy] waiting until emulator reports $EXPECT_SFPS modules via the bridge..."
+echo "[deploy] waiting until the bridge sees $EXPECT_SFPS modules..."
 ok=0
 for i in $(seq 1 40); do
   sleep 2
-  n=$(docker exec "$PMON" python3 -c '
+  n=$(docker exec "$PMON" bash -c "$PYRUN python3 -c '
 from sonic_platform.platform import Platform
 try:
     print(Platform().get_chassis().get_num_sfps())
 except Exception:
     print(0)
-' 2>/dev/null | tail -1)
+'" 2>/dev/null | tail -1)
   echo "  [$((i*2))s] num_sfps=$n"
-  if [ "$n" = "$EXPECT_SFPS" ]; then ok=1; break; fi
+  [ "$n" = "$EXPECT_SFPS" ] && { ok=1; break; }
 done
 [ "$ok" = "1" ] || { echo "[deploy] ERROR: emulator not ready"; docker exec "$PMON" tail -20 /tmp/xcvr-emud.log; exit 1; }
 
 echo "[deploy] emulator ready. sample get_transceiver_info via bridge:"
-docker exec "$PMON" python3 -c '
+docker exec "$PMON" bash -c "$PYRUN python3 -c '
 from sonic_platform.platform import Platform
 s = Platform().get_chassis().get_sfp(1)
 info = s.get_xcvr_api().get_transceiver_info()
-print("  present:", s.get_presence(), "model:", (info or {}).get("model"), "vendor:", (info or {}).get("manufacturer"))
-'
+print(\"  present:\", s.get_presence(), \"vendor:\", (info or {}).get(\"manufacturer\"))
+'"
 
-echo "[deploy] starting xcvrd (docker exec -d)"
+echo "[deploy] starting xcvrd in pmon (PYTHONPATH=$OPT, XCVR_EMU_ADDR=$EMU_ADDR)"
 docker exec "$PMON" bash -c 'pkill -x xcvrd 2>/dev/null; pkill -f xcvrd/xcvrd 2>/dev/null; sleep 1; true'
-docker exec -d "$PMON" bash -c 'exec xcvrd >/tmp/xcvrd.log 2>&1'
+docker exec -d "$PMON" bash -c "$PYRUN exec xcvrd >/tmp/xcvrd.log 2>&1"
 
 echo "[deploy] waiting up to 120s for TRANSCEIVER_INFO + DOM to populate..."
 for i in $(seq 1 24); do
@@ -66,9 +77,9 @@ for i in $(seq 1 24); do
   [ "$ni" -ge 28 ] && [ "$nd" -ge 28 ] && break
 done
 
-echo "===XCVRD_LOG_TAIL==="
-docker exec "$PMON" tail -25 /tmp/xcvrd.log 2>/dev/null || true
+echo "===EMUD_IN_PMON==="; docker exec "$PMON" bash -c 'ps aux | grep xcvr_emu.xcvr_emud | grep -v grep | head -1'
 echo "===INFO_COUNT==="; sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l
 echo "===DOM_COUNT===";  sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_DOM_SENSOR|*' 2>/dev/null | wc -l
-echo "===INFO_ETH4==="; sonic-db-cli STATE_DB HGETALL 'TRANSCEIVER_INFO|Ethernet4' 2>/dev/null
+echo "===DISTPKG_UNTOUCHED (should be empty)==="
+docker exec "$PMON" bash -c 'ls -d /usr/local/lib/python3.13/dist-packages/{sonic_platform,xcvr_emu,cmis} 2>/dev/null || echo "none — dist-packages clean"'
 echo "[deploy] done"

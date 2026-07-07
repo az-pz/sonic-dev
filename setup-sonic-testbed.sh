@@ -504,6 +504,8 @@ PY'; then
 # emulator: deploy the xcvr-emu CMIS emulator + the sonic_platform gRPC bridge
 #   into the DUT's pmon container and launch xcvrd, so TRANSCEIVER_INFO and
 #   TRANSCEIVER_DOM_SENSOR populate in STATE_DB (what test_xcvr_info_in_db needs).
+#   emud runs inside pmon; the emulator + bridge load via PYTHONPATH from a side
+#   dir (/opt/xcvr-emu-bridge) so pmon's dist-packages is never modified.
 #
 #   Uses this checkout's sibling assets:
 #     $BRIDGE_DIR      = platform/sonic_platform   (the gRPC bridge)
@@ -524,16 +526,18 @@ ensure_emu_assets() {
 }
 
 emulator() {
-  log "Deploy xcvr-emu emulator + xcvrd into pmon on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
+  log "Deploy xcvr-emu (in pmon) + xcvrd on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
   ensure_emu_assets
+
   log "Building emulator bundle ($EMU_MODULES modules)"
   bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
     || die "build_bundle.sh failed"
-  log "Shipping bundle to $DUT and deploying (starts xcvr-emud + xcvrd)"
+
+  log "Shipping bundle to $DUT and deploying (emud in pmon + xcvrd, via PYTHONPATH)"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" \
     || die "ship_and_deploy.sh failed"
-  ok "emulator deployed — xcvrd should be populating TRANSCEIVER_INFO/DOM in STATE_DB"
+  ok "emulator deployed — emud runs in pmon, bridge via PYTHONPATH, xcvrd populating STATE_DB"
 }
 
 # ---------------------------------------------------------------------------
