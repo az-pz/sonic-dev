@@ -71,6 +71,8 @@ XCVR_EMU_URL="${XCVR_EMU_URL:-https://github.com/ishidawataru/xcvr-emu.git}"
 XCVR_EMU_DIR="${XCVR_EMU_DIR:-$HOME/xcvr-emu}"                     # cloned on the VM on demand
 EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS modules (0..N-1)
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
+EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
+EMU_REBUILD_IMAGE="${EMU_REBUILD_IMAGE:-0}"                        # 1 = force rebuild the emulator image
 DUT_IP="${DUT_IP:-10.250.0.101}"                                  # DUT mgmt IPv4 (from mgmt ctr)
 DUT_PASS="${DUT_PASS:-password}"                                  # DUT admin password
 
@@ -501,19 +503,26 @@ PY'; then
 }
 
 # ---------------------------------------------------------------------------
-# emulator: deploy the xcvr-emu CMIS emulator + the sonic_platform gRPC bridge
-#   into the DUT's pmon container and launch xcvrd, so TRANSCEIVER_INFO and
-#   TRANSCEIVER_DOM_SENSOR populate in STATE_DB (what test_xcvr_info_in_db needs).
-#   emud runs inside pmon; the emulator + bridge load via PYTHONPATH from a side
-#   dir (/opt/xcvr-emu-bridge) so pmon's dist-packages is never modified.
+# emulator: run the xcvr-emu CMIS emulator as a standalone Docker container on
+#   the DUT and install the sonic_platform gRPC bridge into pmon, so xcvrd
+#   populates TRANSCEIVER_INFO + TRANSCEIVER_DOM_SENSOR in STATE_DB (what
+#   test_xcvr_info_in_db needs).
+#
+#   * the emulator runs as its own `docker run --network host --restart
+#     unless-stopped` container — NOT inside pmon — so it survives the SONiC
+#     `config reload` that sonic-mgmt tests trigger.
+#   * only the bridge lives inside pmon, loaded via PYTHONPATH from a side dir
+#     (/opt/xcvr-emu-bridge) so pmon's dist-packages is never modified; xcvrd
+#     stays supervised inside pmon, unchanged.
 #
 #   Uses this checkout's sibling assets:
 #     $BRIDGE_DIR      = platform/sonic_platform   (the gRPC bridge)
-#     $EMU_DEPLOY_DIR  = emu-deploy/               (build_bundle.sh, ship_and_deploy.sh,
-#                                                   deploy_on_dut.sh, gen_emu_config.py)
+#     $EMU_DEPLOY_DIR  = emu-deploy/               (build_emu_image.sh, build_bundle.sh,
+#                                                   ship_and_deploy.sh, deploy_on_dut.sh,
+#                                                   gen_emu_config.py)
 #   and clones the xcvr-emu emulator ($XCVR_EMU_URL) to $XCVR_EMU_DIR on demand.
 #   Nothing is written into the cloned SONiC repos; the emulator lives only in
-#   the (disposable) pmon container.
+#   its own (disposable) container + the pmon writable layer.
 # ---------------------------------------------------------------------------
 ensure_emu_assets() {
   [ -d "$BRIDGE_DIR" ] || die "bridge not found at $BRIDGE_DIR — run this from a full sonic-develop checkout (git clone) so platform/ and emu-deploy/ sit next to the script, not a lone scp'd copy."
@@ -526,18 +535,23 @@ ensure_emu_assets() {
 }
 
 emulator() {
-  log "Deploy xcvr-emu (in pmon) + xcvrd on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
+  log "Deploy xcvr-emu (standalone container) + bridge/xcvrd in pmon on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
   ensure_emu_assets
+
+  log "Building emulator image (cached; EMU_REBUILD_IMAGE=$EMU_REBUILD_IMAGE)"
+  EMU_REBUILD_IMAGE="$EMU_REBUILD_IMAGE" \
+    bash "$EMU_DEPLOY_DIR/build_emu_image.sh" "$XCVR_EMU_DIR" "xcvr-emu:local" "$EMU_IMAGE_TAR" \
+    || die "build_emu_image.sh failed"
 
   log "Building emulator bundle ($EMU_MODULES modules)"
   bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
     || die "build_bundle.sh failed"
 
-  log "Shipping bundle to $DUT and deploying (emud in pmon + xcvrd, via PYTHONPATH)"
+  log "Shipping image + bundle to $DUT and deploying (emulator container + bridge/xcvrd in pmon)"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
-    bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" \
+    bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
-  ok "emulator deployed — emud runs in pmon, bridge via PYTHONPATH, xcvrd populating STATE_DB"
+  ok "emulator deployed — standalone container serves gRPC, bridge via PYTHONPATH, xcvrd populating STATE_DB"
 }
 
 # ---------------------------------------------------------------------------

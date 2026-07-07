@@ -1,41 +1,50 @@
 # emu-deploy — run xcvrd against emulated CMIS optics on the KVM DUT
 
-This deploys the [xcvr-emu](https://github.com/ishidawataru/xcvr-emu) CMIS
-transceiver emulator plus a `sonic_platform` gRPC bridge into the DUT's `pmon`
-container, then launches `xcvrd` so it populates `TRANSCEIVER_INFO` and
-`TRANSCEIVER_DOM_SENSOR` in `STATE_DB` — exactly what transceiver tests such as
-`platform_tests/test_xcvr_info_in_db.py` require.
+This runs the [xcvr-emu](https://github.com/ishidawataru/xcvr-emu) CMIS
+transceiver emulator as a **standalone Docker container on the DUT** and installs
+a `sonic_platform` gRPC bridge into the DUT's `pmon` container, so `xcvrd`
+populates `TRANSCEIVER_INFO` and `TRANSCEIVER_DOM_SENSOR` in `STATE_DB` — exactly
+what transceiver tests such as `platform_tests/test_xcvr_info_in_db.py` require.
 
 Nothing here modifies the cloned SONiC repos, and nothing is written into pmon's
-system `dist-packages`. The bridge + emulator are placed in a side directory
+system `dist-packages`. The bridge is placed in a side directory
 (`/opt/xcvr-emu-bridge`) inside pmon and loaded via `PYTHONPATH` — fully
 reversible and rebuilt whenever pmon is recreated.
+
+## Why the emulator is a separate container
+
+sonic-mgmt tests frequently trigger a SONiC `config reload`, which restarts every
+SONiC **feature** container (pmon/swss/syncd/…). A plain `docker run` container is
+**not** a feature, so the emulator container is left untouched by a reload. This
+means the emulated optics stay up across reloads; when pmon restarts, supervisord
+brings `xcvrd` back and it simply reconnects to the still-running emulator over
+gRPC. (Previously the emulator ran inside pmon and was killed on every reload.)
 
 ## Architecture
 
 ```
-pmon container (on DUT vlab-01)
- ├─ /opt/xcvr-emu-bridge/     (our python, loaded via PYTHONPATH — NOT dist-packages)
- │    ├─ xcvr_emu/ + cmis/    (the emulator packages)
- │    └─ sonic_platform/      (bridge: SfpOptoeBase -> gRPC Read/Write/GetInfo)
- │
- ├─ xcvr-emud                 (python3 -m xcvr_emu.xcvr_emud, gRPC :50051, 33 QSFP-DD)
- │    Sfp(i)  <->  emulator module i  <->  Ethernet(i*4)
- └─ xcvrd                     (PYTHONPATH=/opt/xcvr-emu-bridge; reads bridge ->
-                               writes TRANSCEIVER_INFO / DOM to STATE_DB)
+DUT vlab-01 (docker host)
+ ├─ xcvr-emu  container   docker run --network host --restart unless-stopped
+ │     xcvr-emud -c /emu_config.yaml   (gRPC :50051, 33 QSFP-DD modules)
+ │        ▲  gRPC localhost:50051 (shared host netns)
+ │        │
+ └─ pmon   container   (--network host)
+       ├─ /opt/xcvr-emu-bridge/     (our python, loaded via PYTHONPATH — NOT dist-packages)
+       │    ├─ sonic_platform/      (bridge: SfpOptoeBase -> gRPC Read/Write/GetInfo)
+       │    └─ xcvr_emu/proto/      (gRPC client stubs the bridge imports)
+       └─ xcvrd  (supervised; PYTHONPATH=/opt/xcvr-emu-bridge,
+                  XCVR_EMU_ADDR=localhost:50051 -> reads bridge ->
+                  writes TRANSCEIVER_INFO / DOM to STATE_DB)
 ```
 
-Both `xcvr-emud` and `xcvrd` run inside pmon **under pmon's supervisord**
-(`autorestart=true`), launched with `PYTHONPATH=/opt/xcvr-emu-bridge` and
-`XCVR_EMU_ADDR=localhost:50051` baked into each program's `environment=`. The
-supervisor drop-in lives at `/etc/supervisor/conf.d/xcvr-emu.conf`; pmon's main
-supervisord includes `conf.d/*.conf` and only regenerates its own
-`supervisord.conf`, so the drop-in (and `/opt`) **survive a pmon restart** — which
-is exactly what a SONiC `config reload` triggers. sonic-mgmt tests reload config
-frequently; without supervisord the manually-started daemons would be killed on
-every reload. With it, they auto-restart and `TRANSCEIVER_INFO`/`DOM` repopulate
-on their own. (A full container *recreation* — reboot / image change — still
-wipes `/opt` + the drop-in; re-run the `emulator` deploy after that.)
+`xcvrd` runs inside pmon **under pmon's supervisord** (`autorestart=true`),
+launched with `PYTHONPATH=/opt/xcvr-emu-bridge` and `XCVR_EMU_ADDR=localhost:50051`
+baked into the program's `environment=`. The supervisor drop-in lives at
+`/etc/supervisor/conf.d/xcvr-emu.conf`; pmon's main supervisord includes
+`conf.d/*.conf` and only regenerates its own `supervisord.conf`, so the drop-in
+(and `/opt`) **survive a pmon restart**. (A full pmon *recreation* — reboot /
+image change — still wipes `/opt` + the drop-in; re-run the `emulator` deploy
+after that. The emulator container itself survives via `--restart unless-stopped`.)
 
 Key bridge detail: `Chassis.get_change_event()` is implemented to report a
 stable plant (no hotplug). Without it xcvrd falls back to
@@ -48,23 +57,33 @@ emulated platform, crashing every xcvrd thread (so DOM never populates).
 |------|---------|
 | `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
 | `emu_config.yaml`   | 33 present modules (indices 0..32) |
-| `supervisor/xcvr-emu.conf`  | supervisord programs for emud + xcvrd (autorestart) |
+| `build_emu_image.sh`| build `xcvr-emu:local` from the repo Dockerfile, `docker save|gzip` → `xcvr-emu-image.tar.gz` (cached) |
+| `supervisor/xcvr-emu.conf`  | supervisord program for **xcvrd** (autorestart) |
 | `supervisor/start-xcvrd.sh` | xcvrd wrapper that waits for the emulator before launching |
-| `build_bundle.sh`   | assemble `emu-bundle.tar.gz` from the bridge + xcvr-emu repo |
-| `deploy_on_dut.sh`  | (runs on DUT) install into /opt, register supervisord programs, verify |
-| `ship_and_deploy.sh`| (runs on VM) ship bundle to DUT and run deploy_on_dut.sh |
+| `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + supervisor + config) |
+| `deploy_on_dut.sh`  | (runs on DUT) `docker load` + run the emulator container, install the bridge into pmon, register the xcvrd supervisord program, verify |
+| `ship_and_deploy.sh`| (runs on VM) ship the image + bundle to the DUT and run deploy_on_dut.sh |
 
 ## Usage
 
 ```bash
-# 1) locally (has the xcvr-emu repo + bridge): build the bundle
-cd dev/emu-deploy && ./build_bundle.sh            # -> emu-bundle.tar.gz
+# 1) locally (has the xcvr-emu repo + bridge):
+cd dev/emu-deploy
+./build_emu_image.sh          # -> xcvr-emu-image.tar.gz  (cached; EMU_REBUILD_IMAGE=1 to force)
+./build_bundle.sh             # -> emu-bundle.tar.gz
 
-# 2) copy emu-bundle.tar.gz to the VM /tmp, then on the VM:
-./ship_and_deploy.sh                              # deploys + starts emud + xcvrd
+# 2) on the VM (testbed host):
+./ship_and_deploy.sh          # docker load emulator container + install bridge + start xcvrd
 
 # 3) run the target test (from the mgmt container, conn graph injected):
 #    see setup-sonic-testbed.sh -> inject_conn_graph, then pytest
 ```
 
-Result: `platform_tests/test_xcvr_info_in_db.py::test_xcvr_info_in_db` PASSES.
+Or in one shot via the top-level helper:
+
+```bash
+cd dev && ./setup-sonic-testbed.sh emulator_e2e
+```
+
+Result: `platform_tests/test_xcvr_info_in_db.py::test_xcvr_info_in_db` PASSES, and
+the emulator survives the `config reload` that sonic-mgmt tests trigger.
