@@ -25,8 +25,17 @@ pmon container (on DUT vlab-01)
                                writes TRANSCEIVER_INFO / DOM to STATE_DB)
 ```
 
-Both `xcvr-emud` and `xcvrd` are launched inside pmon with
-`PYTHONPATH=/opt/xcvr-emu-bridge` and `XCVR_EMU_ADDR=localhost:50051`.
+Both `xcvr-emud` and `xcvrd` run inside pmon **under pmon's supervisord**
+(`autorestart=true`), launched with `PYTHONPATH=/opt/xcvr-emu-bridge` and
+`XCVR_EMU_ADDR=localhost:50051` baked into each program's `environment=`. The
+supervisor drop-in lives at `/etc/supervisor/conf.d/xcvr-emu.conf`; pmon's main
+supervisord includes `conf.d/*.conf` and only regenerates its own
+`supervisord.conf`, so the drop-in (and `/opt`) **survive a pmon restart** — which
+is exactly what a SONiC `config reload` triggers. sonic-mgmt tests reload config
+frequently; without supervisord the manually-started daemons would be killed on
+every reload. With it, they auto-restart and `TRANSCEIVER_INFO`/`DOM` repopulate
+on their own. (A full container *recreation* — reboot / image change — still
+wipes `/opt` + the drop-in; re-run the `emulator` deploy after that.)
 
 Key bridge detail: `Chassis.get_change_event()` is implemented to report a
 stable plant (no hotplug). Without it xcvrd falls back to
@@ -39,8 +48,10 @@ emulated platform, crashing every xcvrd thread (so DOM never populates).
 |------|---------|
 | `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
 | `emu_config.yaml`   | 33 present modules (indices 0..32) |
+| `supervisor/xcvr-emu.conf`  | supervisord programs for emud + xcvrd (autorestart) |
+| `supervisor/start-xcvrd.sh` | xcvrd wrapper that waits for the emulator before launching |
 | `build_bundle.sh`   | assemble `emu-bundle.tar.gz` from the bridge + xcvr-emu repo |
-| `deploy_on_dut.sh`  | (runs on DUT) install into pmon, start emud, wait, start xcvrd, verify |
+| `deploy_on_dut.sh`  | (runs on DUT) install into /opt, register supervisord programs, verify |
 | `ship_and_deploy.sh`| (runs on VM) ship bundle to DUT and run deploy_on_dut.sh |
 
 ## Usage

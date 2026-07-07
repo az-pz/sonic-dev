@@ -10,6 +10,8 @@
 #   payload/sonic_platform/   - the gRPC bridge (dev/platform/sonic_platform)
 #   payload/xcvr_emu/         - the emulator package (xcvr-emu/src/xcvr_emu)
 #   payload/cmis/             - CMIS decode used by the emulator (xcvr-emu/src/cmis)
+#   supervisor/xcvr-emu.conf  - supervisord programs for emud + xcvrd (auto-restart)
+#   supervisor/start-xcvrd.sh - xcvrd wrapper that waits for the emulator
 #   emu_config.yaml           - N present CMIS modules
 #
 # Usage:  ./build_bundle.sh [XCVR_EMU_REPO] [N_MODULES]
@@ -22,6 +24,7 @@ BRIDGE="$HERE/../platform/sonic_platform"
 [ -d "$XCVR_EMU_REPO/src/xcvr_emu" ] || { echo "ERROR: xcvr-emu repo not found at $XCVR_EMU_REPO"; exit 1; }
 [ -d "$XCVR_EMU_REPO/src/cmis" ]     || { echo "ERROR: cmis not found in $XCVR_EMU_REPO/src"; exit 1; }
 [ -d "$BRIDGE" ] || { echo "ERROR: bridge not found at $BRIDGE"; exit 1; }
+[ -f "$HERE/supervisor/xcvr-emu.conf" ] || { echo "ERROR: supervisor/xcvr-emu.conf missing"; exit 1; }
 
 echo "[build] generating emu_config.yaml with $N modules"
 python3 "$HERE/gen_emu_config.py" "$N" "$HERE/emu_config.yaml"
@@ -32,15 +35,18 @@ mkdir -p "$HERE/staging/payload"
 cp -r "$BRIDGE"                          "$HERE/staging/payload/sonic_platform"
 cp -r "$XCVR_EMU_REPO/src/xcvr_emu"      "$HERE/staging/payload/xcvr_emu"
 cp -r "$XCVR_EMU_REPO/src/cmis"          "$HERE/staging/payload/cmis"
+cp -r "$HERE/supervisor"                 "$HERE/staging/supervisor"
 cp    "$HERE/emu_config.yaml"            "$HERE/staging/emu_config.yaml"
 find "$HERE/staging" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$HERE/staging" -name '*.pyc' -delete 2>/dev/null || true
 
-# sanity: the get_change_event fix is present, and the emulator daemon is included
+# sanity: the get_change_event fix is present, the emulator daemon + supervisor bits included
 grep -q 'def get_change_event' "$HERE/staging/payload/sonic_platform/chassis.py" \
   || { echo "ERROR: bridge missing get_change_event"; exit 1; }
 [ -f "$HERE/staging/payload/xcvr_emu/xcvr_emud.py" ] \
   || { echo "ERROR: emulator daemon missing from payload"; exit 1; }
+[ -f "$HERE/staging/supervisor/xcvr-emu.conf" ] \
+  || { echo "ERROR: supervisor conf missing from bundle"; exit 1; }
 
 tar czf "$HERE/emu-bundle.tar.gz" -C "$HERE/staging" .
 echo "[build] wrote $HERE/emu-bundle.tar.gz"

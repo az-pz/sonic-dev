@@ -28,19 +28,20 @@ transceivers:
       ModuleInactiveFirmwareMinorRevision: 1
       MemoryModel: "PAGED"
       MciMaxSpeed: "UP_TO_400_KHZ"
-      # 40G application so it matches the DUT's Force10-S6000 40G/4-lane ports.
-      # xcvrd matches app when host_lane_count==port_lanes AND
-      # get_interface_speed(host_electrical_interface_id)==port_speed. HostInterfaceID
-      # 0x06 = "XLAUI C2M (Annex 83B)" -> contains "XLAUI" -> 40000. Without a matching
-      # app the port never reaches a terminal CMIS state and DOM stays disabled.
       ApplicationDescriptor:
-        - HostInterfaceID: 6           # 0x06 XLAUI C2M (40G, 4x10G)
-          MediaInterfaceID: 9          # 0x09 40GBASE-LR4 (SMF); media not matched by xcvrd
+        - HostInterfaceID: 79
+          MediaInterfaceID: 28
           HostLaneCount: 4
           MediaLaneCount: 4
           HostLaneAssignmentOptions: 0b1
+        - HostInterfaceID: 71
+          MediaInterfaceID: 23
+          HostLaneCount: 2
+          MediaLaneCount: 2
+          HostLaneAssignmentOptions: 0b101
       MediaLaneAssignmentOptions:
-      - 0b0001
+      - 0b001
+      - 0b101
       MaxDurationDPInit: "BETWEEN_1_AND_5_S"
       OutputDisableTxSupported: "SUPPORTED"
       SteppedConfigOnly: "STEP_BY_STEP"
