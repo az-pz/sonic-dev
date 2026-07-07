@@ -29,8 +29,6 @@ for pkg in sonic_platform xcvr_emu cmis; do
   docker cp "$BUNDLE/payload/$pkg" "$PMON:$OPT/$pkg"
 done
 docker cp "$BUNDLE/emu_config.yaml" "$PMON:$EMU_CFG"
-# revert any leftovers from an older (dist-packages) deployment model, if present
-docker exec "$PMON" bash -c 'DP=/usr/local/lib/python3.13/dist-packages; rm -rf "$DP/sonic_platform" "$DP/xcvr_emu" "$DP/cmis" 2>/dev/null; true'
 
 docker exec "$PMON" bash -c "$PYRUN python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu import xcvr_emud; from xcvr_emu.proto import emulator_pb2; print(\"[deploy] imports OK\")'" \
   || { echo "[deploy] ERROR: bridge/emulator imports failed in pmon"; exit 1; }
@@ -80,6 +78,4 @@ done
 echo "===EMUD_IN_PMON==="; docker exec "$PMON" bash -c 'ps aux | grep xcvr_emu.xcvr_emud | grep -v grep | head -1'
 echo "===INFO_COUNT==="; sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l
 echo "===DOM_COUNT===";  sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_DOM_SENSOR|*' 2>/dev/null | wc -l
-echo "===DISTPKG_UNTOUCHED (should be empty)==="
-docker exec "$PMON" bash -c 'ls -d /usr/local/lib/python3.13/dist-packages/{sonic_platform,xcvr_emu,cmis} 2>/dev/null || echo "none — dist-packages clean"'
 echo "[deploy] done"
