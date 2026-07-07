@@ -58,8 +58,7 @@ emulated platform, crashing every xcvrd thread (so DOM never populates).
 | `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
 | `emu_config.yaml`   | 33 present modules (indices 0..32) |
 | `build_emu_image.sh`| build `xcvr-emu:local` from the repo Dockerfile, `docker save|gzip` → `xcvr-emu-image.tar.gz` (cached) |
-| `supervisor/xcvr-emu.conf`  | supervisord program for **xcvrd** (autorestart) |
-| `supervisor/start-xcvrd.sh` | xcvrd wrapper that waits for the emulator before launching |
+| `supervisor/xcvr-emu.conf`  | supervisord program for **xcvrd** (autorestart); vanilla `/usr/local/bin/xcvrd` with `PYTHONPATH=/opt/xcvr-emu-bridge` exported |
 | `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + supervisor + config) |
 | `deploy_on_dut.sh`  | (runs on DUT) `docker load` + run the emulator container, install the bridge into pmon, register the xcvrd supervisord program, verify |
 | `ship_and_deploy.sh`| (runs on VM) ship the image + bundle to the DUT and run deploy_on_dut.sh |

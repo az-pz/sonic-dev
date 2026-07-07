@@ -65,21 +65,26 @@ docker exec "$PMON" mkdir -p "$OPT"
 for pkg in sonic_platform xcvr_emu; do
   docker cp "$BUNDLE/payload/$pkg" "$PMON:$OPT/$pkg"
 done
-docker cp "$BUNDLE/supervisor/start-xcvrd.sh" "$PMON:$OPT/start-xcvrd.sh"
-docker exec "$PMON" chmod +x "$OPT/start-xcvrd.sh"
 
 docker exec "$PMON" bash -c "$PYRUN python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu.proto import emulator_pb2; print(\"[deploy] bridge imports OK\")'" \
   || { echo "[deploy] ERROR: bridge imports failed in pmon"; exit 1; }
 
-# --- 3. xcvrd under supervisord (unchanged) ---------------------------------
-echo "[deploy] stopping any manually-started xcvrd from a previous run"
-docker exec "$PMON" bash -c 'pkill -x xcvrd 2>/dev/null; pkill -f start-xcvrd.sh 2>/dev/null; sleep 1; true'
-
-echo "[deploy] installing supervisord drop-in $SUP_CONF and (re)starting xcvrd"
+# --- 3. register the xcvrd supervisord program (vanilla xcvrd + PYTHONPATH) --
+# We do NOT pkill xcvrd and do NOT force a restart. `reread`+`update` starts
+# xcvrd only if the program is newly added or its config actually changed; an
+# already-running xcvrd with an unchanged config is left exactly as-is. The
+# bridge is picked up purely via the PYTHONPATH exported in the program's
+# environment= (see supervisor/xcvr-emu.conf) — the command is the stock
+# /usr/local/bin/xcvrd, unwrapped.
+#
+# NOTE: because we never force a restart, updating the bridge code in /opt does
+# NOT take effect in an already-running xcvrd until it restarts on its own
+# (config reload / pmon restart). Restart it manually only if you want new
+# bridge code loaded immediately: `docker exec pmon supervisorctl restart xcvrd`.
+echo "[deploy] registering the xcvrd supervisord program (vanilla xcvrd + PYTHONPATH; no kill, no forced restart)"
 docker cp "$BUNDLE/supervisor/xcvr-emu.conf" "$PMON:$SUP_CONF"
 docker exec "$PMON" supervisorctl reread
 docker exec "$PMON" supervisorctl update
-docker exec "$PMON" supervisorctl restart xcvrd 2>/dev/null || true
 
 echo "[deploy] supervisord program status:"
 docker exec "$PMON" supervisorctl status xcvrd 2>&1 | sed 's/^/  /'

@@ -10,7 +10,7 @@ echo "EMU StartedAt(before)=$emu_started_before"
 
 echo "=== restarting pmon (simulates the container churn a config reload causes) ==="
 docker restart pmon >/dev/null
-echo "pmon restarted; waiting for supervisord + start-xcvrd wrapper (up to 150s)..."
+echo "pmon restarted; waiting for supervisord to bring xcvrd back (up to 150s)..."
 
 for i in $(seq 1 30); do
   sleep 5

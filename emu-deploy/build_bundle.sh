@@ -12,8 +12,8 @@
 #   payload/sonic_platform/   - the gRPC bridge (dev/platform/sonic_platform)
 #   payload/xcvr_emu/         - emulator package, kept ONLY for the gRPC proto
 #                               stubs (xcvr_emu.proto) the bridge client imports
-#   supervisor/xcvr-emu.conf  - supervisord program for xcvrd (auto-restart)
-#   supervisor/start-xcvrd.sh - xcvrd wrapper that waits for the emulator
+#   supervisor/xcvr-emu.conf  - supervisord program for xcvrd (auto-restart),
+#                               vanilla /usr/local/bin/xcvrd with PYTHONPATH set
 #   emu_config.yaml           - N present CMIS modules (mounted into the emulator
 #                               container on the DUT)
 #
