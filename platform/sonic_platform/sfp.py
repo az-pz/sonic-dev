@@ -101,6 +101,17 @@ class Sfp(SfpOptoeBase):
         except grpc.RpcError:
             return False
 
+    def get_reset_status(self):
+        """Whether the module is currently held in reset.
+
+        SfpBase.get_reset_status() raises NotImplementedError by default, which
+        makes the platform-API server log 'API get_reset_status not implemented'
+        (a loganalyzer failure) and returns None. The emulated plant never holds
+        a present module in reset — reset() is a momentary CMIS SoftwareReset that
+        re-inits the module — so we report False.
+        """
+        return False
+
     # --- misc SfpBase niceties ------------------------------------------------
 
     def get_name(self):
