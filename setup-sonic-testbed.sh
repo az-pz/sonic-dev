@@ -16,18 +16,20 @@
 # Ubuntu 24.04, 64 GB+ OS disk OR a large local/temp disk (auto-used below).
 #
 # USAGE:
-#   ./setup-sonic-testbed.sh              # run every phase in order
+#   ./setup-sonic-testbed.sh              # run every phase in order (now INCLUDES the emulator)
 #   ./setup-sonic-testbed.sh <phase>      # run a single phase (re-runnable)
 #   ./setup-sonic-testbed.sh smoke_test   # just run the BGP verification test
-#   ./setup-sonic-testbed.sh transceiver_tests      # xcvrd/SFP tests (vs-green subset)
-#   ./setup-sonic-testbed.sh transceiver_tests_all  # full xcvrd/SFP set (needs emulator)
+#   ./setup-sonic-testbed.sh transceiver_tests      # xcvrd/SFP tests (now pass with the emulator)
+#   ./setup-sonic-testbed.sh transceiver_tests_all  # full xcvrd/SFP set
 #   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
 #   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
-#   ./setup-sonic-testbed.sh emulator          # deploy xcvr-emu + xcvrd into pmon
+#   ./setup-sonic-testbed.sh emulator          # native emulator deploy: host sonic_platform:=bridge,
+#                                              #   skip_xcvrd=false, pmon inject, + xcvr-emu container
+#   ./setup-sonic-testbed.sh emulator_revert   # undo the native emulator deploy (restore stock platform)
 #   ./setup-sonic-testbed.sh transceiver_emu_test  # run test_xcvr_info_in_db (needs emulator)
 #   ./setup-sonic-testbed.sh emulator_e2e      # emulator + test_xcvr_info_in_db in one go
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
-#   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (VM stop/deallocate)
+#   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
 #
 # The `emulator` phase needs this script's sibling assets (platform/ and
 # emu-deploy/), so run it from a full sonic-develop checkout on the VM:
@@ -535,7 +537,7 @@ ensure_emu_assets() {
 }
 
 emulator() {
-  log "Deploy xcvr-emu (standalone container) + bridge/xcvrd in pmon on $DUT (MGMT_CONTAINER=$MGMT_CONTAINER)"
+  log "Deploy xcvr-emu (NATIVE) on $DUT: host sonic_platform:=bridge + skip_xcvrd=false + pmon inject (MGMT_CONTAINER=$MGMT_CONTAINER)"
   ensure_emu_assets
 
   log "Building emulator image (cached; EMU_REBUILD_IMAGE=$EMU_REBUILD_IMAGE)"
@@ -547,11 +549,26 @@ emulator() {
   bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
     || die "build_bundle.sh failed"
 
-  log "Shipping image + bundle to $DUT and deploying (emulator container + bridge/xcvrd in pmon)"
+  log "Shipping image + bundle to $DUT and running the native deploy"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
-  ok "emulator deployed — standalone container serves gRPC, bridge via PYTHONPATH, xcvrd populating STATE_DB"
+  ok "emulator deployed (native) — host sfputil + pmon xcvrd both use the emulator; STATE_DB populated"
+}
+
+# ---------------------------------------------------------------------------
+# emulator_revert: undo the native emulator deploy — restore the stock host
+#   sonic_platform, restore skip_xcvrd, remove the pmon injection, restart pmon.
+#   The xcvr-emu container is left running (harmless); remove it by hand if you
+#   want (`docker rm -f xcvr-emu` on the DUT).
+# ---------------------------------------------------------------------------
+emulator_revert() {
+  log "Reverting native emulator deploy on $DUT (restore stock platform + skip_xcvrd)"
+  [ -d "$EMU_DEPLOY_DIR" ] || die "emu-deploy toolkit not found at $EMU_DEPLOY_DIR"
+  MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
+    bash "$EMU_DEPLOY_DIR/ship_and_revert.sh" \
+    || die "ship_and_revert.sh failed"
+  ok "emulator reverted — DUT back to stock sonic-vs platform"
 }
 
 # ---------------------------------------------------------------------------
@@ -601,7 +618,8 @@ rebuild() {
   deploy_mg
   verify
   inject_conn_graph
-  ok "rebuild complete — DUT=$DUT testbed=$TESTBED_NAME"
+  emulator
+  ok "rebuild complete — DUT=$DUT testbed=$TESTBED_NAME (emulator redeployed)"
 }
 
 # ---------------------------------------------------------------------------
@@ -621,8 +639,10 @@ all() {
   deploy_mg
   verify
   smoke_test
+  emulator
+  inject_conn_graph
   transceiver_tests
-  log "DONE — SONiC KVM testbed is up. DUT=$DUT  testbed=$TESTBED_NAME"
+  log "DONE — SONiC KVM testbed is up (emulator-backed transceivers). DUT=$DUT  testbed=$TESTBED_NAME"
 }
 
 "${1:-all}" "${@:2}"
