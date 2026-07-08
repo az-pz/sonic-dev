@@ -15,6 +15,8 @@
 #                               stubs (xcvr_emu.proto) the bridge client imports
 #   emu_config.yaml           - N present CMIS modules (mounted into the emulator
 #                               container on the DUT)
+#   kvm_platform.json         - chassis.sfps inventory installed as the platform's
+#                               platform.json (needed by platform_tests/api/test_sfp.py)
 #
 # Usage:  ./build_bundle.sh [XCVR_EMU_REPO] [N_MODULES]
 set -e
@@ -25,6 +27,7 @@ BRIDGE="$HERE/../platform/sonic_platform"
 
 [ -d "$XCVR_EMU_REPO/src/xcvr_emu" ] || { echo "ERROR: xcvr-emu repo not found at $XCVR_EMU_REPO"; exit 1; }
 [ -d "$BRIDGE" ] || { echo "ERROR: bridge not found at $BRIDGE"; exit 1; }
+[ -f "$HERE/kvm_platform.json" ] || { echo "ERROR: kvm_platform.json not found at $HERE"; exit 1; }
 
 echo "[build] generating emu_config.yaml with $N modules"
 python3 "$HERE/gen_emu_config.py" "$N" "$HERE/emu_config.yaml"
@@ -35,6 +38,7 @@ mkdir -p "$HERE/staging/payload"
 cp -r "$BRIDGE"                          "$HERE/staging/payload/sonic_platform"
 cp -r "$XCVR_EMU_REPO/src/xcvr_emu"      "$HERE/staging/payload/xcvr_emu"
 cp    "$HERE/emu_config.yaml"            "$HERE/staging/emu_config.yaml"
+cp    "$HERE/kvm_platform.json"          "$HERE/staging/kvm_platform.json"
 find "$HERE/staging" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$HERE/staging" -name '*.pyc' -delete 2>/dev/null || true
 
@@ -43,6 +47,8 @@ grep -q 'def get_change_event' "$HERE/staging/payload/sonic_platform/chassis.py"
   || { echo "ERROR: bridge missing get_change_event"; exit 1; }
 [ -f "$HERE/staging/payload/xcvr_emu/proto/emulator_pb2.py" ] \
   || { echo "ERROR: xcvr_emu.proto stubs missing from payload (bridge client needs them)"; exit 1; }
+[ -f "$HERE/staging/kvm_platform.json" ] \
+  || { echo "ERROR: kvm_platform.json missing from bundle"; exit 1; }
 
 tar czf "$HERE/emu-bundle.tar.gz" -C "$HERE/staging" .
 echo "[build] wrote $HERE/emu-bundle.tar.gz"

@@ -48,6 +48,7 @@ attribute access works.
 |------|---------|
 | `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
 | `emu_config.yaml`   | 33 present modules (indices 0..32) |
+| `kvm_platform.json` | `chassis.sfps` inventory (32×40G) installed as the platform's `platform.json` — required by `platform_tests/api/test_sfp.py` (`duthost.facts["chassis"]["sfps"]`) |
 | `build_emu_image.sh`| build `xcvr-emu:local` from the repo Dockerfile → cached `xcvr-emu-image.tar.gz` |
 | `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + config) |
 | `deploy_on_dut.sh`  | (runs on DUT) the native deploy: emulator container + host platform + skip_xcvrd + pmon inject |

@@ -17,6 +17,7 @@ IMAGE_TAG=xcvr-emu:local
 EMU_CFG_HOST=/home/admin/emu_config.yaml
 DEVDIR=/usr/share/sonic/device/x86_64-kvm_x86_64-r0
 PDC=$DEVDIR/pmon_daemon_control.json
+PLATFORM_JSON=$DEVDIR/platform.json     # chassis.sfps inventory the platform SFP-API tests need
 HOST_DP=/usr/lib/python3/dist-packages
 PMON_DP=/usr/local/lib/python3.13/dist-packages
 
@@ -51,6 +52,23 @@ echo "[native] verify host sfputil now uses the emulator:"
 sudo sfputil show presence -p Ethernet4 | sed 's/^/    /'; echo "    (presence rc=${PIPESTATUS[0]})"
 echo "    -- reset Ethernet4 --"
 sudo sfputil reset Ethernet4 | sed 's/^/    /'; echo "    (reset rc=${PIPESTATUS[0]})"
+
+# --- 1b) install platform.json (chassis.sfps inventory) ---------------------
+# The platform SFP-API suite (platform_tests/api/test_sfp.py) reads
+# duthost.facts["chassis"]["sfps"] from /usr/share/sonic/device/<platform>/platform.json.
+# Stock vs ships none, so its setup fixture errors out. We drop in a chassis.sfps
+# inventory (32 x 40G ports). Only "chassis" is set — no "interfaces" — so port
+# config still comes from port_config.ini.
+if [ -f "$BUNDLE/kvm_platform.json" ]; then
+  echo "[native] STEP 1b: install platform.json (chassis.sfps) at $PLATFORM_JSON"
+  if [ -f "$PLATFORM_JSON" ] && [ ! -e "${PLATFORM_JSON}.orig" ]; then
+    sudo cp "$PLATFORM_JSON" "${PLATFORM_JSON}.orig"
+    echo "  backed up existing platform.json -> platform.json.orig"
+  fi
+  sudo cp "$BUNDLE/kvm_platform.json" "$PLATFORM_JSON"
+  n=$(python3 -c "import json;print(len(json.load(open('$PLATFORM_JSON'))['chassis']['sfps']))" 2>/dev/null)
+  echo "  installed platform.json with ${n:-?} sfps"
+fi
 
 # --- 3) inject our bridge into pmon -----------------------------------------
 echo "[native] STEP 3: inject bridge into pmon dist-packages"

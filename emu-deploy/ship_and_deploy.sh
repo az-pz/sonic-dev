@@ -61,4 +61,11 @@ done
 echo "[ship] --- deploy log tail ---"
 docker exec --user azureuser "$CNAME" bash -lc "$SSHP ssh $SSHOPT $DUT 'tail -25 /home/admin/native.log'" 2>/dev/null || true
 [ "$done" = "1" ] || { echo "[ship] ERROR: native deploy did not signal completion in time (see log above)"; exit 1; }
+
+# The DUT's platform.json changed (chassis.sfps). duthost.facts is file-cached in
+# the mgmt container, so clear it — otherwise the platform SFP-API tests would keep
+# reading the stale (chassis-less) facts and error in setup.
+echo "[ship] clearing mgmt duthost.facts cache so the new platform.json is picked up"
+docker exec --user azureuser "$CNAME" bash -lc "rm -f /data/sonic-mgmt/tests/_cache/*/basic_facts.pickle 2>/dev/null; rm -rf /data/sonic-mgmt/.pytest_cache/v/BASIC_FACTS_* 2>/dev/null; true"
+
 echo "[ship] native deploy complete"
