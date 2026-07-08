@@ -15,10 +15,11 @@ reversible and rebuilt whenever pmon is recreated.
 
 sonic-mgmt tests frequently trigger a SONiC `config reload`, which restarts every
 SONiC **feature** container (pmon/swss/syncd/…). A plain `docker run` container is
-**not** a feature, so the emulator container is left untouched by a reload. This
-means the emulated optics stay up across reloads; when pmon restarts, supervisord
-brings `xcvrd` back and it simply reconnects to the still-running emulator over
-gRPC. (Previously the emulator ran inside pmon and was killed on every reload.)
+**not** a feature, so the emulator container is left untouched by a reload — the
+emulated optics stay up across reloads. (Previously the emulator ran inside pmon
+and was killed on every reload.) Note that `xcvrd` itself is currently launched as
+a plain process (no supervisord), so it does not auto-survive a reload; re-run the
+deploy to bring it back. See the note under *Architecture* below.
 
 ## Architecture
 
@@ -32,19 +33,21 @@ DUT vlab-01 (docker host)
        ├─ /opt/xcvr-emu-bridge/     (our python, loaded via PYTHONPATH — NOT dist-packages)
        │    ├─ sonic_platform/      (bridge: SfpOptoeBase -> gRPC Read/Write/GetInfo)
        │    └─ xcvr_emu/proto/      (gRPC client stubs the bridge imports)
-       └─ xcvrd  (supervised; PYTHONPATH=/opt/xcvr-emu-bridge,
-                  XCVR_EMU_ADDR=localhost:50051 -> reads bridge ->
-                  writes TRANSCEIVER_INFO / DOM to STATE_DB)
+       └─ xcvrd  (launched via `docker exec -d` with
+                  PYTHONPATH=/opt/xcvr-emu-bridge, XCVR_EMU_ADDR=localhost:50051
+                  -> reads bridge -> writes TRANSCEIVER_INFO / DOM to STATE_DB)
 ```
 
-`xcvrd` runs inside pmon **under pmon's supervisord** (`autorestart=true`),
-launched with `PYTHONPATH=/opt/xcvr-emu-bridge` and `XCVR_EMU_ADDR=localhost:50051`
-baked into the program's `environment=`. The supervisor drop-in lives at
-`/etc/supervisor/conf.d/xcvr-emu.conf`; pmon's main supervisord includes
-`conf.d/*.conf` and only regenerates its own `supervisord.conf`, so the drop-in
-(and `/opt`) **survive a pmon restart**. (A full pmon *recreation* — reboot /
-image change — still wipes `/opt` + the drop-in; re-run the `emulator` deploy
-after that. The emulator container itself survives via `--restart unless-stopped`.)
+`xcvrd` is launched **directly** by `deploy_on_dut.sh` via `docker exec -d` with
+`PYTHONPATH=/opt/xcvr-emu-bridge` and `XCVR_EMU_ADDR=localhost:50051` exported
+into its environment (so it imports our `sonic_platform` bridge without touching
+pmon's dist-packages). **No supervisord program is installed.**
+
+> ⚠️ Because xcvrd is a plain process (not supervised), it does **not** survive a
+> `config reload` / pmon restart — those kill it and it stays down until you
+> re-run the deploy. The emulator *container* still survives (it's a separate
+> `--restart unless-stopped` container). A full pmon *recreation* also wipes
+> `/opt`. Re-run the `emulator` deploy to bring xcvrd back after any of these.
 
 Key bridge detail: `Chassis.get_change_event()` is implemented to report a
 stable plant (no hotplug). Without it xcvrd falls back to
@@ -58,9 +61,8 @@ emulated platform, crashing every xcvrd thread (so DOM never populates).
 | `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
 | `emu_config.yaml`   | 33 present modules (indices 0..32) |
 | `build_emu_image.sh`| build `xcvr-emu:local` from the repo Dockerfile, `docker save|gzip` → `xcvr-emu-image.tar.gz` (cached) |
-| `supervisor/xcvr-emu.conf`  | supervisord program for **xcvrd** (autorestart); vanilla `/usr/local/bin/xcvrd` with `PYTHONPATH=/opt/xcvr-emu-bridge` exported |
-| `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + supervisor + config) |
-| `deploy_on_dut.sh`  | (runs on DUT) `docker load` + run the emulator container, install the bridge into pmon, register the xcvrd supervisord program, verify |
+| `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + config) |
+| `deploy_on_dut.sh`  | (runs on DUT) `docker load` + run the emulator container, install the bridge into pmon, launch xcvrd via `docker exec -d` with the env exported, verify |
 | `ship_and_deploy.sh`| (runs on VM) ship the image + bundle to the DUT and run deploy_on_dut.sh |
 
 ## Usage

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs ON the DUT (admin@vlab-01). Deploys the xcvr-emu emulator as its OWN
 # standalone Docker container and the sonic_platform bridge into pmon, then
-# (re)registers xcvrd with pmon's supervisord.
+# launches xcvrd directly with the needed environment exported (no supervisord).
 #
 #   * xcvr-emud runs as a standalone container (`docker run --network host
 #     --restart unless-stopped`), NOT inside pmon. A plain docker container is
@@ -9,23 +9,21 @@
 #     (which restarts pmon/swss/syncd/…) leaves the emulator RUNNING. xcvrd just
 #     reconnects to it over gRPC at localhost:50051 (pmon and the emulator
 #     container both share the host network namespace).
-#   * only xcvrd runs INSIDE pmon, under supervisord (autorestart=true). The
-#     bridge (sonic_platform + the xcvr_emu gRPC proto stubs it imports) lives in
-#     /opt/xcvr-emu-bridge and is loaded via PYTHONPATH — baked into the
-#     supervisord program's environment=, so pmon's dist-packages is never
-#     modified and PYTHONPATH persists across every (re)launch.
-#   * the supervisor drop-in goes to /etc/supervisor/conf.d/xcvr-emu.conf; pmon's
-#     main supervisord includes conf.d/*.conf and only regenerates its own
-#     supervisord.conf, so our drop-in survives a container restart.
+#   * xcvrd is launched INSIDE pmon via `docker exec -d` with PYTHONPATH and
+#     XCVR_EMU_ADDR exported into its environment, so it imports the bridge
+#     (sonic_platform + the xcvr_emu gRPC proto stubs) from /opt/xcvr-emu-bridge
+#     without touching pmon's system dist-packages. No supervisord program is
+#     installed.
 #
 # Expects on the DUT:
-#   /home/admin/emu-bundle/            unpacked bundle (payload/, supervisor/, emu_config.yaml)
+#   /home/admin/emu-bundle/            unpacked bundle (payload/, emu_config.yaml)
 #   /home/admin/xcvr-emu-image.tar.gz  the emulator image tarball (docker save|gzip)
-# Idempotent: safe to re-run.
+# Idempotent: safe to re-run (stops any running xcvrd first, then relaunches).
 #
-# NB: a full pmon *recreation* (reboot / image change) wipes /opt and the drop-in;
-# re-run this deploy after such an event. The emulator container itself survives
-# (docker --restart unless-stopped) unless the whole docker/data dir is wiped.
+# NB: because xcvrd is a plain process (no supervisord), it does NOT survive a
+# `config reload` / pmon restart — re-run this deploy to bring it back. The
+# emulator container itself survives (docker --restart unless-stopped) unless the
+# whole docker/data dir is wiped. A full pmon *recreation* also wipes /opt.
 set -uo pipefail
 
 BUNDLE=/home/admin/emu-bundle
@@ -35,7 +33,9 @@ EMU_CTR=xcvr-emu                       # standalone emulator container name
 EMU_CFG_HOST=/home/admin/emu_config.yaml   # stable path on the DUT host, bind-mounted into the container
 PMON=pmon
 OPT=/opt/xcvr-emu-bridge              # bridge lives here in pmon; loaded via PYTHONPATH
-SUP_CONF=/etc/supervisor/conf.d/xcvr-emu.conf
+SUP_CONF=/etc/supervisor/conf.d/xcvr-emu.conf   # legacy drop-in from older deploys; removed if present
+XCVRD_BIN=/usr/local/bin/xcvrd
+XCVRD_LOG=/tmp/xcvrd.log
 EMU_ADDR=localhost:50051
 EXPECT_SFPS=33
 PYRUN="PYTHONPATH=$OPT XCVR_EMU_ADDR=$EMU_ADDR"
@@ -69,25 +69,30 @@ done
 docker exec "$PMON" bash -c "$PYRUN python3 -c 'import grpc, sonic_platform.platform; from xcvr_emu.proto import emulator_pb2; print(\"[deploy] bridge imports OK\")'" \
   || { echo "[deploy] ERROR: bridge imports failed in pmon"; exit 1; }
 
-# --- 3. register the xcvrd supervisord program (vanilla xcvrd + PYTHONPATH) --
-# We do NOT pkill xcvrd and do NOT force a restart. `reread`+`update` starts
-# xcvrd only if the program is newly added or its config actually changed; an
-# already-running xcvrd with an unchanged config is left exactly as-is. The
-# bridge is picked up purely via the PYTHONPATH exported in the program's
-# environment= (see supervisor/xcvr-emu.conf) — the command is the stock
-# /usr/local/bin/xcvrd, unwrapped.
-#
-# NOTE: because we never force a restart, updating the bridge code in /opt does
-# NOT take effect in an already-running xcvrd until it restarts on its own
-# (config reload / pmon restart). Restart it manually only if you want new
-# bridge code loaded immediately: `docker exec pmon supervisorctl restart xcvrd`.
-echo "[deploy] registering the xcvrd supervisord program (vanilla xcvrd + PYTHONPATH; no kill, no forced restart)"
-docker cp "$BUNDLE/supervisor/xcvr-emu.conf" "$PMON:$SUP_CONF"
-docker exec "$PMON" supervisorctl reread
-docker exec "$PMON" supervisorctl update
+# --- 3. launch xcvrd directly with the env exported (NO supervisord) ---------
+# If an older deploy left a supervisord drop-in, remove it so supervisord stops
+# managing/relaunching its own xcvrd (which would fight the one we start here).
+if docker exec "$PMON" test -f "$SUP_CONF" 2>/dev/null; then
+  echo "[deploy] removing legacy supervisord xcvrd drop-in ($SUP_CONF)"
+  docker exec "$PMON" rm -f "$SUP_CONF"
+  docker exec "$PMON" supervisorctl reread  >/dev/null 2>&1 || true
+  docker exec "$PMON" supervisorctl update  >/dev/null 2>&1 || true   # unregisters + stops the old supervised xcvrd
+fi
 
-echo "[deploy] supervisord program status:"
-docker exec "$PMON" supervisorctl status xcvrd 2>&1 | sed 's/^/  /'
+echo "[deploy] stopping any running xcvrd, then launching it with PYTHONPATH + XCVR_EMU_ADDR exported"
+docker exec "$PMON" bash -c 'pkill -x xcvrd 2>/dev/null; sleep 1; true'
+docker exec -d "$PMON" bash -c "PYTHONPATH='$OPT' XCVR_EMU_ADDR='$EMU_ADDR' exec $XCVRD_BIN >$XCVRD_LOG 2>&1"
+
+echo "[deploy] xcvrd process (should show PYTHONPATH=$OPT):"
+docker exec "$PMON" bash -c '
+  sleep 2
+  pid=$(pgrep -x xcvrd | head -1)
+  if [ -n "$pid" ]; then
+    ps -o pid,cmd -p "$pid" | tail -1 | sed "s/^/  /"
+    tr "\0" "\n" < /proc/$pid/environ | grep -i pythonpath | sed "s/^/  /"
+  else
+    echo "  (xcvrd not running yet — check '"$XCVRD_LOG"')"
+  fi'
 
 # --- 4. wait for the plant to come up ---------------------------------------
 echo "[deploy] waiting until the bridge sees $EXPECT_SFPS modules (via the emulator container)..."
@@ -116,7 +121,8 @@ for i in $(seq 1 24); do
 done
 
 echo "===EMU_CONTAINER==="; docker ps --filter "name=^/${EMU_CTR}$" --format '{{.Names}} {{.Status}}'
-echo "===SUPERVISOR_STATUS==="; docker exec "$PMON" supervisorctl status xcvrd 2>&1
+echo "===XCVRD_PROC==="; docker exec "$PMON" bash -c 'pgrep -x xcvrd >/dev/null && echo "xcvrd RUNNING (pid $(pgrep -x xcvrd|head -1))" || echo "xcvrd NOT running"'
 echo "===INFO_COUNT==="; sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l
 echo "===DOM_COUNT===";  sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_DOM_SENSOR|*' 2>/dev/null | wc -l
-echo "[deploy] done — emulator is a standalone container (survives config reload); xcvrd supervised in pmon"
+echo "[deploy] done — emulator is a standalone container; xcvrd launched directly with env (no supervisord)"
+echo "[deploy] NOTE: xcvrd will NOT survive a config reload / pmon restart — re-run this deploy to bring it back"

@@ -4,10 +4,13 @@
 #
 # The emulator now runs as its OWN standalone Docker container on the DUT, so we
 # ship the image tarball (docker save|gzip) too and `docker load` it there. The
-# bridge still goes into pmon (via the bundle) and xcvrd stays supervised.
+# The emulator now runs as its OWN standalone Docker container on the DUT, so we
+# ship the image tarball (docker save|gzip) too and `docker load` it there. The
+# bridge still goes into pmon (via the bundle) and xcvrd is launched directly with
+# the env exported (no supervisord).
 #
 # Prereqs (built by build_emu_image.sh + build_bundle.sh):
-#   $1 (or /tmp/emu-bundle.tar.gz)      emu-bundle.tar.gz     — bridge + supervisor + emu_config.yaml
+#   $1 (or /tmp/emu-bundle.tar.gz)      emu-bundle.tar.gz     — bridge + emu_config.yaml
 #   $2 (or alongside the bundle)        xcvr-emu-image.tar.gz — the emulator image
 # plus deploy_on_dut.sh in the same dir as this script.
 set -e

@@ -6,14 +6,13 @@
 # `config reload` events that restart pmon. Only the sonic_platform BRIDGE (and
 # the xcvr_emu gRPC proto stubs it imports as a client) lives inside pmon, in a
 # side directory (/opt/xcvr-emu-bridge on the DUT) loaded via PYTHONPATH. pmon's
-# dist-packages is NEVER modified. xcvrd stays supervised inside pmon, unchanged.
+# dist-packages is NEVER modified. xcvrd is launched directly by deploy_on_dut.sh
+# with the env exported (no supervisord).
 #
 # Bundle layout:
 #   payload/sonic_platform/   - the gRPC bridge (dev/platform/sonic_platform)
 #   payload/xcvr_emu/         - emulator package, kept ONLY for the gRPC proto
 #                               stubs (xcvr_emu.proto) the bridge client imports
-#   supervisor/xcvr-emu.conf  - supervisord program for xcvrd (auto-restart),
-#                               vanilla /usr/local/bin/xcvrd with PYTHONPATH set
 #   emu_config.yaml           - N present CMIS modules (mounted into the emulator
 #                               container on the DUT)
 #
@@ -26,7 +25,6 @@ BRIDGE="$HERE/../platform/sonic_platform"
 
 [ -d "$XCVR_EMU_REPO/src/xcvr_emu" ] || { echo "ERROR: xcvr-emu repo not found at $XCVR_EMU_REPO"; exit 1; }
 [ -d "$BRIDGE" ] || { echo "ERROR: bridge not found at $BRIDGE"; exit 1; }
-[ -f "$HERE/supervisor/xcvr-emu.conf" ] || { echo "ERROR: supervisor/xcvr-emu.conf missing"; exit 1; }
 
 echo "[build] generating emu_config.yaml with $N modules"
 python3 "$HERE/gen_emu_config.py" "$N" "$HERE/emu_config.yaml"
@@ -36,18 +34,15 @@ rm -rf "$HERE/staging"
 mkdir -p "$HERE/staging/payload"
 cp -r "$BRIDGE"                          "$HERE/staging/payload/sonic_platform"
 cp -r "$XCVR_EMU_REPO/src/xcvr_emu"      "$HERE/staging/payload/xcvr_emu"
-cp -r "$HERE/supervisor"                 "$HERE/staging/supervisor"
 cp    "$HERE/emu_config.yaml"            "$HERE/staging/emu_config.yaml"
 find "$HERE/staging" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$HERE/staging" -name '*.pyc' -delete 2>/dev/null || true
 
-# sanity: the get_change_event fix is present; the gRPC proto stubs + supervisor bits included
+# sanity: the get_change_event fix is present; the gRPC proto stubs included
 grep -q 'def get_change_event' "$HERE/staging/payload/sonic_platform/chassis.py" \
   || { echo "ERROR: bridge missing get_change_event"; exit 1; }
 [ -f "$HERE/staging/payload/xcvr_emu/proto/emulator_pb2.py" ] \
   || { echo "ERROR: xcvr_emu.proto stubs missing from payload (bridge client needs them)"; exit 1; }
-[ -f "$HERE/staging/supervisor/xcvr-emu.conf" ] \
-  || { echo "ERROR: supervisor conf missing from bundle"; exit 1; }
 
 tar czf "$HERE/emu-bundle.tar.gz" -C "$HERE/staging" .
 echo "[build] wrote $HERE/emu-bundle.tar.gz"
