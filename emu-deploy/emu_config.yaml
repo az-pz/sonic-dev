@@ -29,19 +29,13 @@ transceivers:
       MemoryModel: "PAGED"
       MciMaxSpeed: "UP_TO_400_KHZ"
       ApplicationDescriptor:
-        - HostInterfaceID: 79
-          MediaInterfaceID: 28
+        - HostInterfaceID: 6      # XLAUI C2M (Annex 83B) - 40G, 4 host lanes (matches Force10-S6000 40G ports)
+          MediaInterfaceID: 9     # 40GBASE-LR4 (Cl 87) - 40G SMF, 4 media lanes
           HostLaneCount: 4
           MediaLaneCount: 4
           HostLaneAssignmentOptions: 0b1
-        - HostInterfaceID: 71
-          MediaInterfaceID: 23
-          HostLaneCount: 2
-          MediaLaneCount: 2
-          HostLaneAssignmentOptions: 0b101
       MediaLaneAssignmentOptions:
       - 0b001
-      - 0b101
       MaxDurationDPInit: "BETWEEN_1_AND_5_S"
       OutputDisableTxSupported: "SUPPORTED"
       SteppedConfigOnly: "STEP_BY_STEP"

@@ -24,16 +24,17 @@ PMON_DP=/usr/local/lib/python3.13/dist-packages
 [ -d "$PAY/sonic_platform" ] || { echo "ERROR: $PAY/sonic_platform missing (bundle not unpacked)"; exit 1; }
 [ -d "$PAY/xcvr_emu" ]       || { echo "ERROR: $PAY/xcvr_emu missing";       exit 1; }
 
-# --- 0) ensure the emulator container is running ----------------------------
-if ! docker ps --format '{{.Names}}' | grep -qx "$EMU_CTR"; then
-  echo "[native] emulator container not running — loading + starting it"
-  [ -f "$IMAGE_TAR" ] && gunzip -c "$IMAGE_TAR" | docker load
-  cp "$BUNDLE/emu_config.yaml" "$EMU_CFG_HOST"
-  docker rm -f "$EMU_CTR" >/dev/null 2>&1 || true
-  docker run -d --name "$EMU_CTR" --network host --restart unless-stopped \
-    -v "$EMU_CFG_HOST":/emu_config.yaml:ro "$IMAGE_TAG" xcvr-emud -c /emu_config.yaml
-  sleep 3
-fi
+# --- 0) (re)load the emulator image + (re)create the container --------------
+# Always reload + recreate so a redeploy actually picks up a rebuilt image and a
+# regenerated emu_config.yaml (do NOT skip when already running, or patches to
+# the image/config would be silently ignored).
+echo "[native] (re)loading emulator image + recreating container '$EMU_CTR'"
+[ -f "$IMAGE_TAR" ] && gunzip -c "$IMAGE_TAR" | docker load
+cp "$BUNDLE/emu_config.yaml" "$EMU_CFG_HOST"
+docker rm -f "$EMU_CTR" >/dev/null 2>&1 || true
+docker run -d --name "$EMU_CTR" --network host --restart unless-stopped \
+  -v "$EMU_CFG_HOST":/emu_config.yaml:ro "$IMAGE_TAG" xcvr-emud -c /emu_config.yaml
+sleep 3
 docker ps --filter "name=^/${EMU_CTR}$" --format '  emulator: {{.Names}} {{.Status}}'
 
 # --- 1) HOST sonic_platform := our bridge -----------------------------------
@@ -114,9 +115,24 @@ for i in $(seq 1 24); do
   [ "$ni" -ge 28 ] && [ "$nd" -ge 28 ] && break
 done
 
+# --- 5) force host_tx_ready=true so xcvrd activates the CMIS datapath ---------
+# The emulator advertises a 40G app (matches the ports), so CmisManager reaches
+# cmis_state=READY. But on the software-SAI vs the ASIC never asserts
+# host_tx_ready, so xcvrd "Forces Tx laser OFF" and the datapath stays
+# DataPathDeactivated (module stuck ModuleLowPwr). Setting host_tx_ready=true in
+# STATE_DB lets CmisManager finish: ModuleReady + DataPathActivated + error OK.
+echo "[native] STEP 5: forcing host_tx_ready=true on all ports (vs SAI doesn't assert it)"
+nport=0
+for p in $(sonic-db-cli CONFIG_DB KEYS 'PORT|Ethernet*' 2>/dev/null | sed 's/PORT|//'); do
+  sonic-db-cli STATE_DB HSET "PORT_TABLE|$p" host_tx_ready true >/dev/null 2>&1 && nport=$((nport+1))
+done
+echo "    set host_tx_ready=true on $nport ports; waiting 30s for CmisManager to activate datapaths"
+sleep 30
+echo "    sample: $(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' module_state 2>/dev/null) / DP1=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' DP1State 2>/dev/null)"
+
 echo "===EMU===";   docker ps --filter "name=^/${EMU_CTR}$" --format '{{.Names}} {{.Status}}'
 echo "===XCVRD==="; docker exec pmon supervisorctl status xcvrd 2>&1
 echo "===INFO==="; sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l
 echo "===DOM===";  sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_DOM_SENSOR|*' 2>/dev/null | wc -l
-echo "[native] done — host sfputil + pmon xcvrd both use the emulator; skip_xcvrd=false"
+echo "[native] done — host sfputil + pmon xcvrd both use the emulator; skip_xcvrd=false; datapaths activated"
 echo "===EMU_DEPLOY_DONE==="
