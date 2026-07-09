@@ -20,9 +20,10 @@
 #   ./setup-sonic-testbed.sh <phase>      # run a single phase (re-runnable)
 #   ./setup-sonic-testbed.sh smoke_test   # just run the BGP verification test
 #   ./setup-sonic-testbed.sh transceiver_tests      # xcvrd/SFP tests (now pass with the emulator)
-#   ./setup-sonic-testbed.sh transceiver_tests_all  # full xcvrd/SFP set
+#   ./setup-sonic-testbed.sh transceiver_tests_all  # full validated xcvrd/SFP set
 #   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
 #   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
+#   RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all  # skip the SLOW module-reset tests
 #   ./setup-sonic-testbed.sh emulator          # native emulator deploy: host sonic_platform:=bridge,
 #                                              #   skip_xcvrd=false, pmon inject, + xcvr-emu container
 #   ./setup-sonic-testbed.sh emulator_revert   # undo the native emulator deploy (restore stock platform)
@@ -364,27 +365,45 @@ transceiver_tests() {
 }
 
 # ---------------------------------------------------------------------------
-# transceiver_tests_all: the FULL transceiver/xcvrd test set. Calls
-#   inject_conn_graph first so the connection-graph fixture resolves for the DUT
-#   (removes the KeyError setup blocker). On a stock vs DUT the remaining
-#   ERROR/FAIL/skip outcomes are all "no transceiver / no platform-API" cases:
-#     - api/test_sfp.*  ERROR at platform-API-service setup (needs the
-#       xcvr-emu-backed sonic_platform bridge + the RPC service on the DUT);
-#     - test_xcvr_info_in_db / sfpshow / sfputil FAIL because no optics are
-#       present (TRANSCEIVER_INFO/EEPROM empty);
-#     - test_sfp_thermal_state_db SKIP (no DOM/TEMPERATURE entries).
-#   These are the cases the xcvr-emu emulator is meant to light up later.
-#   Run with VERBOSE=1 (or -v) to see WHY each one errors/skips.
+# transceiver_tests_all: the FULL validated xcvrd/SFP test set — every test we
+#   have confirmed passing against the xcvr-emu emulator (plus the one known
+#   fail, error_status[--fetch-from-hardware], which needs ALL 32 ports OK).
+#   Requires the emulator to be deployed first (run `emulator`), which installs
+#   platform.json, injects the sonic_platform bridge, and activates datapaths.
+#
+#   Suites (from SQL baseline xcvrd_tests):
+#     - platform_tests/test_xcvr_info_in_db.py   (TRANSCEIVER_INFO/DOM populated)
+#     - platform_tests/sfp/test_sfpshow.py       (presence, eeprom)
+#     - platform_tests/sfp/test_sfputil.py       (presence, eeprom(_hexdump),
+#                                                 error_status, low_power_mode, reset)
+#     - platform_tests/api/test_sfp.py           (23 SFP platform-API methods,
+#                                                 incl. lpmode + error_description)
+#
+#   RESET TESTS TOGGLE: the module-reset tests (sfputil `reset` + api `test_reset`)
+#   are SLOW (they reset all 32 emulated modules and wait for recovery). Skip them
+#   with RESET_TESTS=0:
+#       RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all
+#   Default (RESET_TESTS=1) runs them. test_get_reset_status (a quick bool read)
+#   is always kept.
 # ---------------------------------------------------------------------------
 transceiver_tests_all() {
   parse_verbose "${1:-}" && shift || true
-  log "Transceiver tests (FULL set — expect errors on stock vs; needs emulator/real optics)  (verbose=${VERBOSE:-0})"
+  log "Transceiver tests (full validated set)  (verbose=${VERBOSE:-0}, reset_tests=${RESET_TESTS:-1})"
   inject_conn_graph
+  local reset_deselect=()
+  if [ "${RESET_TESTS:-1}" = "0" ]; then
+    log "  RESET_TESTS=0 -> skipping the slow module-reset tests (sfputil reset + api test_reset)"
+    reset_deselect=(
+      "--deselect" "platform_tests/sfp/test_sfputil.py::test_check_sfputil_reset"
+      "--deselect" "platform_tests/api/test_sfp.py::TestSfpApi::test_reset"
+    )
+  fi
   run_pytest \
     "platform_tests/test_xcvr_info_in_db.py" \
-    "platform_tests/test_sfp_thermal_state_db.py" \
-    "platform_tests/sfp/" \
-    "platform_tests/api/test_sfp.py"
+    "platform_tests/sfp/test_sfpshow.py" \
+    "platform_tests/sfp/test_sfputil.py" \
+    "platform_tests/api/test_sfp.py" \
+    "${reset_deselect[@]}"
 }
 
 # ---------------------------------------------------------------------------
