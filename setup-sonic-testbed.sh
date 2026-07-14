@@ -124,13 +124,38 @@ install_prereqs() {
   log "Phase 1: prerequisites + Docker + Open vSwitch"
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -y
-  sudo apt-get install -y python3 python3-pip openssh-server git make curl jq \
-                          bridge-utils sshpass openvswitch-switch
-  sudo systemctl enable --now openvswitch-switch
+  # Install base tools resiliently — one package at a time so a single
+  # unavailable/conflicting package does not abort the WHOLE set (apt-get install
+  # is transactional: one broken package rolls back every other in the same call).
+  for pkg in python3 python3-pip openssh-server git make curl jq bridge-utils sshpass; do
+    dpkg -s "$pkg" >/dev/null 2>&1 && continue
+    sudo apt-get install -y "$pkg" || warn "apt: could not install '$pkg' (continuing)"
+  done
+  # Open vSwitch: only install the upstream package if NO OVS is present. Some
+  # hosts (e.g. NVIDIA BlueField / DOCA) ship doca-openvswitch-* which *conflicts*
+  # with openvswitch-common, so adding openvswitch-switch would break apt. In that
+  # case the DOCA-provided OVS is already usable, so we just use it.
+  if command -v ovs-vsctl >/dev/null 2>&1; then
+    ok "Open vSwitch already present ($(sudo ovs-vsctl --version | head -1 | awk '{print $NF}')) — skipping openvswitch-switch"
+  else
+    sudo apt-get install -y openvswitch-switch \
+      && sudo systemctl enable --now openvswitch-switch \
+      || warn "could not install/enable openvswitch-switch"
+  fi
   if ! command -v docker >/dev/null 2>&1; then
     curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sudo sh /tmp/get-docker.sh
   fi
   sudo usermod -aG docker "$HOST_USER" || true
+  # j2cli: sonic-mgmt's setup-management-network.sh installs it via `pip3 install`,
+  # which fails when pip3 is absent OR when the distro is PEP-668 "externally
+  # managed" (Ubuntu 24.04+). Provide it here so that step is a no-op. Try apt
+  # first, then pip with the managed-env override.
+  if ! command -v j2 >/dev/null 2>&1; then
+    sudo apt-get install -y python3-j2cli 2>/dev/null \
+      || sudo pip3 install --break-system-packages j2cli 2>/dev/null \
+      || pip3 install --user --break-system-packages j2cli 2>/dev/null \
+      || warn "could not install j2cli (setup-management-network.sh may warn)"
+  fi
   ok "Docker $(sudo docker --version | awk '{print $3}' | tr -d ,), OVS $(sudo ovs-vsctl --version | head -1 | awk '{print $NF}')"
 }
 
