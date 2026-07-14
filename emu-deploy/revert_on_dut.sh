@@ -39,4 +39,10 @@ fi
 echo "[revert] removing pmon injection + restarting pmon"
 docker exec pmon rm -rf "$PMON_DP/sonic_platform" "$PMON_DP/xcvr_emu" 2>/dev/null || true
 docker restart pmon >/dev/null 2>&1 || true
+
+echo "[revert] stopping + removing the host_tx_ready keeper"
+sudo systemctl disable --now xcvr-htr-keeper.service >/dev/null 2>&1 || true
+sudo rm -f /etc/systemd/system/xcvr-htr-keeper.service /usr/local/bin/xcvr_host_tx_ready_keeper.sh
+sudo systemctl daemon-reload >/dev/null 2>&1 || true
+
 echo "[revert] done"

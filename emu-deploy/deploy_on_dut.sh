@@ -115,18 +115,56 @@ for i in $(seq 1 24); do
   [ "$ni" -ge 28 ] && [ "$nd" -ge 28 ] && break
 done
 
-# --- 5) force host_tx_ready=true so xcvrd activates the CMIS datapath ---------
+# --- 5) keep host_tx_ready=true so xcvrd activates + KEEPS the CMIS datapath ---
 # The emulator advertises a 40G app (matches the ports), so CmisManager reaches
 # cmis_state=READY. But on the software-SAI vs the ASIC never asserts
 # host_tx_ready, so xcvrd "Forces Tx laser OFF" and the datapath stays
-# DataPathDeactivated (module stuck ModuleLowPwr). Setting host_tx_ready=true in
-# STATE_DB lets CmisManager finish: ModuleReady + DataPathActivated + error OK.
-echo "[native] STEP 5: forcing host_tx_ready=true on all ports (vs SAI doesn't assert it)"
-nport=0
-for p in $(sonic-db-cli CONFIG_DB KEYS 'PORT|Ethernet*' 2>/dev/null | sed 's/PORT|//'); do
-  sonic-db-cli STATE_DB HSET "PORT_TABLE|$p" host_tx_ready true >/dev/null 2>&1 && nport=$((nport+1))
+# DataPathDeactivated. Worse, portsorch CLEARS host_tx_ready on port events / sfp
+# resets / lpmode toggles, so a one-time sweep is not enough: tests that reset or
+# low-power a module (sfputil reset, api test_reset/test_lpmode/test_tx_disable)
+# leave the datapath deactivated for every later test. Fix: install a small
+# KEEPER daemon (systemd service) that continuously re-asserts host_tx_ready=true
+# whenever it is not — which also re-triggers CmisManager to re-activate the
+# datapath after those tests. Runs on the DUT host so it survives `config reload`
+# (which restarts pmon/swss but not host services) and, via systemd, reboots too.
+echo "[native] STEP 5: install + start the host_tx_ready keeper daemon (vs SAI clears it)"
+
+sudo tee /usr/local/bin/xcvr_host_tx_ready_keeper.sh >/dev/null <<'KEEPER'
+#!/bin/bash
+# Continuously assert host_tx_ready=true on all front-panel ports so xcvrd's
+# CmisManager keeps the emulated CMIS datapath ACTIVATED. Only writes when the
+# value is not already "true", so a write happens exactly when portsorch clears
+# it — that change event re-triggers CmisManager to re-activate. Installed by the
+# xcvr-emu native deploy (deploy_on_dut.sh).
+export PATH=/usr/local/bin:/usr/bin:/bin
+INTERVAL="${HTR_INTERVAL:-4}"
+while true; do
+  for k in $(sonic-db-cli STATE_DB KEYS 'PORT_TABLE|Ethernet*' 2>/dev/null); do
+    v=$(sonic-db-cli STATE_DB HGET "$k" host_tx_ready 2>/dev/null)
+    [ "$v" = "true" ] || sonic-db-cli STATE_DB HSET "$k" host_tx_ready true >/dev/null 2>&1
+  done
+  sleep "$INTERVAL"
 done
-echo "    set host_tx_ready=true on $nport ports; waiting 30s for CmisManager to activate datapaths"
+KEEPER
+sudo chmod +x /usr/local/bin/xcvr_host_tx_ready_keeper.sh
+
+sudo tee /etc/systemd/system/xcvr-htr-keeper.service >/dev/null <<'UNIT'
+[Unit]
+Description=xcvr-emu host_tx_ready keeper (assert host_tx_ready for CMIS datapath activation)
+After=database.service
+
+[Service]
+ExecStart=/usr/local/bin/xcvr_host_tx_ready_keeper.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable xcvr-htr-keeper.service >/dev/null 2>&1 || true
+sudo systemctl restart xcvr-htr-keeper.service
+echo "    keeper: $(systemctl is-active xcvr-htr-keeper.service 2>/dev/null) — waiting 30s for CmisManager to activate datapaths"
 sleep 30
 echo "    sample: $(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' module_state 2>/dev/null) / DP1=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' DP1State 2>/dev/null)"
 
@@ -141,11 +179,7 @@ ni=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l)
 if [ "${ni:-0}" -lt 28 ]; then
   echo "[native] STEP 6: TRANSCEIVER_INFO=$ni (<28) — xcvrd raced the emulator startup; restarting xcvrd to re-scan"
   docker exec pmon supervisorctl restart xcvrd >/dev/null 2>&1 || true
-  sleep 8
-  # re-assert host_tx_ready (persists across the restart, but re-set defensively)
-  for p in $(sonic-db-cli CONFIG_DB KEYS 'PORT|Ethernet*' 2>/dev/null | sed 's/PORT|//'); do
-    sonic-db-cli STATE_DB HSET "PORT_TABLE|$p" host_tx_ready true >/dev/null 2>&1
-  done
+  # the host_tx_ready keeper (STEP 5) keeps re-asserting across the restart
   for i in $(seq 1 24); do
     sleep 5
     ni=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l)
