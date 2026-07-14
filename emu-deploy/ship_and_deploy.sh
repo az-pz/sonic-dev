@@ -68,4 +68,29 @@ docker exec --user azureuser "$CNAME" bash -lc "$SSHP ssh $SSHOPT $DUT 'tail -25
 echo "[ship] clearing mgmt duthost.facts cache so the new platform.json is picked up"
 docker exec --user azureuser "$CNAME" bash -lc "rm -f /data/sonic-mgmt/tests/_cache/*/basic_facts.pickle 2>/dev/null; rm -rf /data/sonic-mgmt/.pytest_cache/v/BASIC_FACTS_* 2>/dev/null; true"
 
+# Install the declarative transceiver inventory (emulator-specific expected-optic
+# data) into the mgmt container so the tests/transceiver/ suite can load it. This
+# lives beside the emulator config because it MIRRORS what the emulator reports
+# (vendor xcvr-emu, PN EMU-40G-LR4, 40G ports — see gen_emu_config.py). It must
+# land in the mgmt container's sonic-mgmt repo (the test runner), which the DUT
+# cannot write, so it is done here rather than in deploy_on_dut.sh. Idempotent;
+# container copy only — nothing is committed into the sonic-mgmt repo.
+INV_DIR="$HERE/transceiver-inventory"
+if [ -d "$INV_DIR" ]; then
+  echo "[ship] installing transceiver inventory into mgmt container"
+  INV_DST=/data/sonic-mgmt/ansible/files/transceiver/inventory
+  tar czf /tmp/xcvr-inv.tgz -C "$INV_DIR" .
+  docker cp /tmp/xcvr-inv.tgz "$CNAME":/tmp/xcvr-inv.tgz
+  rm -f /tmp/xcvr-inv.tgz
+  docker exec --user root "$CNAME" bash -c \
+    "mkdir -p '$INV_DST' && tar xzf /tmp/xcvr-inv.tgz -C '$INV_DST' && rm -f /tmp/xcvr-inv.tgz"
+  if docker exec --user root "$CNAME" test -f "$INV_DST/normalization_mappings.json"; then
+    echo "[ship] transceiver inventory installed at $INV_DST"
+  else
+    echo "[ship] ERROR: transceiver inventory install failed (missing files under $INV_DST)"; exit 1
+  fi
+else
+  echo "[ship] no transceiver-inventory beside this script — skipping inventory install"
+fi
+
 echo "[ship] native deploy complete"

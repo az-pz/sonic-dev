@@ -414,18 +414,20 @@ transceiver_tests_all() {
 
 # ---------------------------------------------------------------------------
 # transceiver_eeprom_tests: the declarative tests/transceiver/eeprom/ suite
-#   (presence + eeprom-content), kept in its OWN phase because it needs two
-#   things the vs-validated sfp/api suites do not:
-#     1. the transceiver inventory (inject_transceiver_inventory), and
-#     2. a non-"vs" asic_type — tests/transceiver/conftest.py hard-skips the
-#        whole suite when duthost.facts["asic_type"] == "vs".
+#   (presence + eeprom-content), kept in its OWN phase because it needs a
+#   non-"vs" asic_type — tests/transceiver/conftest.py hard-skips the whole
+#   suite when duthost.facts["asic_type"] == "vs".
 #   We flip asic_type by adding it to the DUT's platform.json (get_basic_facts
 #   does basic_facts.update(platform_json)), then REVERT it after the run so the
 #   vs-validated suites are never perturbed. kvm_platform.json itself is left
 #   asic_type-free, so a normal `emulator` deploy keeps asic_type == vs.
 #
-#   Requires the emulator deployed first (datapaths active). RESET_TESTS has no
-#   effect here (the eeprom suite has no reset test).
+#   The transceiver inventory this suite reads is installed into the mgmt
+#   container by the emulator deploy (ship_and_deploy.sh), NOT here — it is
+#   emulator data (mirrors gen_emu_config.py: vendor xcvr-emu, PN EMU-40G-LR4).
+#
+#   Requires the emulator deployed first (datapaths active + inventory shipped).
+#   RESET_TESTS has no effect here (the eeprom suite has no reset test).
 # ---------------------------------------------------------------------------
 _dut_platform_json_path() {
   # Resolve the DUT's platform.json path from inside the mgmt container.
@@ -457,7 +459,6 @@ transceiver_eeprom_tests() {
   parse_verbose "${1:-}" && shift || true
   log "Transceiver eeprom suite (declarative; needs inventory + non-vs asic_type)  (verbose=${VERBOSE:-0})"
   inject_conn_graph
-  inject_transceiver_inventory
   # Flip asic_type to defeat the suite's vs skip-gate, run, then ALWAYS revert so
   # the vs-validated suites keep seeing asic_type == vs.
   local asic_override="${XCVR_EMU_ASIC_TYPE:-broadcom}"
@@ -588,45 +589,6 @@ PY'; then
 }
 
 # ---------------------------------------------------------------------------
-# inject_transceiver_inventory: provide the declarative transceiver inventory
-#   that the modern tests/transceiver/ suite requires. That suite's session
-#   fixture `port_attributes_dict` (tests/transceiver/conftest.py) builds each
-#   port's EXPECTED optic attributes from ansible/files/transceiver/inventory/,
-#   a tree upstream sonic-mgmt does NOT ship (git provides only EXAMPLES under
-#   docs/testplan/transceiver/examples/). Without it every transceiver test
-#   ERRORs at setup ("normalization_mappings.json not found").
-#
-#   We ship a vlab-01 inventory in emu-deploy/transceiver-inventory/ that mirrors
-#   what the xcvr-emu emulator reports (vendor xcvr-emu, PN EMU-40G-LR4, 40G
-#   ports) and copy it into the mgmt container's ansible/files/ at runtime — the
-#   container copy only, nothing committed into the sonic-mgmt repo. Idempotent.
-#
-#   NOTE: the emulator deploy also stamps asic_type into platform.json (via
-#   kvm_platform.json) to clear the suite's asic_type=="vs" skip gate.
-# ---------------------------------------------------------------------------
-inject_transceiver_inventory() {
-  local src="$EMU_DEPLOY_DIR/transceiver-inventory"
-  [ -d "$src" ] || { log "no transceiver-inventory at $src — skipping"; return 0; }
-  log "Inject transceiver inventory for $DUT (fixes port_attributes_dict setup ERROR)"
-  local dst="/data/sonic-mgmt/ansible/files/transceiver/inventory"
-  local tar; tar="$(mktemp).tgz"
-  tar czf "$tar" -C "$src" .
-  docker exec --user root "$MGMT_CONTAINER" mkdir -p "$dst"
-  docker cp "$tar" "$MGMT_CONTAINER:/tmp/xcvr-inv.tgz"
-  rm -f "$tar"
-  docker exec --user root "$MGMT_CONTAINER" bash -c \
-    "tar xzf /tmp/xcvr-inv.tgz -C '$dst' && rm -f /tmp/xcvr-inv.tgz"
-  if docker exec --user "$HOST_USER" "$MGMT_CONTAINER" \
-        test -f "$dst/normalization_mappings.json" \
-     && docker exec --user "$HOST_USER" "$MGMT_CONTAINER" \
-        test -f "$dst/dut_info/${DUT}.json"; then
-    ok "transceiver inventory injected (normalization_mappings + dut_info/${DUT}.json)"
-  else
-    die "transceiver inventory injection failed (missing files under $dst)"
-  fi
-}
-
-# ---------------------------------------------------------------------------
 # emulator: run the xcvr-emu CMIS emulator as a standalone Docker container on
 #   the DUT and install the sonic_platform gRPC bridge into pmon, so xcvrd
 #   populates TRANSCEIVER_INFO + TRANSCEIVER_DOM_SENSOR in STATE_DB (what
@@ -675,7 +637,7 @@ emulator() {
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
-  ok "emulator deployed (native) — host sfputil + pmon xcvrd both use the emulator; STATE_DB populated"
+  ok "emulator deployed (native) — host sfputil + pmon xcvrd both use the emulator; STATE_DB populated; transceiver inventory installed in mgmt"
 }
 
 # ---------------------------------------------------------------------------
