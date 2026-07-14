@@ -130,6 +130,30 @@ echo "    set host_tx_ready=true on $nport ports; waiting 30s for CmisManager to
 sleep 30
 echo "    sample: $(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' module_state 2>/dev/null) / DP1=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet8' DP1State 2>/dev/null)"
 
+# --- 6) fix xcvrd startup race so TRANSCEIVER_INFO is populated ---------------
+# xcvrd's initial SFP scan can run before the freshly (re)created emulator gRPC
+# server is ready, leaving TRANSCEIVER_INFO empty ("show interfaces transceiver
+# info" -> "Not detected") even though the bridge reads fine — this breaks the
+# show-CLI-based tests (transceiver/eeprom, test_xcvr_info_in_db). With the
+# emulator now confirmed up, a single xcvrd restart forces a clean re-scan that
+# populates TRANSCEIVER_INFO + DOM. Only done if INFO is short (idempotent).
+ni=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l)
+if [ "${ni:-0}" -lt 28 ]; then
+  echo "[native] STEP 6: TRANSCEIVER_INFO=$ni (<28) — xcvrd raced the emulator startup; restarting xcvrd to re-scan"
+  docker exec pmon supervisorctl restart xcvrd >/dev/null 2>&1 || true
+  sleep 8
+  # re-assert host_tx_ready (persists across the restart, but re-set defensively)
+  for p in $(sonic-db-cli CONFIG_DB KEYS 'PORT|Ethernet*' 2>/dev/null | sed 's/PORT|//'); do
+    sonic-db-cli STATE_DB HSET "PORT_TABLE|$p" host_tx_ready true >/dev/null 2>&1
+  done
+  for i in $(seq 1 24); do
+    sleep 5
+    ni=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l)
+    echo "    [$((i*5))s] INFO=$ni"
+    [ "$ni" -ge 28 ] && break
+  done
+fi
+
 echo "===EMU===";   docker ps --filter "name=^/${EMU_CTR}$" --format '{{.Names}} {{.Status}}'
 echo "===XCVRD==="; docker exec pmon supervisorctl status xcvrd 2>&1
 echo "===INFO==="; sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | wc -l
