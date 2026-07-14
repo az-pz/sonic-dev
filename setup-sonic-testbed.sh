@@ -24,6 +24,8 @@
 #   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
 #   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
 #   RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all  # skip the SLOW module-reset tests
+#   ./setup-sonic-testbed.sh transceiver_eeprom_tests  # declarative transceiver/eeprom suite
+#                                              #   (injects inventory + temporarily flips asic_type)
 #   ./setup-sonic-testbed.sh emulator          # native emulator deploy: host sonic_platform:=bridge,
 #                                              #   skip_xcvrd=false, pmon inject, + xcvr-emu container
 #   ./setup-sonic-testbed.sh emulator_revert   # undo the native emulator deploy (restore stock platform)
@@ -379,6 +381,10 @@ transceiver_tests() {
 #     - platform_tests/api/test_sfp.py           (23 SFP platform-API methods,
 #                                                 incl. lpmode + error_description)
 #
+#   The declarative transceiver/eeprom suite is NOT run here — it needs a non-vs
+#   asic_type (which would perturb these vs-validated suites in a shared pytest
+#   session), so it has its own phase: `transceiver_eeprom_tests`.
+#
 #   RESET TESTS TOGGLE: the module-reset tests (sfputil `reset` + api `test_reset`)
 #   are SLOW (they reset all 32 emulated modules and wait for recovery). Skip them
 #   with RESET_TESTS=0:
@@ -404,6 +410,64 @@ transceiver_tests_all() {
     "platform_tests/sfp/test_sfputil.py" \
     "platform_tests/api/test_sfp.py" \
     "${reset_deselect[@]}"
+}
+
+# ---------------------------------------------------------------------------
+# transceiver_eeprom_tests: the declarative tests/transceiver/eeprom/ suite
+#   (presence + eeprom-content), kept in its OWN phase because it needs two
+#   things the vs-validated sfp/api suites do not:
+#     1. the transceiver inventory (inject_transceiver_inventory), and
+#     2. a non-"vs" asic_type — tests/transceiver/conftest.py hard-skips the
+#        whole suite when duthost.facts["asic_type"] == "vs".
+#   We flip asic_type by adding it to the DUT's platform.json (get_basic_facts
+#   does basic_facts.update(platform_json)), then REVERT it after the run so the
+#   vs-validated suites are never perturbed. kvm_platform.json itself is left
+#   asic_type-free, so a normal `emulator` deploy keeps asic_type == vs.
+#
+#   Requires the emulator deployed first (datapaths active). RESET_TESTS has no
+#   effect here (the eeprom suite has no reset test).
+# ---------------------------------------------------------------------------
+_dut_platform_json_path() {
+  # Resolve the DUT's platform.json path from inside the mgmt container.
+  dexec "$MGMT_CONTAINER" bash -lc \
+    "sshpass -p '$DUT_PASS' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25 admin@$DUT_IP \
+       'echo /usr/share/sonic/device/\$(python3 -c \"from sonic_py_common import device_info; print(device_info.get_platform())\")/platform.json'" \
+    2>/dev/null | tr -d '\r' | tail -1
+}
+
+_set_dut_asic_type() {
+  # $1 = asic_type value, or empty string to REMOVE the key
+  local val="$1" pj; pj="$(_dut_platform_json_path)"
+  [ -n "$pj" ] || die "could not resolve DUT platform.json path"
+  local py
+  if [ -n "$val" ]; then
+    py="import json;p='$pj';d=json.load(open(p));d['asic_type']='$val';json.dump(d,open(p,'w'),indent=2)"
+  else
+    py="import json;p='$pj';d=json.load(open(p));d.pop('asic_type',None);json.dump(d,open(p,'w'),indent=2)"
+  fi
+  dexec "$MGMT_CONTAINER" bash -lc \
+    "sshpass -p '$DUT_PASS' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25 admin@$DUT_IP \
+       \"sudo python3 -c \\\"$py\\\"\""
+  # duthost.facts is file-cached in the mgmt container — clear it so the change is seen.
+  dexec "$MGMT_CONTAINER" bash -lc \
+    "rm -f /data/sonic-mgmt/tests/_cache/*/basic_facts.pickle 2>/dev/null; true"
+}
+
+transceiver_eeprom_tests() {
+  parse_verbose "${1:-}" && shift || true
+  log "Transceiver eeprom suite (declarative; needs inventory + non-vs asic_type)  (verbose=${VERBOSE:-0})"
+  inject_conn_graph
+  inject_transceiver_inventory
+  # Flip asic_type to defeat the suite's vs skip-gate, run, then ALWAYS revert so
+  # the vs-validated suites keep seeing asic_type == vs.
+  local asic_override="${XCVR_EMU_ASIC_TYPE:-broadcom}"
+  log "  temporarily setting DUT asic_type=$asic_override (reverted after the run)"
+  _set_dut_asic_type "$asic_override"
+  local rc=0
+  run_pytest "transceiver/eeprom/" || rc=$?
+  log "  reverting DUT asic_type back to stock (vs)"
+  _set_dut_asic_type "" || true
+  return "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -520,6 +584,45 @@ PY'; then
     ok "connection graph injected — vlab-01 resolves in conn_graph_facts"
   else
     die "connection graph injection failed to resolve for $DUT"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# inject_transceiver_inventory: provide the declarative transceiver inventory
+#   that the modern tests/transceiver/ suite requires. That suite's session
+#   fixture `port_attributes_dict` (tests/transceiver/conftest.py) builds each
+#   port's EXPECTED optic attributes from ansible/files/transceiver/inventory/,
+#   a tree upstream sonic-mgmt does NOT ship (git provides only EXAMPLES under
+#   docs/testplan/transceiver/examples/). Without it every transceiver test
+#   ERRORs at setup ("normalization_mappings.json not found").
+#
+#   We ship a vlab-01 inventory in emu-deploy/transceiver-inventory/ that mirrors
+#   what the xcvr-emu emulator reports (vendor xcvr-emu, PN EMU-40G-LR4, 40G
+#   ports) and copy it into the mgmt container's ansible/files/ at runtime — the
+#   container copy only, nothing committed into the sonic-mgmt repo. Idempotent.
+#
+#   NOTE: the emulator deploy also stamps asic_type into platform.json (via
+#   kvm_platform.json) to clear the suite's asic_type=="vs" skip gate.
+# ---------------------------------------------------------------------------
+inject_transceiver_inventory() {
+  local src="$EMU_DEPLOY_DIR/transceiver-inventory"
+  [ -d "$src" ] || { log "no transceiver-inventory at $src — skipping"; return 0; }
+  log "Inject transceiver inventory for $DUT (fixes port_attributes_dict setup ERROR)"
+  local dst="/data/sonic-mgmt/ansible/files/transceiver/inventory"
+  local tar; tar="$(mktemp).tgz"
+  tar czf "$tar" -C "$src" .
+  docker exec --user root "$MGMT_CONTAINER" mkdir -p "$dst"
+  docker cp "$tar" "$MGMT_CONTAINER:/tmp/xcvr-inv.tgz"
+  rm -f "$tar"
+  docker exec --user root "$MGMT_CONTAINER" bash -c \
+    "tar xzf /tmp/xcvr-inv.tgz -C '$dst' && rm -f /tmp/xcvr-inv.tgz"
+  if docker exec --user "$HOST_USER" "$MGMT_CONTAINER" \
+        test -f "$dst/normalization_mappings.json" \
+     && docker exec --user "$HOST_USER" "$MGMT_CONTAINER" \
+        test -f "$dst/dut_info/${DUT}.json"; then
+    ok "transceiver inventory injected (normalization_mappings + dut_info/${DUT}.json)"
+  else
+    die "transceiver inventory injection failed (missing files under $dst)"
   fi
 }
 
