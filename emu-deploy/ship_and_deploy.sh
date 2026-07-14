@@ -66,38 +66,55 @@ echo "[ship] --- deploy log tail ---"
 docker exec --user "$CTR_USER" "$CNAME" bash -lc "$SSHP ssh $SSHOPT $DUT 'tail -25 /home/admin/native.log'" 2>/dev/null || true
 [ "$done" = "1" ] || { echo "[ship] ERROR: native deploy did not signal completion in time (see log above)"; exit 1; }
 
-# Stamp a non-"vs" asic_type into the DUT's platform.json. Current sonic-mgmt
-# marks the entire transceiver/SFP platform-test suite as skip/xfail whenever
-# duthost.facts["asic_type"] == "vs" (it assumes a virtual switch has no optics).
-# The xcvr-emu emulator DOES provide transceivers, so this assumption no longer
-# holds for an emulator-backed DUT — override it here as part of the emulator
-# setup so the suite actually RUNS (real PASS/FAIL) instead of being skipped.
-# get_basic_facts() does basic_facts.update(platform_json), so a top-level
-# "asic_type" key in platform.json wins. Set BEFORE clearing the facts cache
-# below. Configurable via EMU_ASIC_TYPE (default broadcom); set to "vs" to keep
-# the stock behavior. base64 avoids nested ssh/quoting issues.
+# Stamp a non-"vs" asic_type so sonic-mgmt actually RUNS the transceiver/SFP
+# suite against the emulator. Current sonic-mgmt marks that whole suite
+# skip/xfail when asic_type == "vs" (it assumes a virtual switch has no optics),
+# and it resolves asic_type from TWO places:
+#   * conditional_mark plugin  -> `dut_basic_facts` -> /etc/sonic/sonic_version.yml
+#   * duthost.facts            -> sonic_basic_facts -> platform.json (updates over
+#                                 the version info)
+# The xcvr-emu emulator DOES provide transceivers, so override asic_type in BOTH
+# as part of the emulator setup. Done BEFORE clearing the facts caches below.
+# Configurable via EMU_ASIC_TYPE (default broadcom); set to "vs" to keep stock.
+# base64 avoids nested ssh/quoting issues.
 EMU_ASIC_TYPE="${EMU_ASIC_TYPE:-broadcom}"
-echo "[ship] stamping asic_type=$EMU_ASIC_TYPE into the DUT platform.json (emulator provides transceivers; lifts the vs skip/xfail on the SFP suite)"
-ASIC_PY='import json,sys
-from sonic_py_common import device_info
-p="/usr/share/sonic/device/%s/platform.json" % device_info.get_platform()
+echo "[ship] stamping asic_type=$EMU_ASIC_TYPE on the DUT (sonic_version.yml + platform.json) so the vs-gated transceiver suite runs against the emulator"
+ASIC_PY='import sys, re, json
+val = sys.argv[1]
+# 1) sonic_version.yml — authoritative for dut_basic_facts / conditional_mark
+vf = "/etc/sonic/sonic_version.yml"
 try:
-    d=json.load(open(p))
-except FileNotFoundError:
-    d={}
-d["asic_type"]=sys.argv[1]
-json.dump(d,open(p,"w"),indent=2)
-print("set asic_type=%s in %s" % (sys.argv[1], p))'
+    s = open(vf).read()
+    if re.search(r"^asic_type:", s, re.M):
+        s = re.sub(r"^asic_type:.*$", "asic_type: %s" % val, s, flags=re.M)
+    else:
+        s = s.rstrip("\n") + "\nasic_type: %s\n" % val
+    open(vf, "w").write(s)
+    print("set asic_type=%s in %s" % (val, vf))
+except Exception as e:
+    print("WARN sonic_version.yml:", e)
+# 2) platform.json — for duthost.facts (sonic_basic_facts updates over version info)
+try:
+    from sonic_py_common import device_info
+    pj = "/usr/share/sonic/device/%s/platform.json" % device_info.get_platform()
+    try:
+        d = json.load(open(pj))
+    except FileNotFoundError:
+        d = {}
+    d["asic_type"] = val
+    json.dump(d, open(pj, "w"), indent=2)
+    print("set asic_type=%s in %s" % (val, pj))
+except Exception as e:
+    print("WARN platform.json:", e)'
 ASIC_B64="$(printf '%s' "$ASIC_PY" | base64 | tr -d '\n')"
 docker exec --user "$CTR_USER" "$CNAME" bash -lc \
   "$SSHP ssh $SSHOPT $DUT \"echo $ASIC_B64 | base64 -d | sudo python3 - $EMU_ASIC_TYPE\"" \
   || echo "[ship] WARN: could not stamp asic_type (transceiver suite may stay vs-skipped)"
 
-# The DUT's platform.json changed (chassis.sfps + asic_type). duthost.facts is
-# file-cached in the mgmt container, so clear it — otherwise the platform SFP-API
-# tests would keep reading the stale (chassis-less / vs) facts.
-echo "[ship] clearing mgmt duthost.facts cache so the new platform.json is picked up"
-docker exec --user "$CTR_USER" "$CNAME" bash -lc "rm -f /data/sonic-mgmt/tests/_cache/*/basic_facts.pickle 2>/dev/null; rm -rf /data/sonic-mgmt/.pytest_cache/v/BASIC_FACTS_* 2>/dev/null; true"
+# The DUT's platform.json / sonic_version.yml changed. duthost.facts AND the
+# conditional_mark plugin cache facts, so clear both so the new asic_type is seen.
+echo "[ship] clearing mgmt duthost.facts + conditional_mark BASIC_FACTS cache so the new asic_type is picked up"
+docker exec --user "$CTR_USER" "$CNAME" bash -lc "rm -f /data/sonic-mgmt/tests/_cache/*/basic_facts.pickle 2>/dev/null; rm -rf /data/sonic-mgmt/.pytest_cache/v/BASIC_FACTS_* /data/sonic-mgmt/tests/.pytest_cache/v/BASIC_FACTS_* 2>/dev/null; true"
 
 # Install the declarative transceiver inventory (emulator-specific expected-optic
 # data) into the mgmt container so the tests/transceiver/ suite can load it. This
