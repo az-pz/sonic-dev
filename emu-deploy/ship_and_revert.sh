@@ -8,6 +8,7 @@ set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVERT="$HERE/revert_on_dut.sh"
 CNAME="${MGMT_CONTAINER:-$(docker ps --format '{{.Names}}' | grep -i mgmt | head -1)}"
+CTR_USER="${CTR_USER:-$(id -un)}"
 DUT_IP="${DUT_IP:-10.250.0.101}"
 DUT_PASS="${DUT_PASS:-password}"
 SSHP="sshpass -p $DUT_PASS"
@@ -18,6 +19,6 @@ DUT="admin@$DUT_IP"
 
 echo "[revert] container=$CNAME — shipping + running revert on $DUT"
 docker cp "$REVERT" "$CNAME":/tmp/revert_on_dut.sh
-docker exec --user azureuser "$CNAME" bash -lc "$SSHP scp $SSHOPT /tmp/revert_on_dut.sh $DUT:/home/admin/revert_on_dut.sh"
-docker exec --user azureuser "$CNAME" bash -lc "$SSHP ssh $SSHOPT $DUT 'bash /home/admin/revert_on_dut.sh'"
+docker exec --user "$CTR_USER" "$CNAME" bash -lc "$SSHP scp $SSHOPT /tmp/revert_on_dut.sh $DUT:/home/admin/revert_on_dut.sh"
+docker exec --user "$CTR_USER" "$CNAME" bash -lc "$SSHP ssh $SSHOPT $DUT 'bash /home/admin/revert_on_dut.sh'"
 echo "[revert] done — DUT restored to stock platform"
