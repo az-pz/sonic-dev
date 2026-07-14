@@ -1,0 +1,7 @@
+{
+  "Ethernet4:100:4,Ethernet112:128:4": {
+    "vendor_name": "xcvr-emu",
+    "vendor_pn": "EMU-40G-LR4",
+    "transceiver_configuration": "LR-40-QSFPDD-40G_STRAIGHT-0x0F-0x0F"
+  }
+}

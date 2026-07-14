@@ -12,6 +12,7 @@ DEFAULTS = """    defaults: &defaults
       SFF8024Identifier: "QSFP_DD"
       SFF8024IdentifierCopy: "QSFP_DD"
       VendorName: "xcvr-emu"
+      VendorPN: "EMU-40G-LR4"
       VendorRev: "01"
       VendorOUI: 0x010203
       VendorSN: "0123456789"
