@@ -299,8 +299,27 @@ tbcli() {
 # ---------------------------------------------------------------------------
 # Phase 8: start neighbor VMs
 # ---------------------------------------------------------------------------
+# On hosts that already provide Open vSwitch through a *conflicting* package set
+# — notably NVIDIA DOCA / BlueField, whose doca-openvswitch-common declares
+# "Conflicts: openvswitch-common" — sonic-mgmt's vm_set host_setup task cannot
+# apt-install openvswitch-switch, and because that apt call is transactional the
+# ENTIRE 'start-vms' play fails (taking libvirt/qemu with it). OVS is already
+# present on such hosts, so drop just that one package from the cloned harness
+# task. Idempotent; leaves the kernel tuning and libvirt/qemu installs intact.
+patch_vm_host_setup_for_doca() {
+  command -v ovs-vsctl >/dev/null 2>&1 || return 0   # only when OVS already present
+  local f="$REPO_DIR/ansible/roles/vm_set/tasks/host_setup.yml"
+  [ -f "$f" ] || return 0
+  if grep -qE '^[[:space:]]*-[[:space:]]*openvswitch-switch[[:space:]]*$' "$f"; then
+    warn "OVS already present (likely DOCA) — removing openvswitch-switch from vm_set host_setup to avoid an apt conflict"
+    sed -i -E '/^[[:space:]]*-[[:space:]]*openvswitch-switch[[:space:]]*$/d' "$f"
+    ok "patched $(basename "$f") (dropped openvswitch-switch; DOCA OVS is used instead)"
+  fi
+}
+
 start_vms() {
   log "Phase 8: start $NUM_VMS $VM_TYPE neighbor VMs"
+  patch_vm_host_setup_for_doca
   tbcli "-t $TB_FILE -m $INV -n $NUM_VMS -k $VM_TYPE start-vms $SERVER $VAULT_FILE"
   timeout 20 sudo virsh list --all 2>/dev/null || true
   ok "neighbor VMs started"
