@@ -42,6 +42,24 @@ fresh data; emulator down → fail-fast with zero false passes.
 
 No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2.)
 
+No changes to xcvrd. The only bridge addition is a test-only error-injection hook
+(a STATE_DB table the bridge reads); the emulator is unchanged.
+
+## v2 scope
+
+- `tests/test_status_error.py` — inject error events (I2C-stuck / bad-EEPROM =
+  blocking, high-temp = non-blocking): `TRANSCEIVER_STATUS_SW.error` is set, DOM
+  is removed for blocking errors (static INFO kept), DOM is retained for
+  non-blocking, and recovery clears the error + repopulates.
+- `tests/test_lpmode_reset.py` — `sfputil reset` / `lpmode` drive the module and
+  we assert the exact ModuleGlobalControls (00h:26) write on the Monitor stream
+  (reset → SoftwareReset 0x08, lpmode on → LowPwrRequestSW 0x10) + lpmode show.
+
+Error injection uses a bridge hook: `chassis.get_change_event` reads a STATE_DB
+`XCVR_EMU_INJECT|<index>` row (field `event` = SfpBase error bitmap) and surfaces
+that event exactly as a real platform reports a hardware error. The table never
+exists in production, so the hook is inert there.
+
 ## Golden baseline (conformance mode)
 
 `golden/<port>.json` is the reference xcvrd's normalized STATE_DB projection

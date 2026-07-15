@@ -17,6 +17,7 @@ from lib.emu import EmulatorClient, port_to_index, index_to_port  # noqa: E402
 from lib.monitor import MonitorRecorder  # noqa: E402
 from lib.statedb import StateDB  # noqa: E402
 from lib.xcvrd_ctl import XcvrdControl  # noqa: E402
+from lib.inject import ErrorInjector  # noqa: E402
 from lib import cmis  # noqa: E402
 from lib.waits import wait_until, eventually, stays  # noqa: E402
 
@@ -95,6 +96,11 @@ def xcvrd(statedb):
 
 
 @pytest.fixture(scope="session")
+def injector(statedb):
+    return ErrorInjector(statedb)
+
+
+@pytest.fixture(scope="session")
 def monitor():
     m = MonitorRecorder().start()
     yield m
@@ -116,7 +122,7 @@ def test_index(emu):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _clean_baseline(emu, statedb, xcvrd, test_index):
+def _clean_baseline(emu, statedb, xcvrd, injector, test_index):
     """Establish a fresh, verified-live baseline before any test runs.
 
     CRITICAL: TRANSCEIVER_* rows live in Redis STATE_DB and survive xcvrd being
@@ -125,6 +131,9 @@ def _clean_baseline(emu, statedb, xcvrd, test_index):
     repopulate -- proving it is alive and emulator-backed. If it can't, we fail
     the whole suite loudly instead of letting stale data mask a broken daemon.
     """
+    # 0) clear any leftover error injections from a previous run.
+    injector.clear_all()
+
     # 1) emulator must be reachable and every module plugged in.
     try:
         for idx in emu.indices():
@@ -171,6 +180,29 @@ def module(emu, statedb, test_index):
         emu.plug(test_index)
         emu.write_field(test_index, cmis.TEMP, snap_temp)
         emu.write_field(test_index, cmis.VCC, snap_vcc)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@pytest.fixture
+def inject(injector, statedb, emu, test_index):
+    """Error-injection handle; clears all injections on teardown so a leftover
+    error can't leak into later tests."""
+    injector.clear_all()
+    yield injector
+    injector.clear_all()
+
+
+@pytest.fixture
+def sfp_control(emu, statedb, test_index):
+    """Handle for lpmode/reset control tests; restores lpmode off + a healthy
+    module on teardown so control-plane side effects don't leak."""
+    from lib import sfputil
+    port = index_to_port(test_index)
+    yield sfputil
+    try:
+        sfputil.lpmode(port, on=False)
+        emu.plug(test_index)
     except Exception:  # noqa: BLE001
         pass
 

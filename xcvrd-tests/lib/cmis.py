@@ -12,6 +12,13 @@ VCC = (0, 0, 16, 2)      # U16, 100 uV
 AUX1 = (0, 0, 18, 2)
 AUX2 = (0, 0, 20, 2)
 
+# ModuleGlobalControls (CMIS 00h:26) -- written by lpmode/reset control ops.
+MODULE_GLOBAL_CONTROLS = (0, 0, 26, 1)
+MGC_PAGE = 0
+MGC_OFFSET = 26
+SOFTWARE_RESET_BIT = 0x08   # 00h:26.3 -- set by reset()
+LOW_PWR_REQUEST_BIT = 0x10  # 00h:26.4 -- set by set_lpmode(True)
+
 # Identity fields (page 00h) used by info-content sanity checks.
 SFF8024_IDENTIFIER = (0, 0, 0, 1)
 

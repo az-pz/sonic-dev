@@ -56,7 +56,10 @@ class StateDB:
         toks = [t for t in text.split("\n") if t != ""]
         return {toks[i]: toks[i + 1] for i in range(0, len(toks) - 1, 2)}
 
-    # --- writes (used only for test setup/teardown, e.g. flush) -------------
+    # --- writes (used only for test setup/teardown, e.g. flush / inject) -----
+    def hset(self, key, field, value):
+        return self._run("HSET", key, field, value)
+
     def delete(self, key):
         return self._run("DEL", key)
 
