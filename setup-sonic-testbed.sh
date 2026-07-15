@@ -761,8 +761,12 @@ xcvrd_tests() {
 
   log "Running pytest black-box suite on $DUT"
   [ "${1:-}" = "--" ] && shift   # allow `xcvrd_tests -- <pytest args>`
+  # Encode pytest args (NUL-delimited) so quoted, space-containing args like
+  # -m "not slow" survive the docker exec -> ssh -> run.sh nesting intact.
+  local args_b64=""
+  [ "$#" -gt 0 ] && args_b64="$(printf '%s\0' "$@" | base64 -w0)"
   docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
-    "$sshp ssh $sshopt $dut 'bash /home/admin/xcvrd-tests/run.sh $*'" \
+    "$sshp ssh $sshopt $dut 'PYTEST_ARGS_B64=$args_b64 bash /home/admin/xcvrd-tests/run.sh'" \
     || die "xcvrd black-box tests FAILED"
   ok "xcvrd black-box tests passed"
 }

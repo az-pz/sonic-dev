@@ -15,6 +15,14 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYDEPS="$HERE/.pydeps"
 
+# Args may arrive base64-encoded (NUL-delimited) via PYTEST_ARGS_B64 so they
+# survive the setup-sonic-testbed.sh -> docker exec -> ssh nesting without the
+# quote/word-splitting mangling that a plain "$*" suffers (e.g. -m "not slow").
+if [ -n "${PYTEST_ARGS_B64:-}" ]; then
+  mapfile -d '' -t _DECODED < <(printf '%s' "$PYTEST_ARGS_B64" | base64 -d)
+  set -- "${_DECODED[@]}"
+fi
+
 # --capture-golden: (re)capture the golden baseline from the reference xcvrd
 # instead of comparing against it. Other args pass through to pytest.
 PYTEST_ARGS=()
