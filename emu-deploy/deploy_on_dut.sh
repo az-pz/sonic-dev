@@ -15,6 +15,7 @@ EMU_CTR=xcvr-emu
 IMAGE_TAR=/home/admin/xcvr-emu-image.tar.gz
 IMAGE_TAG=xcvr-emu:local
 EMU_CFG_HOST=/home/admin/emu_config.yaml
+EMU_DEBUG="${EMU_DEBUG:-1}"               # 1 = run xcvr-emud with -v (DEBUG logs: EEPROM Read/Write, gRPC); 0 = INFO only
 DEVDIR=/usr/share/sonic/device/x86_64-kvm_x86_64-r0
 PDC=$DEVDIR/pmon_daemon_control.json
 PLATFORM_JSON=$DEVDIR/platform.json     # chassis.sfps inventory the platform SFP-API tests need
@@ -32,8 +33,10 @@ echo "[native] (re)loading emulator image + recreating container '$EMU_CTR'"
 [ -f "$IMAGE_TAR" ] && gunzip -c "$IMAGE_TAR" | docker load
 cp "$BUNDLE/emu_config.yaml" "$EMU_CFG_HOST"
 docker rm -f "$EMU_CTR" >/dev/null 2>&1 || true
+EMU_VERBOSE=""; [ "$EMU_DEBUG" = "1" ] && EMU_VERBOSE="-v"
+echo "[native] starting emulator (EMU_DEBUG=$EMU_DEBUG; logs: docker logs -f $EMU_CTR)"
 docker run -d --name "$EMU_CTR" --network host --restart unless-stopped \
-  -v "$EMU_CFG_HOST":/emu_config.yaml:ro "$IMAGE_TAG" xcvr-emud -c /emu_config.yaml
+  -v "$EMU_CFG_HOST":/emu_config.yaml:ro "$IMAGE_TAG" xcvr-emud $EMU_VERBOSE -c /emu_config.yaml
 sleep 3
 docker ps --filter "name=^/${EMU_CTR}$" --format '  emulator: {{.Names}} {{.Status}}'
 
