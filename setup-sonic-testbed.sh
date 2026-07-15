@@ -72,7 +72,9 @@ SONIC_VS_URL="${SONIC_VS_URL:-https://sonic-build.azurewebsites.net/api/sonic/ar
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIDGE_DIR="${BRIDGE_DIR:-$SCRIPT_DIR/platform/sonic_platform}"   # the gRPC bridge
 EMU_DEPLOY_DIR="${EMU_DEPLOY_DIR:-$SCRIPT_DIR/emu-deploy}"        # build/ship/deploy scripts
-XCVR_EMU_URL="${XCVR_EMU_URL:-https://github.com/ishidawataru/xcvr-emu.git}"
+XCVR_EMU_URL="${XCVR_EMU_URL:-git@github.com:gsoosk/xcvr-emu.git}" # gsoosk fork (fixes on sonic-dev)
+XCVR_EMU_URL_HTTPS="${XCVR_EMU_URL_HTTPS:-https://github.com/gsoosk/xcvr-emu.git}"  # read-only fallback
+XCVR_EMU_BRANCH="${XCVR_EMU_BRANCH:-sonic-dev}"                    # branch to build the emulator from
 XCVR_EMU_DIR="${XCVR_EMU_DIR:-$HOME/xcvr-emu}"                     # cloned on the VM on demand
 EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS modules (0..N-1)
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
@@ -618,11 +620,29 @@ PY'; then
 ensure_emu_assets() {
   [ -d "$BRIDGE_DIR" ] || die "bridge not found at $BRIDGE_DIR — run this from a full sonic-develop checkout (git clone) so platform/ and emu-deploy/ sit next to the script, not a lone scp'd copy."
   [ -d "$EMU_DEPLOY_DIR" ] || die "emu-deploy toolkit not found at $EMU_DEPLOY_DIR — run from a full sonic-develop checkout."
-  if [ ! -d "$XCVR_EMU_DIR/src/xcvr_emu" ]; then
-    log "Cloning xcvr-emu emulator to $XCVR_EMU_DIR"
-    git clone --depth 1 "$XCVR_EMU_URL" "$XCVR_EMU_DIR" || die "git clone $XCVR_EMU_URL failed"
+  # Obtain the xcvr-emu source (gsoosk fork) on the $XCVR_EMU_BRANCH branch, which
+  # carries the emulator fixes. Prefer SSH; fall back to read-only HTTPS when SSH
+  # auth is not configured on this host (a read-only clone is enough to build).
+  local url="$XCVR_EMU_URL"
+  if ! GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new' git ls-remote "$url" >/dev/null 2>&1; then
+    log "SSH remote $url not reachable — using HTTPS read-only ($XCVR_EMU_URL_HTTPS)"
+    url="$XCVR_EMU_URL_HTTPS"
   fi
-  ok "emulator assets present (bridge + emu-deploy + xcvr-emu)"
+  if [ ! -d "$XCVR_EMU_DIR/.git" ]; then
+    log "Cloning xcvr-emu ($XCVR_EMU_BRANCH) to $XCVR_EMU_DIR"
+    git clone --branch "$XCVR_EMU_BRANCH" "$url" "$XCVR_EMU_DIR" || die "git clone $url failed"
+  else
+    # An existing checkout may be a stale upstream clone: repoint to the fork and
+    # move onto the sonic-dev branch so build_bundle.sh also sees the fixed source.
+    [ "$(git -C "$XCVR_EMU_DIR" remote get-url origin 2>/dev/null)" = "$url" ] || \
+      git -C "$XCVR_EMU_DIR" remote set-url origin "$url"
+    # widen the fetch refspec in case this was a shallow/single-branch clone;
+    # -f discards any stale in-tree changes (e.g. the old build-time sed patches)
+    git -C "$XCVR_EMU_DIR" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+    git -C "$XCVR_EMU_DIR" fetch origin "$XCVR_EMU_BRANCH" || die "git fetch $url ($XCVR_EMU_BRANCH) failed"
+    git -C "$XCVR_EMU_DIR" checkout -f -B "$XCVR_EMU_BRANCH" "origin/$XCVR_EMU_BRANCH" || die "git checkout $XCVR_EMU_BRANCH failed"
+  fi
+  ok "emulator assets present (bridge + emu-deploy + xcvr-emu @ $XCVR_EMU_BRANCH)"
 }
 
 emulator() {
