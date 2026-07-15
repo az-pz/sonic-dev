@@ -7,6 +7,7 @@ per-test isolation (restore presence + any mutated DOM bytes).
 """
 import os
 import sys
+import warnings
 
 import pytest
 
@@ -102,8 +103,12 @@ def monitor():
 
 @pytest.fixture(scope="session")
 def test_index(emu):
+    try:
+        known = emu.list()
+    except Exception as e:  # noqa: BLE001
+        pytest.fail(f"emulator not reachable at :50051 ({e}). Is the xcvr-emu "
+                    "container running on the DUT?")
     idx = port_to_index(TEST_PORT)
-    known = emu.list()
     if idx not in known:
         pytest.skip(f"emulator has no module {idx} ({TEST_PORT}); "
                     f"known indices: {sorted(known)}")
@@ -111,17 +116,45 @@ def test_index(emu):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _session_ready(emu, statedb, xcvrd, test_index):
-    """Bring the testbed to a known-good baseline before any test runs."""
-    emu.plug(test_index)
-    if not xcvrd.is_running():
-        xcvrd.start()
+def _clean_baseline(emu, statedb, xcvrd, test_index):
+    """Establish a fresh, verified-live baseline before any test runs.
+
+    CRITICAL: TRANSCEIVER_* rows live in Redis STATE_DB and survive xcvrd being
+    stopped, so read-only tests would otherwise PASS on stale residue even when
+    the daemon is dead. We flush those tables, restart xcvrd, and require it to
+    repopulate -- proving it is alive and emulator-backed. If it can't, we fail
+    the whole suite loudly instead of letting stale data mask a broken daemon.
+    """
+    # 1) emulator must be reachable and every module plugged in.
+    try:
+        for idx in emu.indices():
+            emu.plug(idx)
+    except Exception as e:  # noqa: BLE001
+        pytest.fail(f"emulator not reachable at session start: {e}")
+
+    # 2) flush stale rows + restart xcvrd + require repopulation.
     port = index_to_port(test_index)
-    wait_until(lambda: statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
-               timeout=90,
-               msg=f"{port} TRANSCEIVER_INFO populated at session start "
-                   "(emulator-backed xcvrd healthy)")
+    was_running = xcvrd.is_running()
+    if not xcvrd.wait_healthy(port, timeout=90):
+        pytest.fail(
+            "xcvrd is not healthy: after flushing TRANSCEIVER_* and restarting, "
+            f"it did not repopulate TRANSCEIVER_INFO|{port} (status="
+            f"{xcvrd.status()!r}). Aborting so stale STATE_DB cannot mask a dead "
+            "daemon. Start/repair xcvrd and the emulator, then re-run.")
+    if not was_running:
+        warnings.warn(UserWarning(
+            "xcvrd was NOT running at session start; the clean baseline started "
+            "it. Tests ran against the freshly-started daemon."))
     yield
+
+    # 3) cleanup: leave the testbed clean and live for the next user.
+    try:
+        for idx in emu.indices():
+            emu.plug(idx)
+        if not xcvrd.is_running():
+            xcvrd.start()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # --- function-scoped helpers -------------------------------------------------
@@ -143,7 +176,11 @@ def module(emu, statedb, test_index):
 
 
 @pytest.fixture(autouse=True)
-def _scope_monitor(monitor):
-    """Clear the interaction trace before each test so windows are isolated."""
+def _pretest(monitor, xcvrd):
+    """Before each test: fail fast if xcvrd died mid-suite (so later read-only
+    tests can't false-pass on stale STATE_DB), and scope the interaction trace."""
+    if not xcvrd.is_running():
+        pytest.fail(f"xcvrd is not running (status={xcvrd.status()!r}); "
+                    "refusing to assert against stale STATE_DB")
     monitor.clear()
     yield

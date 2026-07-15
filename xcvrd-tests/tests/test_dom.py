@@ -14,6 +14,10 @@ from lib.waits import wait_until
 
 def test_dom_table_present(module):
     module.wait_info_populated(timeout=60)
+    # DOM_SENSOR is populated by DomInfoUpdateTask on its first poll, which lands
+    # shortly AFTER TRANSCEIVER_INFO on a fresh (flushed) baseline -- wait for it.
+    wait_until(lambda: "temperature" in module.dom(), timeout=90, interval=2.0,
+               msg=f"{module.port} TRANSCEIVER_DOM_SENSOR populated")
     dom = module.dom()
     assert "temperature" in dom
     assert "voltage" in dom

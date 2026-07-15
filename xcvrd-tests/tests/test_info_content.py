@@ -16,12 +16,14 @@ def test_info_has_expected_identity(module):
 
 
 def test_info_serial_and_revision(module):
+    module.wait_info_populated(timeout=60)
     info = module.info()
     assert info.get("serial") == "0123456789"
     assert info.get("vendor_rev") in ("01", "1")
 
 
 def test_info_type_is_qsfp_dd(module):
+    module.wait_info_populated(timeout=60)
     info = module.info()
     type_str = (info.get("type") or "").upper()
     assert "QSFP" in type_str and "DD" in type_str, f"unexpected type={info.get('type')!r}"
@@ -29,6 +31,7 @@ def test_info_type_is_qsfp_dd(module):
 
 def test_info_power_class(module):
     """ext_identifier should reflect the configured Power Class 8."""
+    module.wait_info_populated(timeout=60)
     info = module.info()
     ext = info.get("ext_identifier") or ""
     assert "Power Class 8" in ext, f"unexpected ext_identifier={ext!r}"

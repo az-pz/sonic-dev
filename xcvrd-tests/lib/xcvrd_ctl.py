@@ -51,3 +51,25 @@ class XcvrdControl:
         for tbl in TRANSCEIVER_TABLES:
             total += self.statedb.delete_pattern(f"{tbl}|*")
         return total
+
+    def wait_healthy(self, probe_port, timeout=90, poll=2.0):
+        """Force a fresh, verified-live baseline and return True iff healthy.
+
+        Flush the transceiver tables (remove any stale rows that could mask a
+        dead daemon), restart xcvrd, then require it to repopulate the probe
+        port's TRANSCEIVER_INFO. This proves the daemon is actually running and
+        emulator-backed, rather than STATE_DB merely holding residue from a
+        previous run.
+        """
+        import time
+        self.flush_transceiver_tables()
+        self.restart()
+        if not self.is_running():
+            return False
+        deadline = time.time() + timeout
+        key = f"TRANSCEIVER_INFO|{probe_port}"
+        while time.time() < deadline:
+            if self.statedb.hget(key, "manufacturer"):
+                return True
+            time.sleep(poll)
+        return False

@@ -14,6 +14,24 @@ local. The current upstream xcvrd is treated as the reference implementation.
 | Emulator gRPC | `lib/emu.py` | stimulus: plug/unplug, raw EEPROM read/write |
 | xcvrd lifecycle | `supervisorctl` in pmon (`lib/xcvrd_ctl.py`) | restart / flush tables |
 
+## Setup / teardown (why results are trustworthy)
+
+`TRANSCEIVER_*` rows live in Redis STATE_DB and **survive xcvrd being stopped**,
+so a naive read-only test would PASS on stale residue even when the daemon is
+dead. The harness prevents that:
+
+- **Clean baseline (session setup)** — flush `TRANSCEIVER_*`, restart xcvrd, and
+  require it to repopulate. If it can't, the whole suite fails fast with a clear
+  message instead of asserting against stale rows. If xcvrd wasn't running it is
+  started (with a warning), so tests always run against a fresh, live daemon.
+- **Per-test health guard** — every test first checks xcvrd is RUNNING, so a
+  mid-suite crash fails fast rather than false-passing on residue.
+- **Per-test isolation** — the `module` fixture snapshots/restores presence and
+  any mutated DOM bytes; teardown replugs all modules and leaves xcvrd running.
+
+Validated: healthy → all pass; xcvrd stopped → self-heals + warns, all pass on
+fresh data; emulator down → fail-fast with zero false passes.
+
 ## v1 scope
 
 - `tests/test_presence.py` — plug/unplug clears+restores `TRANSCEIVER_INFO`; `TRANSCEIVER_STATUS_SW` plug state + `cmis_state` READY.
