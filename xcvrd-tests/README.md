@@ -16,13 +16,27 @@ local. The current upstream xcvrd is treated as the reference implementation.
 
 ## v1 scope
 
-- `tests/test_presence.py` — plug/unplug clears+restores `TRANSCEIVER_INFO`; `TRANSCEIVER_STATUS` plug state.
-- `tests/test_info_content.py` — static identity matches the emulator (vendor, PN, OUI, type, power class).
+- `tests/test_presence.py` — plug/unplug clears+restores `TRANSCEIVER_INFO`; `TRANSCEIVER_STATUS_SW` plug state + `cmis_state` READY.
+- `tests/test_info_content.py` — static identity matches the emulator (vendor, PN, OUI, serial, type, power class); all admin-up present ports populated.
 - `tests/test_dom.py` — DOM table present; raw temperature/voltage writes propagate after refresh (`slow`).
 - `tests/test_interaction_trace.py` — xcvrd really polls the module and re-reads on plug (Monitor trace).
+- `tests/test_golden.py` — STATE_DB projection matches the committed golden baseline (conformance gate).
 
-No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2; a
-golden-baseline compare mode is planned next.)
+No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2.)
+
+## Golden baseline (conformance mode)
+
+`golden/<port>.json` is the reference xcvrd's normalized STATE_DB projection
+(`TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`, with
+volatile timestamps stripped). `test_golden.py` asserts a candidate xcvrd
+reproduces it — the gate for a future (e.g. Rust) reimplementation.
+
+```bash
+# capture/refresh the golden from the current reference xcvrd, then commit golden/*.json
+./run.sh --capture-golden -k test_state_matches_golden
+# normal run compares against the committed golden
+./run.sh -k test_state_matches_golden
+```
 
 ## Running
 

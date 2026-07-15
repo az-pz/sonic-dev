@@ -15,6 +15,16 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYDEPS="$HERE/.pydeps"
 
+# --capture-golden: (re)capture the golden baseline from the reference xcvrd
+# instead of comparing against it. Other args pass through to pytest.
+PYTEST_ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --capture-golden) export XCVRD_GOLDEN_CAPTURE=1 ;;
+    *) PYTEST_ARGS+=("$a") ;;
+  esac
+done
+
 if ! PYTHONPATH="$PYDEPS" python3 -c "import pytest" 2>/dev/null; then
   echo "[run] installing pytest from offline wheels -> $PYDEPS"
   python3 -m pip install --no-index --find-links "$HERE/wheels" \
@@ -30,4 +40,4 @@ PY
 
 export PYTHONPATH="$PYDEPS:$HERE"
 exec python3 -m pytest "$HERE/tests" \
-  --junitxml="$HERE/results.xml" "$@"
+  --junitxml="$HERE/results.xml" "${PYTEST_ARGS[@]}"
