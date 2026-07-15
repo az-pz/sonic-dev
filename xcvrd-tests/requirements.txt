@@ -1,0 +1,8 @@
+# Runtime deps for the xcvrd black-box tests, RUN ON THE DUT (admin@vlab-01).
+#
+# Already present on the SONiC DUT host (system site-packages) -- do NOT ship:
+#   grpcio, protobuf, pyyaml
+#
+# Missing on the (offline) DUT and shipped as wheels/ for an offline
+# `pip install --no-index --find-links wheels --target .pydeps`:
+pytest

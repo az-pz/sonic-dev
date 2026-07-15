@@ -33,6 +33,8 @@
 #   ./setup-sonic-testbed.sh emulator_e2e      # emulator + test_xcvr_info_in_db in one go
 #   ./setup-sonic-testbed.sh hotplug_test [PORT]   # unplug a module in the emulator and
 #                                              #   assert xcvrd clears+restores it (needs emulator)
+#   ./setup-sonic-testbed.sh xcvrd_tests [-- pytest args]  # ship dev/xcvrd-tests to the DUT and
+#                                              #   run the pytest black-box suite there (needs emulator)
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
 #
@@ -726,6 +728,43 @@ hotplug_test() {
     "$sshp ssh $sshopt $dut 'bash /home/admin/xcvrd_hotplug_check.sh $port'" \
     || die "hotplug check FAILED for $port"
   ok "hotplug check passed — xcvrd cleared+restored $port on unplug/replug"
+}
+
+# ---------------------------------------------------------------------------
+# xcvrd_tests: ship dev/xcvrd-tests/ to the DUT and run the pytest black-box
+#   suite there (the DUT has the emulator gRPC, sonic-db-cli and pmon locally).
+#   Extra args after `--` are passed through to pytest, e.g.
+#     ./setup-sonic-testbed.sh xcvrd_tests -- -m "not slow"
+#   Requires the emulator deployed (run `emulator`); presence tests also need the
+#   emulator image built from XCVR_EMU_BRANCH=fix/read-honor-presence.
+# ---------------------------------------------------------------------------
+xcvrd_tests() {
+  local src="$SCRIPT_DIR/xcvrd-tests"
+  [ -d "$src" ] || die "xcvrd-tests folder not found at $src — run from a full sonic-develop checkout"
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+
+  log "Packaging xcvrd-tests and shipping to $DUT"
+  local tar=/tmp/xcvrd-tests.tar.gz
+  # Exclude local build artifacts so we ship a clean tree.
+  tar czf "$tar" -C "$src/.." --exclude='xcvrd-tests/.pydeps' \
+      --exclude='xcvrd-tests/results.xml' --exclude='xcvrd-tests/**/__pycache__' \
+      xcvrd-tests
+  docker cp "$tar" "$MGMT_CONTAINER:/tmp/xcvrd-tests.tar.gz"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/xcvrd-tests.tar.gz $dut:/home/admin/xcvrd-tests.tar.gz" \
+    || die "failed to copy xcvrd-tests to DUT"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'rm -rf /home/admin/xcvrd-tests && tar xzf /home/admin/xcvrd-tests.tar.gz -C /home/admin && chmod +x /home/admin/xcvrd-tests/run.sh'" \
+    || die "failed to unpack xcvrd-tests on DUT"
+
+  log "Running pytest black-box suite on $DUT"
+  [ "${1:-}" = "--" ] && shift   # allow `xcvrd_tests -- <pytest args>`
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/xcvrd-tests/run.sh $*'" \
+    || die "xcvrd black-box tests FAILED"
+  ok "xcvrd black-box tests passed"
 }
 
 # ---------------------------------------------------------------------------

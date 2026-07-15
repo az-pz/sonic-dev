@@ -1,0 +1,6 @@
+# Local test artifacts (never committed)
+.pydeps/
+results.xml
+.pytest_cache/
+__pycache__/
+*.pyc
