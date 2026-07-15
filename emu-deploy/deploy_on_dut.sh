@@ -15,7 +15,7 @@ EMU_CTR=xcvr-emu
 IMAGE_TAR=/home/admin/xcvr-emu-image.tar.gz
 IMAGE_TAG=xcvr-emu:local
 EMU_CFG_HOST=/home/admin/emu_config.yaml
-EMU_DEBUG="${EMU_DEBUG:-1}"               # 1 = run xcvr-emud with -v (DEBUG logs: EEPROM Read/Write, gRPC); 0 = INFO only
+EMU_DEBUG="${EMU_DEBUG:-0}"               # 1 = run xcvr-emud with -v (DEBUG logs: EEPROM Read/Write, gRPC); 0 = INFO only (default)
 DEVDIR=/usr/share/sonic/device/x86_64-kvm_x86_64-r0
 PDC=$DEVDIR/pmon_daemon_control.json
 PLATFORM_JSON=$DEVDIR/platform.json     # chassis.sfps inventory the platform SFP-API tests need
