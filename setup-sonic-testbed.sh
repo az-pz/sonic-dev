@@ -31,6 +31,8 @@
 #   ./setup-sonic-testbed.sh emulator_revert   # undo the native emulator deploy (restore stock platform)
 #   ./setup-sonic-testbed.sh transceiver_emu_test  # run test_xcvr_info_in_db (needs emulator)
 #   ./setup-sonic-testbed.sh emulator_e2e      # emulator + test_xcvr_info_in_db in one go
+#   ./setup-sonic-testbed.sh hotplug_test [PORT]   # unplug a module in the emulator and
+#                                              #   assert xcvrd clears+restores it (needs emulator)
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
 #
@@ -697,6 +699,33 @@ transceiver_emu_test() {
 emulator_e2e() {
   emulator
   transceiver_emu_test "$@"
+}
+
+# ---------------------------------------------------------------------------
+# hotplug_test: verify xcvrd reacts to a transceiver hot-unplug in the emulator.
+#   Ships emu-deploy/xcvrd_hotplug_check.sh to the DUT (via the mgmt container)
+#   and runs it: unplug a module -> assert TRANSCEIVER_INFO is cleared from
+#   STATE_DB -> replug -> assert it is restored. Requires the emulator to be
+#   deployed first (run `emulator`). Optional arg: the port to test.
+#     ./setup-sonic-testbed.sh hotplug_test            # default Ethernet100
+#     ./setup-sonic-testbed.sh hotplug_test Ethernet40
+# ---------------------------------------------------------------------------
+hotplug_test() {
+  local port="${1:-Ethernet100}"
+  local script="$EMU_DEPLOY_DIR/xcvrd_hotplug_check.sh"
+  [ -f "$script" ] || die "hotplug check script not found at $script — run from a full sonic-develop checkout"
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+  log "Running xcvrd hotplug check on $DUT (port $port)"
+  docker cp "$script" "$MGMT_CONTAINER:/tmp/xcvrd_hotplug_check.sh"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/xcvrd_hotplug_check.sh $dut:/home/admin/xcvrd_hotplug_check.sh" \
+    || die "failed to copy hotplug check to DUT"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/xcvrd_hotplug_check.sh $port'" \
+    || die "hotplug check FAILED for $port"
+  ok "hotplug check passed — xcvrd cleared+restored $port on unplug/replug"
 }
 
 # ---------------------------------------------------------------------------
