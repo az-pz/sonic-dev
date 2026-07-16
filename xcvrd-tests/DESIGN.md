@@ -144,19 +144,22 @@ passes**. Validated:
 
 ### Negative control (mutation test)
 
-`tools/inject_dummy_xcvrd.sh` is the end-to-end proof that green means "xcvrd
-works," not "stale rows survived." It backs up the real `xcvrd` and swaps in a
-**no-op** that stays alive (supervisor reports **RUNNING**) but never touches the
-emulator or STATE_DB, then restarts it:
+`tools/inject_dummy_xcvrd.sh` is the end-to-end proof that a green board means
+"xcvrd works," not "stale rows survived." It backs up the real `xcvrd` and swaps
+in a **fake-healthy** dummy, then restarts it:
 
-- `inject`  — install the no-op xcvrd and restart it
+- `inject`  — install the fake-healthy xcvrd and restart it
 - `restore` — put the real xcvrd back
 - `status`  — show which one is active
 
-Run on the DUT. With the dummy in place the flush-and-verify baseline flushes
-`TRANSCEIVER_*`, the no-op can't repopulate them, and **all 26 non-slow tests
-ERROR** at session setup — even though the process is RUNNING — because the guard
-checks *behavior*, not liveness. Restoring makes the suite green again.
+The dummy writes *bogus* `TRANSCEIVER_INFO` for every port (via `sonic-db-cli`)
+so the flush-and-verify baseline accepts it as live and lets the real test bodies
+RUN — but it does nothing else (no emulator reads, no presence/DOM/CMIS/Monitor
+activity). Result on the DUT: **22 failed, 4 passed**. Every xcvrd-dependent test
+FAILS on its real assertion; the 4 passes are expected — `test_xcvrd_running`
+(the dummy is genuinely RUNNING) and `test_lpmode_reset` ×3, which drive the
+module through the sfputil/platform path rather than xcvrd. Restoring makes the
+suite green again.
 
 ## 7. Suite at a glance
 

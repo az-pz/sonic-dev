@@ -37,18 +37,29 @@ fresh data; emulator down → fail-fast with zero false passes.
 
 ### Negative control (does the suite really catch a broken xcvrd?)
 
-`tools/inject_dummy_xcvrd.sh` swaps the real xcvrd for a no-op that stays
-**RUNNING** but does nothing (no emulator reads, no STATE_DB writes), so you can
-prove the tests fail when the daemon is effectively dead:
+`tools/inject_dummy_xcvrd.sh` swaps the real xcvrd for a **fake-healthy** dummy:
+it writes *bogus* `TRANSCEIVER_INFO` for every port (just enough to satisfy the
+clean-baseline gate, which only checks the probe port's `manufacturer` is
+non-empty) and then does nothing else — no emulator reads, no presence handling,
+no DOM, no CMIS state, no Monitor traffic. So the real test bodies actually RUN
+and then FAIL on their content/behaviour assertions:
 
 ```bash
-tools/inject_dummy_xcvrd.sh inject     # install the no-op xcvrd (run on the DUT)
-./run.sh -m "not slow"                 # -> all 26 tests ERROR at the baseline guard
+tools/inject_dummy_xcvrd.sh inject     # install the fake-healthy xcvrd (on the DUT)
+./run.sh -m "not slow"                 # -> 22 failed, 4 passed (see below)
 tools/inject_dummy_xcvrd.sh restore    # put the real xcvrd back -> suite green again
 ```
 
-Because the process is still RUNNING, this also shows the guard checks *behavior*
-(does xcvrd repopulate `TRANSCEIVER_*` after a flush?), not mere process liveness.
+Result: **22 failed, 4 passed**. The 4 passes are expected and informative:
+- `test_xcvrd_running` — the dummy really is RUNNING (a liveness check, not a
+  functional one).
+- `test_lpmode_reset` ×3 — `sfputil reset`/`lpmode` drive the module through the
+  **platform/sfputil path, not xcvrd**, so a dummy xcvrd doesn't affect them.
+  (Good to know: these three are platform-control tests, not xcvrd tests.)
+
+Everything that actually depends on xcvrd — identity content, presence, DOM,
+interaction trace, multi-port, error injection, golden — FAILS, proving those
+assertions genuinely validate the daemon rather than passing on residue.
 
 ## v1 scope
 
