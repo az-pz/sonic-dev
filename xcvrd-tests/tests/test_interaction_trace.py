@@ -18,7 +18,7 @@ def test_xcvrd_polls_module(monitor, module):
     monitor.clear()
     # xcvrd's DOM/CMIS loops should touch the module within a reasonable window.
     evs = eventually(lambda: monitor.reads(index=module.index) or None,
-                     timeout=T_DOM, interval=2.0,
+                     timeout=T_DOM,
                      msg=f"xcvrd issued EEPROM reads for module {module.index}")
     assert len(evs) >= 1
 
@@ -35,7 +35,7 @@ def test_plug_triggers_read_burst(monitor, module):
     # After insertion xcvrd re-reads the EEPROM to repopulate STATE_DB.
     reads = eventually(lambda: (monitor.reads(index=module.index)
                                 if len(monitor.reads(index=module.index)) >= 3 else None),
-                       timeout=T_BURST, interval=1.0,
+                       timeout=T_BURST,
                        msg=f"read burst for module {module.index} after re-plug")
     assert len(reads) >= 3
     module.wait_info_populated(timeout=T_FAST)
@@ -49,6 +49,6 @@ def test_reads_target_identity_page(monitor, module):
     def _page0():
         p0 = [e for e in monitor.reads(index=module.index) if e.page == 0]
         return p0 or None
-    p0 = eventually(_page0, timeout=T_DOM, interval=2.0,
+    p0 = eventually(_page0, timeout=T_DOM,
                     msg=f"page 00h reads for module {module.index}")
     assert len(p0) >= 1

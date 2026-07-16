@@ -23,7 +23,7 @@ def _dom_present(module):
 def test_blocking_error_sets_status_and_removes_dom(module, inject):
     """I2C-stuck (blocking) -> STATUS_SW.error set, DOM removed, INFO kept."""
     module.wait_info_populated(timeout=T_FAST)
-    wait_until(lambda: _dom_present(module), timeout=T_DOM, interval=2.0,
+    wait_until(lambda: _dom_present(module), timeout=T_DOM,
                msg=f"{module.port} DOM present before error")
 
     inject.set(module.index, errors.I2C_STUCK_EVENT)
@@ -43,14 +43,14 @@ def test_blocking_error_sets_status_and_removes_dom(module, inject):
     inject.clear(module.index)
     wait_until(lambda: "Bus stuck" not in _error(module), timeout=T_FAST,
                msg=f"{module.port} error cleared on recovery")
-    wait_until(lambda: _dom_present(module), timeout=T_DOM, interval=2.0,
+    wait_until(lambda: _dom_present(module), timeout=T_DOM,
                msg=f"{module.port} DOM repopulated after recovery")
 
 
 def test_bad_eeprom_blocking_error(module, inject):
     """Bad-EEPROM (blocking) -> error set + DOM removed."""
     module.wait_info_populated(timeout=T_FAST)
-    wait_until(lambda: _dom_present(module), timeout=T_DOM, interval=2.0)
+    wait_until(lambda: _dom_present(module), timeout=T_DOM)
 
     inject.set(module.index, errors.BAD_EEPROM_EVENT)
     wait_until(lambda: "Bad or unsupported EEPROM" in _error(module), timeout=T_FAST,
@@ -67,7 +67,7 @@ def test_bad_eeprom_blocking_error(module, inject):
 def test_nonblocking_error_keeps_dom(module, inject):
     """High-temperature (non-blocking) -> error set but DOM retained."""
     module.wait_info_populated(timeout=T_FAST)
-    wait_until(lambda: _dom_present(module), timeout=T_DOM, interval=2.0)
+    wait_until(lambda: _dom_present(module), timeout=T_DOM)
 
     inject.set(module.index, errors.HIGH_TEMP_EVENT)
     wait_until(lambda: "High temperature" in _error(module), timeout=T_FAST,

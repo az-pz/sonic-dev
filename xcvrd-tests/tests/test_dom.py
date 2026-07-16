@@ -16,7 +16,7 @@ def test_dom_table_present(module):
     module.wait_info_populated(timeout=T_FAST)
     # DOM_SENSOR is populated by DomInfoUpdateTask on its first poll, which lands
     # shortly AFTER TRANSCEIVER_INFO on a fresh (flushed) baseline -- wait for it.
-    wait_until(lambda: "temperature" in module.dom(), timeout=T_DOM, interval=2.0,
+    wait_until(lambda: "temperature" in module.dom(), timeout=T_DOM,
                msg=f"{module.port} TRANSCEIVER_DOM_SENSOR populated")
     dom = module.dom()
     assert "temperature" in dom
@@ -43,7 +43,7 @@ def test_temperature_reflects_emulator(module):
 
     wait_until(lambda: _dom_temperature(module) is not None
                and abs(_dom_temperature(module) - target_c) < 1.0,
-               timeout=T_DOM, interval=2.0,
+               timeout=T_DOM,
                msg=f"{module.port} DOM temperature -> {target_c}C after refresh")
 
 
@@ -63,5 +63,5 @@ def test_voltage_reflects_emulator(module):
             return None
 
     wait_until(lambda: _voltage() is not None and abs(_voltage() - target_v) < 0.05,
-               timeout=T_DOM, interval=2.0,
+               timeout=T_DOM,
                msg=f"{module.port} DOM voltage -> {target_v}V after refresh")

@@ -28,7 +28,7 @@ def test_reset_writes_software_reset_bit(monitor, module, sfp_control):
     assert rc.returncode == 0, f"sfputil reset failed: {rc.stderr or rc.stdout}"
 
     vals = eventually(lambda: _mgc_writes(monitor, module.index) or None,
-                      timeout=T_BURST, interval=1.0,
+                      timeout=T_BURST,
                       msg=f"ModuleGlobalControls write for {module.port} on reset")
     assert any(v & cmis.SOFTWARE_RESET_BIT for v in vals), \
         f"no SoftwareReset bit (0x08) in MGC writes {[hex(v) for v in vals]}"
@@ -41,7 +41,7 @@ def test_lpmode_on_writes_lowpwr_bit(monitor, module, sfp_control):
     assert rc.returncode == 0, f"sfputil lpmode on failed: {rc.stderr or rc.stdout}"
 
     vals = eventually(lambda: _mgc_writes(monitor, module.index) or None,
-                      timeout=T_BURST, interval=1.0,
+                      timeout=T_BURST,
                       msg=f"ModuleGlobalControls write for {module.port} on lpmode on")
     assert any(v & cmis.LOW_PWR_REQUEST_BIT for v in vals), \
         f"no LowPwrRequestSW bit (0x10) in MGC writes {[hex(v) for v in vals]}"

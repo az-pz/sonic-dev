@@ -27,11 +27,11 @@ def test_concurrent_unplug_then_replug(multiport):
 
     _fan_out(lambda m: m.unplug(), multiport)
     wait_until(lambda: all(not m.info_populated() for m in multiport), timeout=T_MULTI,
-               interval=2.0, msg="all ports cleared after concurrent unplug")
+               msg="all ports cleared after concurrent unplug")
 
     _fan_out(lambda m: m.plug(), multiport)
     wait_until(lambda: all(m.info_populated() for m in multiport), timeout=T_MULTI,
-               interval=2.0, msg="all ports restored after concurrent replug")
+               msg="all ports restored after concurrent replug")
     assert all(m.info_manufacturer() == "xcvr-emu" for m in multiport)
 
 
@@ -44,14 +44,14 @@ def test_partial_unplug_isolation(multiport):
 
     _fan_out(lambda m: m.unplug(), pulled)
     wait_until(lambda: all(not m.info_populated() for m in pulled), timeout=T_MULTI,
-               interval=2.0, msg="pulled ports cleared")
+               msg="pulled ports cleared")
     # The kept ports must remain populated throughout.
     assert stays(lambda: all(m.info_populated() for m in kept), duration=8.0), \
         "an un-pulled port was incorrectly cleared"
 
     _fan_out(lambda m: m.plug(), pulled)
     wait_until(lambda: all(m.info_populated() for m in pulled), timeout=T_MULTI,
-               interval=2.0, msg="pulled ports restored")
+               msg="pulled ports restored")
 
 
 @pytest.mark.slow
@@ -83,5 +83,5 @@ def test_concurrent_dom_no_crosstalk(multiport):
                 return False
         return True
 
-    wait_until(_all_match, timeout=T_DOM, interval=3.0,
+    wait_until(_all_match, timeout=T_DOM,
                msg="each port's DOM temperature matches its own written value")

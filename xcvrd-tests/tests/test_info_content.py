@@ -56,7 +56,7 @@ def test_all_present_ports_have_info(emu, statedb, configdb):
 
     def _all_populated():
         return all(statedb.hget(f"TRANSCEIVER_INFO|{p}", "manufacturer") for p in ports)
-    wait_until(_all_populated, timeout=T_MULTI, interval=2.0,
+    wait_until(_all_populated, timeout=T_MULTI,
                msg=f"all {len(ports)} admin-up ports populated")
 
     for port in ports:
