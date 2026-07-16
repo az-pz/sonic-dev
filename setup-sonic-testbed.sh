@@ -81,6 +81,7 @@ XCVR_EMU_URL_HTTPS="${XCVR_EMU_URL_HTTPS:-https://github.com/gsoosk/xcvr-emu.git
 XCVR_EMU_BRANCH="${XCVR_EMU_BRANCH:-sonic-dev}"                    # branch to build the emulator from
 XCVR_EMU_DIR="${XCVR_EMU_DIR:-$HOME/xcvr-emu}"                     # cloned on the VM on demand
 EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS modules (0..N-1)
+EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-1}"                             # 1 = enable the bridge error-injection hook for xcvrd_tests (this is a test/dev testbed); set 0 for a clean virtual platform
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
 EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
 EMU_REBUILD_IMAGE="${EMU_REBUILD_IMAGE:-0}"                        # 1 = force rebuild the emulator image
@@ -664,6 +665,7 @@ emulator() {
 
   log "Shipping image + bundle to $DUT and running the native deploy"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
+  EMU_TEST_HOOKS="$EMU_TEST_HOOKS" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
   ok "emulator deployed (native) — host sfputil + pmon xcvrd both use the emulator; STATE_DB populated; transceiver inventory installed in mgmt"

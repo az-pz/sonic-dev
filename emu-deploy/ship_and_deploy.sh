@@ -27,6 +27,8 @@ CNAME="${MGMT_CONTAINER:-$(docker ps --format '{{.Names}}' | grep -i mgmt | head
 CTR_USER="${CTR_USER:-$(id -un)}"
 DUT_IP="${DUT_IP:-10.250.0.101}"
 DUT_PASS="${DUT_PASS:-password}"
+EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-0}"   # forwarded to deploy_on_dut.sh (error-injection hook)
+EMU_DEBUG="${EMU_DEBUG:-0}"             # forwarded to deploy_on_dut.sh (emulator -v)
 SSHP="sshpass -p $DUT_PASS"
 SSHOPT='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
 DUT="admin@$DUT_IP"
@@ -50,7 +52,7 @@ docker exec --user "$CTR_USER" "$CNAME" bash -lc "
 
 echo "[ship] unpack bundle + launch native deploy (detached — survives the pmon-restart ssh drop)"
 docker exec --user "$CTR_USER" "$CNAME" bash -lc "
-  $SSHP ssh $SSHOPT $DUT 'rm -rf /home/admin/emu-bundle && mkdir -p /home/admin/emu-bundle && tar xzf /home/admin/emu-bundle.tar.gz -C /home/admin/emu-bundle && rm -f /home/admin/native.log && nohup bash /home/admin/deploy_on_dut.sh > /home/admin/native.log 2>&1 & echo launched'
+  $SSHP ssh $SSHOPT $DUT 'rm -rf /home/admin/emu-bundle && mkdir -p /home/admin/emu-bundle && tar xzf /home/admin/emu-bundle.tar.gz -C /home/admin/emu-bundle && rm -f /home/admin/native.log && nohup env EMU_TEST_HOOKS=$EMU_TEST_HOOKS EMU_DEBUG=$EMU_DEBUG bash /home/admin/deploy_on_dut.sh > /home/admin/native.log 2>&1 & echo launched'
 "
 
 echo "[ship] waiting for deploy to complete (marker EMU_DEPLOY_DONE, up to ~6 min)..."

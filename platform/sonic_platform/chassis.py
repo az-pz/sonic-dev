@@ -21,13 +21,16 @@ from .sfp import Sfp
 SFP_STATUS_INSERTED = '1'
 SFP_STATUS_REMOVED = '0'
 
-# Test-only error injection. A row  XCVR_EMU_INJECT|<physical_index>  in STATE_DB
-# with field 'event' set to an sfp change-event value (an SfpBase error bitmap as
-# a decimal string, e.g. '11' = INSERTED|BLOCKING|I2C_STUCK) makes
-# get_change_event() surface that event for the port, exactly as a real platform
-# would report a hardware error. No such table exists in production, so this hook
-# is inert there; it only lets the black-box tests drive error paths.
+# Test-only error injection (OFF by default). When the marker file `.test_hooks`
+# is present next to this module, get_change_event() also honors an injected
+# error event from a single STATE_DB hash `XCVR_EMU_INJECT` (field = physical
+# index, value = SfpBase error bitmap as a decimal string, e.g. '11' =
+# INSERTED|BLOCKING|I2C_STUCK), exactly as a real platform would surface a
+# hardware error. Without the marker the hook is fully inert: NO STATE_DB access
+# at all, so a production/virtual platform pays zero cost and carries no test
+# backdoor. Reads use a single-key HGETALL (never a KEYS scan).
 INJECT_TABLE = 'XCVR_EMU_INJECT'
+TEST_HOOKS_MARKER = os.path.join(os.path.dirname(__file__), '.test_hooks')
 
 
 class Chassis(ChassisBase):
@@ -41,6 +44,10 @@ class Chassis(ChassisBase):
         # get_change_event() call so we only report *transitions* afterwards.
         self._event_cache = None
         self._statedb = None
+        # Error injection is enabled only when the deploy dropped the marker file
+        # (test/dev). Read once: a real platform never has it, so it never touches
+        # STATE_DB.
+        self._test_hooks = os.path.exists(TEST_HOOKS_MARKER)
 
     @staticmethod
     def _discover_count():
@@ -79,23 +86,27 @@ class Chassis(ChassisBase):
         return self._statedb or None
 
     def _read_injections(self):
-        """Return {physical_index: event_str} from the STATE_DB inject table.
+        """Return {physical_index: event_str} from the STATE_DB inject hash.
 
-        Failures (redis down, swsscommon missing) degrade to "no injection" so a
-        test hook can never take down xcvrd.
+        No-op (and NO STATE_DB access) unless the .test_hooks marker enabled the
+        hook. Uses a single-key HGETALL, never a KEYS scan. Failures (redis down,
+        swsscommon missing) degrade to "no injection" so a hook can never take
+        down xcvrd.
         """
+        if not self._test_hooks:
+            return {}
         db = self._get_statedb()
         if db is None:
             return {}
         out = {}
         try:
-            for key in (db.keys('STATE_DB', f'{INJECT_TABLE}|*') or []):
-                event = db.get('STATE_DB', key, 'event')
+            raw = db.get_all('STATE_DB', INJECT_TABLE) or {}
+            for field, event in raw.items():
                 if not event:
                     continue
                 try:
-                    out[int(key.split('|', 1)[1])] = str(event)
-                except (ValueError, IndexError):
+                    out[int(field)] = str(event)
+                except (ValueError, TypeError):
                     continue
         except Exception:  # pragma: no cover
             return {}

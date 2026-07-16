@@ -60,6 +60,9 @@ class StateDB:
     def hset(self, key, field, value):
         return self._run("HSET", key, field, value)
 
+    def hdel(self, key, field):
+        return self._run("HDEL", key, field)
+
     def delete(self, key):
         return self._run("DEL", key)
 

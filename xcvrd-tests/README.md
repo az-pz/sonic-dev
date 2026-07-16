@@ -58,10 +58,14 @@ No changes to xcvrd. The only bridge addition is a test-only error-injection hoo
   we assert the exact ModuleGlobalControls (00h:26) write on the Monitor stream
   (reset → SoftwareReset 0x08, lpmode on → LowPwrRequestSW 0x10) + lpmode show.
 
-Error injection uses a bridge hook: `chassis.get_change_event` reads a STATE_DB
-`XCVR_EMU_INJECT|<index>` row (field `event` = SfpBase error bitmap) and surfaces
-that event exactly as a real platform reports a hardware error. The table never
-exists in production, so the hook is inert there.
+Error injection uses a **gated** bridge hook: only when the deploy drops a
+`.test_hooks` marker next to the bridge does `chassis.get_change_event` read a
+single STATE_DB hash `XCVR_EMU_INJECT` (field = physical index, value = SfpBase
+error bitmap) with one `HGETALL` and surface that event as a real platform would.
+Without the marker the hook is fully inert — **no STATE_DB access at all** — so a
+production/virtual platform pays zero cost and carries no test backdoor. The
+testbed enables it via `EMU_TEST_HOOKS=1` (default in `setup-sonic-testbed.sh`);
+a clean platform deploy leaves it off.
 
 ## Golden baseline (conformance mode)
 

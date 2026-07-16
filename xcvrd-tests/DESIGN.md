@@ -43,7 +43,7 @@ logic.
    | container    |   |  STATE_DB:                      |   |                  |
    | (--network   |   |   TRANSCEIVER_INFO/DOM/         |   |  xcvrd  <-- SUT  |
    |   host,      |   |   STATUS_SW/...                 |   |   |  (untouched) |
-   |   :50051)    |   |   XCVR_EMU_INJECT (test hook)   |   |   v              |
+   |   :50051)    |   |   XCVR_EMU_INJECT hash (gated)  |   |   v              |
    |              |   +---------------------------------+   |  sonic_platform  |
    | xcvr-emud    |            ^          ^                 |  bridge          |
    |  Read/Write  |            |          |                 |  (Chassis/Sfp)   |
@@ -94,9 +94,13 @@ exactly the surfaces a real operator / monitoring system would use.
 | **`Chassis`** — `platform/sonic_platform/chassis.py` (the bridge) | `get_change_event()` rewritten from a **no-op stub** -> real presence-diff (v1) -> **unified event path with error injection** (v2). Added `_desired_events()`, `_read_injections()`, `_get_statedb()`; `_presence_cache` -> `_event_cache`. | The stub never told xcvrd about unplug/error events, so hot-plug and error tests were impossible. The bridge now reports insert/remove/error events (errors read from the `XCVR_EMU_INJECT` STATE_DB hook). |
 | **`EmulatorServer.Read`** — `xcvr-emu/src/xcvr_emu/server.py` | `Read` now honors module **presence / `force`** (returns `UNAVAILABLE` for an absent module). | Without it, xcvrd re-read a still-served EEPROM after unplug and re-added the port, so removals never "stuck." (On branch `fix/read-honor-presence`, merged into `sonic-dev`.) |
 
-> **xcvrd itself is unchanged** — it is the reference implementation. The only
-> production-visible addition is the bridge's error-injection read, which is
-> inert when the `XCVR_EMU_INJECT` table is absent.
+> **xcvrd itself is unchanged** — it is the reference implementation. The bridge
+> error-injection read is **gated off by default**: it runs only when the deploy
+> drops a `.test_hooks` marker next to the bridge (`EMU_TEST_HOOKS=1`). Without
+> the marker, `get_change_event` performs **no STATE_DB access at all**, so a
+> production/virtual platform pays zero cost and carries no backdoor. When
+> enabled, it reads a single `XCVR_EMU_INJECT` hash with one `HGETALL` (never a
+> `KEYS` scan).
 
 ## 5. Harness classes (created for the suite)
 

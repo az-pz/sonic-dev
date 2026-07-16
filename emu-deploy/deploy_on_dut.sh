@@ -16,6 +16,7 @@ IMAGE_TAR=/home/admin/xcvr-emu-image.tar.gz
 IMAGE_TAG=xcvr-emu:local
 EMU_CFG_HOST=/home/admin/emu_config.yaml
 EMU_DEBUG="${EMU_DEBUG:-0}"               # 1 = run xcvr-emud with -v (DEBUG logs: EEPROM Read/Write, gRPC); 0 = INFO only (default)
+EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-0}"     # 1 = enable the bridge error-injection hook (.test_hooks marker) for the black-box tests; 0 = clean platform (default), no STATE_DB access in get_change_event
 DEVDIR=/usr/share/sonic/device/x86_64-kvm_x86_64-r0
 PDC=$DEVDIR/pmon_daemon_control.json
 PLATFORM_JSON=$DEVDIR/platform.json     # chassis.sfps inventory the platform SFP-API tests need
@@ -81,6 +82,18 @@ docker cp "$PAY/sonic_platform" "pmon:$PMON_DP/sonic_platform"
 docker cp "$PAY/xcvr_emu"       "pmon:$PMON_DP/xcvr_emu"
 docker exec pmon python3 -c "import sonic_platform.platform, xcvr_emu.proto.emulator_pb2; print('    pmon import OK')" \
   || { echo "[native] ERROR: pmon bridge import failed"; exit 1; }
+
+# Error-injection hook: OFF by default (clean platform -> get_change_event never
+# touches STATE_DB). Drop/remove the .test_hooks marker in BOTH bridge copies so
+# only a test deploy (EMU_TEST_HOOKS=1) enables it.
+if [ "$EMU_TEST_HOOKS" = "1" ]; then
+  echo "[native] enabling error-injection hook (.test_hooks marker)"
+  sudo touch "${HOST_DP}/sonic_platform/.test_hooks"
+  docker exec pmon touch "$PMON_DP/sonic_platform/.test_hooks"
+else
+  sudo rm -f "${HOST_DP}/sonic_platform/.test_hooks" 2>/dev/null || true
+  docker exec pmon rm -f "$PMON_DP/sonic_platform/.test_hooks" 2>/dev/null || true
+fi
 
 # --- 2) flip skip_xcvrd -> false, restart pmon so supervisord regenerates ---
 echo "[native] STEP 2: flip skip_xcvrd -> false"
