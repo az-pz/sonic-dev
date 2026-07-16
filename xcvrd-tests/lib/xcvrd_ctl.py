@@ -8,6 +8,7 @@ TRANSCEIVER_* rows behind, so "keys present" never proves the daemon ran).
 import subprocess
 
 from .statedb import StateDB
+from .waits import T_BASELINE
 
 PMON = "pmon"
 TRANSCEIVER_TABLES = [
@@ -52,7 +53,7 @@ class XcvrdControl:
             total += self.statedb.delete_pattern(f"{tbl}|*")
         return total
 
-    def wait_healthy(self, probe_port, timeout=90, poll=2.0):
+    def wait_healthy(self, probe_port, timeout=T_BASELINE, poll=1.0):
         """Force a fresh, verified-live baseline and return True iff healthy.
 
         Flush the transceiver tables (remove any stale rows that could mask a

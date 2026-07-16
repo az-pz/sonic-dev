@@ -9,16 +9,16 @@ import time
 
 import pytest
 
-from lib.waits import eventually
+from lib.waits import eventually, T_FAST, T_DOM, T_BURST
 
 
 def test_xcvrd_polls_module(monitor, module):
     """In steady state xcvrd keeps reading the module's EEPROM over the emulator."""
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     monitor.clear()
     # xcvrd's DOM/CMIS loops should touch the module within a reasonable window.
     evs = eventually(lambda: monitor.reads(index=module.index) or None,
-                     timeout=90, interval=2.0,
+                     timeout=T_DOM, interval=2.0,
                      msg=f"xcvrd issued EEPROM reads for module {module.index}")
     assert len(evs) >= 1
 
@@ -26,29 +26,29 @@ def test_xcvrd_polls_module(monitor, module):
 def test_plug_triggers_read_burst(monitor, module):
     """A re-plug makes xcvrd re-read the module (identity/DOM), visible as a
     burst of reads on the Monitor stream for that index."""
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     module.unplug()
-    module.wait_info_cleared(timeout=60)
+    module.wait_info_cleared(timeout=T_FAST)
 
     monitor.clear()
     module.plug()
     # After insertion xcvrd re-reads the EEPROM to repopulate STATE_DB.
     reads = eventually(lambda: (monitor.reads(index=module.index)
                                 if len(monitor.reads(index=module.index)) >= 3 else None),
-                       timeout=90, interval=1.0,
+                       timeout=T_BURST, interval=1.0,
                        msg=f"read burst for module {module.index} after re-plug")
     assert len(reads) >= 3
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
 
 
 def test_reads_target_identity_page(monitor, module):
     """The reads xcvrd issues include lower-memory / page 00h (identity + module
     monitors) -- i.e. it is really decoding the module, not guessing."""
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     monitor.clear()
     def _page0():
         p0 = [e for e in monitor.reads(index=module.index) if e.page == 0]
         return p0 or None
-    p0 = eventually(_page0, timeout=90, interval=2.0,
+    p0 = eventually(_page0, timeout=T_DOM, interval=2.0,
                     msg=f"page 00h reads for module {module.index}")
     assert len(p0) >= 1

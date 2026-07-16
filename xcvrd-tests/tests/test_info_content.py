@@ -5,10 +5,11 @@ emulator's emu_config.yaml defines VendorName=xcvr-emu, VendorPN=EMU-40G-LR4,
 VendorSN=0123456789, VendorOUI=0x010203, QSFP-DD / CMIS 5.2, Power Class 8.
 These are the oracle values for the fields below.
 """
+from lib.waits import T_FAST, T_MULTI
 
 
 def test_info_has_expected_identity(module):
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     info = module.info()
     assert info.get("manufacturer") == "xcvr-emu"
     assert info.get("model") == "EMU-40G-LR4"
@@ -16,14 +17,14 @@ def test_info_has_expected_identity(module):
 
 
 def test_info_serial_and_revision(module):
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     info = module.info()
     assert info.get("serial") == "0123456789"
     assert info.get("vendor_rev") in ("01", "1")
 
 
 def test_info_type_is_qsfp_dd(module):
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     info = module.info()
     type_str = (info.get("type") or "").upper()
     assert "QSFP" in type_str and "DD" in type_str, f"unexpected type={info.get('type')!r}"
@@ -31,7 +32,7 @@ def test_info_type_is_qsfp_dd(module):
 
 def test_info_power_class(module):
     """ext_identifier should reflect the configured Power Class 8."""
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     info = module.info()
     ext = info.get("ext_identifier") or ""
     assert "Power Class 8" in ext, f"unexpected ext_identifier={ext!r}"
@@ -55,7 +56,7 @@ def test_all_present_ports_have_info(emu, statedb, configdb):
 
     def _all_populated():
         return all(statedb.hget(f"TRANSCEIVER_INFO|{p}", "manufacturer") for p in ports)
-    wait_until(_all_populated, timeout=60, interval=2.0,
+    wait_until(_all_populated, timeout=T_MULTI, interval=2.0,
                msg=f"all {len(ports)} admin-up ports populated")
 
     for port in ports:

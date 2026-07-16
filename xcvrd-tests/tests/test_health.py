@@ -5,6 +5,7 @@ xcvrd and requires repopulation (failing the whole suite otherwise). These give
 that guarantee a first-class PASS/FAIL line, and assert the daemon is genuinely
 alive rather than STATE_DB merely holding residue.
 """
+from lib.waits import T_FAST
 
 
 def test_xcvrd_running(xcvrd):
@@ -14,5 +15,5 @@ def test_xcvrd_running(xcvrd):
 def test_baseline_is_live(module, xcvrd):
     """After the flush+restart baseline the test port is populated by a live daemon."""
     assert xcvrd.is_running()
-    module.wait_info_populated(timeout=60)
+    module.wait_info_populated(timeout=T_FAST)
     assert module.info_manufacturer() == "xcvr-emu"

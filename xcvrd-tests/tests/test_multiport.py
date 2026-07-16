@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from lib import cmis
-from lib.waits import wait_until, stays
+from lib.waits import wait_until, stays, T_FAST, T_MULTI, T_DOM
 
 
 def _fan_out(fn, mods):
@@ -23,14 +23,14 @@ def _fan_out(fn, mods):
 def test_concurrent_unplug_then_replug(multiport):
     """Unplug all ports simultaneously -> all clear; replug all -> all restore."""
     for m in multiport:
-        m.wait_info_populated(timeout=60)
+        m.wait_info_populated(timeout=T_FAST)
 
     _fan_out(lambda m: m.unplug(), multiport)
-    wait_until(lambda: all(not m.info_populated() for m in multiport), timeout=90,
+    wait_until(lambda: all(not m.info_populated() for m in multiport), timeout=T_MULTI,
                interval=2.0, msg="all ports cleared after concurrent unplug")
 
     _fan_out(lambda m: m.plug(), multiport)
-    wait_until(lambda: all(m.info_populated() for m in multiport), timeout=90,
+    wait_until(lambda: all(m.info_populated() for m in multiport), timeout=T_MULTI,
                interval=2.0, msg="all ports restored after concurrent replug")
     assert all(m.info_manufacturer() == "xcvr-emu" for m in multiport)
 
@@ -38,19 +38,19 @@ def test_concurrent_unplug_then_replug(multiport):
 def test_partial_unplug_isolation(multiport):
     """Unplug half the ports; the other half must stay populated (no collateral)."""
     for m in multiport:
-        m.wait_info_populated(timeout=60)
+        m.wait_info_populated(timeout=T_FAST)
     half = len(multiport) // 2
     pulled, kept = multiport[:half], multiport[half:]
 
     _fan_out(lambda m: m.unplug(), pulled)
-    wait_until(lambda: all(not m.info_populated() for m in pulled), timeout=90,
+    wait_until(lambda: all(not m.info_populated() for m in pulled), timeout=T_MULTI,
                interval=2.0, msg="pulled ports cleared")
     # The kept ports must remain populated throughout.
     assert stays(lambda: all(m.info_populated() for m in kept), duration=8.0), \
         "an un-pulled port was incorrectly cleared"
 
     _fan_out(lambda m: m.plug(), pulled)
-    wait_until(lambda: all(m.info_populated() for m in pulled), timeout=90,
+    wait_until(lambda: all(m.info_populated() for m in pulled), timeout=T_MULTI,
                interval=2.0, msg="pulled ports restored")
 
 
@@ -59,7 +59,7 @@ def test_concurrent_dom_no_crosstalk(multiport):
     """Write a DISTINCT temperature to each port at once; each DOM must reflect
     its OWN value -> proves per-module isolation (no shared/aliased EEPROM)."""
     for m in multiport:
-        m.wait_info_populated(timeout=60)
+        m.wait_info_populated(timeout=T_FAST)
 
     # distinct target per port: 30.0, 35.0, 40.0, ...
     targets = {m.index: 30.0 + 5.0 * i for i, m in enumerate(multiport)}
@@ -83,5 +83,5 @@ def test_concurrent_dom_no_crosstalk(multiport):
                 return False
         return True
 
-    wait_until(_all_match, timeout=120, interval=3.0,
+    wait_until(_all_match, timeout=T_DOM, interval=3.0,
                msg="each port's DOM temperature matches its own written value")

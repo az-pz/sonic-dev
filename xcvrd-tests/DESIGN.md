@@ -142,6 +142,30 @@ passes**. Validated:
 - xcvrd stopped -> self-heals (flush + restart) + warns, all pass on fresh data
 - emulator down -> fail fast (errors) with **zero false passes**
 
+### Calibrated timeouts
+
+Every wait uses a named tier from `lib/waits.py`, calibrated against the
+reference xcvrd on the KVM testbed (measured with `tools/measure_timeouts.py`). Two
+regimes dominate: STATE_DB reactions to presence/info/status/cmis/error settle
+in **<4s**, while the DOM sensor and steady-state EEPROM reads are paced by
+xcvrd's **~60s poll cadence**. Each tier sits a few x above the observed max so a
+correct-but-slow xcvrd still passes, but a broken one fails quickly instead of
+burning 60-120s in the dev loop.
+
+| Tier | Value | Real max | Used for |
+|---|---|---|---|
+| `T_FAST` | 15s | ~3.3s | info populate/clear, status 0/1, cmis READY, error set/clear, DOM removal |
+| `T_MULTI` | 25s | ~3.3s x N | the same fast reaction aggregated across several ports |
+| `T_BURST` | 25s | ~3s | plug-triggered identity re-read burst; sfputil reset/lpmode monitor capture |
+| `T_DOM` | 80s | ~59s | DOM sensor appear/refresh/restore + steady-state read cadence (~60s poll) |
+| `T_BASELINE` | 30s | ~3s + restart | flush TRANSCEIVER_* + restart xcvrd + repopulate INFO |
+
+`T_DOM` is the floor set by xcvrd's DOM poll interval, not test slack: a DOM
+value cannot be confirmed wrong until one full cadence elapses, so DOM-gated
+tests (and their failures) are inherently ~60-80s. Everything else fails in ~15s.
+Re-run `tools/measure_timeouts.py` and adjust the tiers if the reference xcvrd's timing
+changes.
+
 ### Negative control (mutation test)
 
 `tools/inject_dummy_xcvrd.sh` is the end-to-end proof that a green board means

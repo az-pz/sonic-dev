@@ -7,6 +7,18 @@ useful failure messages instead of a bare timeout.
 """
 import time
 
+# --- calibrated timeouts (seconds) ------------------------------------------
+# Measured against the reference xcvrd on the KVM testbed with tools/_measure.py.
+# STATE_DB reactions to presence/info/status/cmis/error settle in <4s; the DOM
+# sensor and steady-state EEPROM reads are paced by xcvrd's ~60s poll cadence.
+# Each tier sits a few x above the observed real max so a correct-but-slow xcvrd
+# still passes, while a broken one fails quickly instead of burning 60-120s.
+T_FAST = 15.0      # presence/info populate+clear, status 0/1, cmis READY, error set/clear, DOM removal (real max ~3.3s)
+T_MULTI = 25.0     # a fast reaction aggregated across several ports at once
+T_BURST = 25.0     # plug-triggered identity re-read burst; sfputil reset/lpmode monitor capture
+T_DOM = 80.0       # DOM sensor appear/refresh/restore + steady-state EEPROM read cadence (~60s poll, real max ~59s)
+T_BASELINE = 30.0  # flush TRANSCEIVER_* + restart xcvrd + repopulate INFO
+
 
 class WaitTimeout(AssertionError):
     pass

@@ -15,7 +15,7 @@ import os
 import pytest
 
 from lib import golden
-from lib.waits import wait_until
+from lib.waits import wait_until, T_FAST
 
 GOLDEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "golden")
 CAPTURE = os.environ.get("XCVRD_GOLDEN_CAPTURE") == "1"
@@ -24,8 +24,8 @@ CAPTURE = os.environ.get("XCVRD_GOLDEN_CAPTURE") == "1"
 def _stable_projection(module, statedb):
     """Bring the module to a steady state, then snapshot its projection."""
     module.plug()
-    module.wait_info_populated(timeout=60)
-    wait_until(lambda: module.status_sw().get("cmis_state") == "READY", timeout=90,
+    module.wait_info_populated(timeout=T_FAST)
+    wait_until(lambda: module.status_sw().get("cmis_state") == "READY", timeout=T_FAST,
                msg=f"{module.port} cmis_state READY before golden snapshot")
     return golden.project(statedb, module.port)
 

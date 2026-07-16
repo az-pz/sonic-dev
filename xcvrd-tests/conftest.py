@@ -19,7 +19,7 @@ from lib.statedb import StateDB  # noqa: E402
 from lib.xcvrd_ctl import XcvrdControl  # noqa: E402
 from lib.inject import ErrorInjector  # noqa: E402
 from lib import cmis  # noqa: E402
-from lib.waits import wait_until, eventually, stays  # noqa: E402
+from lib.waits import wait_until, eventually, stays, T_FAST, T_BASELINE  # noqa: E402
 
 TEST_PORT = os.environ.get("XCVRD_TEST_PORT", "Ethernet100")
 
@@ -63,11 +63,11 @@ class Module:
         self.emu.plug(self.index)
 
     # waits ----------------------------------------------------------------
-    def wait_info_populated(self, timeout=60):
+    def wait_info_populated(self, timeout=T_FAST):
         return wait_until(self.info_populated, timeout=timeout,
                           msg=f"{self.port} TRANSCEIVER_INFO populated")
 
-    def wait_info_cleared(self, timeout=60):
+    def wait_info_cleared(self, timeout=T_FAST):
         return wait_until(lambda: not self.info_populated(), timeout=timeout,
                           msg=f"{self.port} TRANSCEIVER_INFO cleared")
 
@@ -144,7 +144,7 @@ def _clean_baseline(emu, statedb, xcvrd, injector, test_index):
     # 2) flush stale rows + restart xcvrd + require repopulation.
     port = index_to_port(test_index)
     was_running = xcvrd.is_running()
-    if not xcvrd.wait_healthy(port, timeout=90):
+    if not xcvrd.wait_healthy(port, timeout=T_BASELINE):
         pytest.fail(
             "xcvrd is not healthy: after flushing TRANSCEIVER_* and restarting, "
             f"it did not repopulate TRANSCEIVER_INFO|{port} (status="
