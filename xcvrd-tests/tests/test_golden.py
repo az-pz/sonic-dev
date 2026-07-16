@@ -15,7 +15,7 @@ import os
 import pytest
 
 from lib import golden
-from lib.waits import wait_until, T_FAST
+from lib.waits import wait_until, T_FAST, T_DOM
 
 GOLDEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "golden")
 CAPTURE = os.environ.get("XCVRD_GOLDEN_CAPTURE") == "1"
@@ -27,9 +27,16 @@ def _stable_projection(module, statedb):
     module.wait_info_populated(timeout=T_FAST)
     wait_until(lambda: module.status_sw().get("cmis_state") == "READY", timeout=T_FAST,
                msg=f"{module.port} cmis_state READY before golden snapshot")
+    # DOM_THRESHOLD is part of the projection and lands on xcvrd's ~60s DOM poll,
+    # so wait for it explicitly rather than relying on test order -- this is why
+    # test_state_matches_golden is marked `slow`.
+    wait_until(lambda: statedb.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{module.port}"),
+               timeout=T_DOM,
+               msg=f"{module.port} DOM_THRESHOLD populated before golden snapshot")
     return golden.project(statedb, module.port)
 
 
+@pytest.mark.slow
 def test_state_matches_golden(module, statedb):
     proj = _stable_projection(module, statedb)
     path = golden.path_for(GOLDEN_DIR, module.port)

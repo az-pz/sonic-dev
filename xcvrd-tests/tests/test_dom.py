@@ -12,6 +12,7 @@ from lib import cmis
 from lib.waits import wait_until, T_FAST, T_DOM
 
 
+@pytest.mark.slow
 def test_dom_table_present(module):
     module.wait_info_populated(timeout=T_FAST)
     # DOM_SENSOR is populated by DomInfoUpdateTask on its first poll, which lands

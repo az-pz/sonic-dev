@@ -12,6 +12,7 @@ import pytest
 from lib.waits import eventually, T_FAST, T_DOM, T_BURST
 
 
+@pytest.mark.slow
 def test_xcvrd_polls_module(monitor, module):
     """In steady state xcvrd keeps reading the module's EEPROM over the emulator."""
     module.wait_info_populated(timeout=T_FAST)
@@ -41,6 +42,7 @@ def test_plug_triggers_read_burst(monitor, module):
     module.wait_info_populated(timeout=T_FAST)
 
 
+@pytest.mark.slow
 def test_reads_target_identity_page(monitor, module):
     """The reads xcvrd issues include lower-memory / page 00h (identity + module
     monitors) -- i.e. it is really decoding the module, not guessing."""

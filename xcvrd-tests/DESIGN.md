@@ -162,9 +162,12 @@ burning 60-120s in the dev loop.
 
 `T_DOM` is the floor set by xcvrd's DOM poll interval, not test slack: a DOM
 value cannot be confirmed wrong until one full cadence elapses, so DOM-gated
-tests (and their failures) are inherently ~60-80s. Everything else fails in ~15s.
-Re-run `tools/measure_timeouts.py` and adjust the tiers if the reference xcvrd's timing
-changes.
+tests (and their failures) are inherently ~60-80s. Everything else settles in
+~15s. Because those DOM-gated tests dominate wall-clock, they are marked
+**`slow`** and excluded from the default dev loop: `./run.sh -m "not slow"` runs
+the ~19 fast tests in **~1-1.5 min**, while the full `./run.sh` (~6 min) still
+exercises the real ~60s DOM cadence. Re-run `tools/measure_timeouts.py` and
+adjust the tiers if the reference xcvrd's timing changes.
 
 ### Negative control (mutation test)
 
@@ -198,15 +201,22 @@ suite green again.
 | `test_lpmode_reset.py` | 3 | `sfputil reset` -> SoftwareReset `00h:26=0x08`; `lpmode on` -> LowPwr `0x10` on the Monitor trace; lpmode show On/Off |
 | `test_multiport.py` | 3 | concurrent multi-port: simultaneous unplug/replug all clear+restore; partial unplug leaves other ports intact; distinct DOM writes per port show no cross-talk (per-module isolation) |
 | `test_golden.py` | 1 | STATE_DB projection matches the committed golden baseline (conformance gate) |
-| **Total** | **29** | all green on the DUT |
+| **Total** | **29** | all green on the DUT (19 fast + 10 `slow`) |
+
+The **`slow`** set (10 tests, deselected by `-m "not slow"`) is everything gated
+by xcvrd's ~60s DOM poll: all of `test_dom.py`, `test_golden.py` (projects
+`DOM_THRESHOLD`), all of `test_status_error.py` (DOM removal/repopulate on the
+poll cycle), and `test_interaction_trace.py`'s two steady-read tests. The fast
+set (~19 tests) runs in **~1-1.5 min** for the inner dev loop; the full `run.sh`
+(~6 min) still exercises the real DOM cadence.
 
 ## 8. Running
 
 On the DUT (`admin@vlab-01`), from a copy of this folder:
 
 ```bash
-./run.sh                     # full suite
-./run.sh -m "not slow"       # skip the ~60s DOM refresh tests
+./run.sh                     # full suite (~6 min: includes ~60s DOM-cadence tests)
+./run.sh -m "not slow"       # fast dev loop (~1-1.5 min): skips DOM-cadence tests
 ./run.sh -k presence -q      # subset
 ./run.sh --capture-golden -k test_state_matches_golden   # refresh golden/*.json
 ```

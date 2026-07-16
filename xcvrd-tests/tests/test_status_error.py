@@ -8,6 +8,8 @@ real platform would report a hardware error. xcvrd must:
   - keep DOM for a non-blocking error,
   - clear the error and repopulate when the port recovers (a plug-in event).
 """
+import pytest
+
 from lib import errors
 from lib.waits import wait_until, stays, T_FAST, T_DOM
 
@@ -20,6 +22,7 @@ def _dom_present(module):
     return "temperature" in module.dom()
 
 
+@pytest.mark.slow
 def test_blocking_error_sets_status_and_removes_dom(module, inject):
     """I2C-stuck (blocking) -> STATUS_SW.error set, DOM removed, INFO kept."""
     module.wait_info_populated(timeout=T_FAST)
@@ -47,6 +50,7 @@ def test_blocking_error_sets_status_and_removes_dom(module, inject):
                msg=f"{module.port} DOM repopulated after recovery")
 
 
+@pytest.mark.slow
 def test_bad_eeprom_blocking_error(module, inject):
     """Bad-EEPROM (blocking) -> error set + DOM removed."""
     module.wait_info_populated(timeout=T_FAST)
@@ -64,6 +68,7 @@ def test_bad_eeprom_blocking_error(module, inject):
                timeout=T_FAST, msg=f"{module.port} error cleared on recovery")
 
 
+@pytest.mark.slow
 def test_nonblocking_error_keeps_dom(module, inject):
     """High-temperature (non-blocking) -> error set but DOM retained."""
     module.wait_info_populated(timeout=T_FAST)

@@ -35,15 +35,25 @@ dead. The harness prevents that:
 Validated: healthy → all pass; xcvrd stopped → self-heals + warns, all pass on
 fresh data; emulator down → fail-fast with zero false passes.
 
-### Timeouts (fast dev loop)
+### Timeouts & the fast dev loop
 
 Waits use named tiers from `lib/waits.py`, calibrated against the reference
-xcvrd (measured with `tools/measure_timeouts.py`): `T_FAST=15s` for STATE_DB reactions
-(presence/info/status/cmis/error — real max ~3.3s) and `T_DOM=80s` for the DOM
-sensor + steady-state EEPROM reads, which are paced by xcvrd's ~60s poll cadence.
-So a broken daemon fails most tests in ~15s instead of 60-120s; only the
-inherently DOM-gated tests take ~80s. Re-run `tools/measure_timeouts.py` and adjust the
-tiers if the reference xcvrd's timing changes.
+xcvrd (measured with `tools/measure_timeouts.py`): `T_FAST=15s` for STATE_DB
+reactions (presence/info/status/cmis/error — real max ~3.3s) and `T_DOM=80s` for
+the DOM sensor + steady-state EEPROM reads, which are paced by xcvrd's ~60s poll
+cadence. So a broken daemon fails most tests in ~15s instead of 60-120s.
+
+Because the DOM-cadence tests take ~60s even when passing, they are marked
+**`slow`** and skipped by the default dev loop:
+
+```bash
+./run.sh -m "not slow"   # ~19 fast tests, ~1-1.5 min  (inner dev loop)
+./run.sh                 # full 29 tests, ~6 min       (includes DOM cadence)
+```
+
+The `slow` set is all of `test_dom.py` + `test_golden.py` + `test_status_error.py`
+plus the two steady-read `test_interaction_trace.py` tests. Re-run
+`tools/measure_timeouts.py` and adjust the tiers if the reference xcvrd changes.
 
 ### Negative control (does the suite really catch a broken xcvrd?)
 
