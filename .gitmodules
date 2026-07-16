@@ -1,4 +1,4 @@
 [submodule "xcvr-emu"]
 	path = xcvr-emu
 	url = git@github-gsoosk:gsoosk/xcvr-emu.git
-	branch = fix/read-honor-presence
+	branch = sonic-dev
