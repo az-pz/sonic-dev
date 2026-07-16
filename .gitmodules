@@ -1,4 +1,4 @@
 [submodule "xcvr-emu"]
 	path = xcvr-emu
-	url = git@github-gsoosk:gsoosk/xcvr-emu.git
+	url = https://github.com/gsoosk/xcvr-emu
 	branch = sonic-dev
