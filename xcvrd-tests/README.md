@@ -5,6 +5,9 @@ the `xcvr-emu` emulator. They run **on the DUT** (`admin@vlab-01`), where the
 emulator gRPC (`localhost:50051`), `sonic-db-cli` and the pmon supervisor are all
 local. The current upstream xcvrd is treated as the reference implementation.
 
+> See **[DESIGN.md](DESIGN.md)** for the architecture, diagrams, the classes
+> changed vs. created, and how the suite sits on the DUT.
+
 ## What it observes
 
 | Channel | How | Used for |
