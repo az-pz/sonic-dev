@@ -142,6 +142,22 @@ passes**. Validated:
 - xcvrd stopped -> self-heals (flush + restart) + warns, all pass on fresh data
 - emulator down -> fail fast (errors) with **zero false passes**
 
+### Negative control (mutation test)
+
+`tools/inject_dummy_xcvrd.sh` is the end-to-end proof that green means "xcvrd
+works," not "stale rows survived." It backs up the real `xcvrd` and swaps in a
+**no-op** that stays alive (supervisor reports **RUNNING**) but never touches the
+emulator or STATE_DB, then restarts it:
+
+- `inject`  — install the no-op xcvrd and restart it
+- `restore` — put the real xcvrd back
+- `status`  — show which one is active
+
+Run on the DUT. With the dummy in place the flush-and-verify baseline flushes
+`TRANSCEIVER_*`, the no-op can't repopulate them, and **all 26 non-slow tests
+ERROR** at session setup — even though the process is RUNNING — because the guard
+checks *behavior*, not liveness. Restoring makes the suite green again.
+
 ## 7. Suite at a glance
 
 | File | Tests | Asserts |

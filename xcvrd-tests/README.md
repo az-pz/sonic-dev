@@ -35,6 +35,21 @@ dead. The harness prevents that:
 Validated: healthy → all pass; xcvrd stopped → self-heals + warns, all pass on
 fresh data; emulator down → fail-fast with zero false passes.
 
+### Negative control (does the suite really catch a broken xcvrd?)
+
+`tools/inject_dummy_xcvrd.sh` swaps the real xcvrd for a no-op that stays
+**RUNNING** but does nothing (no emulator reads, no STATE_DB writes), so you can
+prove the tests fail when the daemon is effectively dead:
+
+```bash
+tools/inject_dummy_xcvrd.sh inject     # install the no-op xcvrd (run on the DUT)
+./run.sh -m "not slow"                 # -> all 26 tests ERROR at the baseline guard
+tools/inject_dummy_xcvrd.sh restore    # put the real xcvrd back -> suite green again
+```
+
+Because the process is still RUNNING, this also shows the guard checks *behavior*
+(does xcvrd repopulate `TRANSCEIVER_*` after a flush?), not mere process liveness.
+
 ## v1 scope
 
 - `tests/test_presence.py` — plug/unplug clears+restores `TRANSCEIVER_INFO`; `TRANSCEIVER_STATUS_SW` plug state + `cmis_state` READY.
