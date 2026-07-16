@@ -185,6 +185,42 @@ def module(emu, statedb, test_index):
 
 
 @pytest.fixture
+def multiport(emu, statedb, configdb):
+    """A set of testable ports for concurrent multi-port tests.
+
+    Discovers emulator-present modules whose logical port is admin-up in
+    CONFIG_DB, capped at XCVRD_TEST_PORT_COUNT (default 4). Snapshots each
+    module's DOM bytes and restores presence + DOM on teardown so concurrent
+    manipulation can't leak into other tests.
+    """
+    count = int(os.environ.get("XCVRD_TEST_PORT_COUNT", "4"))
+    chosen = []
+    for idx, present in sorted(emu.list().items()):
+        if not present:
+            continue
+        port = index_to_port(idx)
+        if configdb.hget(f"PORT|{port}", "admin_status") != "up":
+            continue
+        chosen.append((idx, port))
+        if len(chosen) >= count:
+            break
+    if len(chosen) < 2:
+        pytest.skip(f"need >=2 admin-up emulator-backed ports; found {len(chosen)}")
+
+    mods = [Module(emu, statedb, idx, port) for idx, port in chosen]
+    snaps = {idx: (emu.read_field(idx, cmis.TEMP), emu.read_field(idx, cmis.VCC))
+             for idx, _ in chosen}
+    yield mods
+    for m in mods:
+        try:
+            emu.plug(m.index)
+            emu.write_field(m.index, cmis.TEMP, snaps[m.index][0])
+            emu.write_field(m.index, cmis.VCC, snaps[m.index][1])
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@pytest.fixture
 def inject(injector, statedb, emu, test_index):
     """Error-injection handle; clears all injections on teardown so a leftover
     error can't leak into later tests."""

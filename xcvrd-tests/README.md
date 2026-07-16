@@ -41,6 +41,7 @@ fresh data; emulator down → fail-fast with zero false passes.
 - `tests/test_info_content.py` — static identity matches the emulator (vendor, PN, OUI, serial, type, power class); all admin-up present ports populated.
 - `tests/test_dom.py` — DOM table present; raw temperature/voltage writes propagate after refresh (`slow`).
 - `tests/test_interaction_trace.py` — xcvrd really polls the module and re-reads on plug (Monitor trace).
+- `tests/test_multiport.py` — concurrent multi-port presence/change/DOM: simultaneous unplug/replug, partial-unplug isolation, and distinct per-port DOM writes with no cross-talk (per-module isolation).
 - `tests/test_golden.py` — STATE_DB projection matches the committed golden baseline (conformance gate).
 
 No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2.)

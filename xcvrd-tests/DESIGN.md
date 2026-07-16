@@ -153,8 +153,9 @@ passes**. Validated:
 | `test_interaction_trace.py` | 3 | xcvrd polls the module + re-reads on plug (Monitor stream) |
 | `test_status_error.py` | 3 | inject I2C-stuck / bad-EEPROM (blocking) / high-temp (non-blocking): `STATUS_SW.error` set, DOM removed for blocking (INFO kept), DOM kept for non-blocking, recovery clears |
 | `test_lpmode_reset.py` | 3 | `sfputil reset` -> SoftwareReset `00h:26=0x08`; `lpmode on` -> LowPwr `0x10` on the Monitor trace; lpmode show On/Off |
+| `test_multiport.py` | 3 | concurrent multi-port: simultaneous unplug/replug all clear+restore; partial unplug leaves other ports intact; distinct DOM writes per port show no cross-talk (per-module isolation) |
 | `test_golden.py` | 1 | STATE_DB projection matches the committed golden baseline (conformance gate) |
-| **Total** | **26** | all green on the DUT |
+| **Total** | **29** | all green on the DUT |
 
 ## 8. Running
 
