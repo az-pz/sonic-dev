@@ -138,16 +138,37 @@ daemon logic strips them, exactly like the Python original).
 
 The Rust daemon reads/writes Redis STATE_DB through the upstream Rust bindings at
 [`sonic-net/sonic-swss-common` `crates/swss-common`](https://github.com/sonic-net/sonic-swss-common/tree/master/crates/swss-common/src),
-not a hand-rolled client. Provided as a pinned dependency in the crate skeleton.
+not a hand-rolled client. It's a **pinned git dependency** (`env-check/Cargo.toml`,
+rev `7faca59`) exposing `DbConnector`, `Table`, `SonicV2Connector`,
+`ProducerStateTable`, `SubscriberStateTable`, etc. Agents write STATE_DB from Rust
+with e.g. `DbConnector::new_unix(6, "/var/run/redis/redis.sock", 0)?.hset(key, field, &CxxString::from(v))`.
+
+**Native-lib wiring (the tricky part, solved once):** `swss-common`'s `build.rs`
+runs **bindgen** over the C-API headers and links `dylib=swsscommon` (the C++
+`libswsscommon`). pmon ships `libswsscommon.so.0` **with the C-API compiled in**
+(verified by symbol probe: `SWSSTable_*`, `SWSSDBConnector_new_unix`, …), so a
+Rust binary loads and runs there. The build container (`Dockerfile.build`) bakes
+what bindgen needs: `clang`/`libclang-dev`, the pinned c-api **headers**
+(`SWSS_COMMON_REPO`), and `BINDGEN_EXTRA_CLANG_ARGS=-x c` so bindgen parses only
+the C boundary (no boost/hiredis/C++ headers). The link library itself is
+pmon-specific, so it's pulled from the live pmon into `~/recode/swsslib` by
+`tools/dut/ensure_swsslib.sh` and mounted at build time (`-L native=/swsslib`).
+Keep the `Dockerfile.build` `SWSS_COMMON_REV` arg in sync with the Cargo rev.
+
+> ✅ **Proven on the DUT (2026-07-20).** `swss-smoke` links `libswsscommon.so.0`
+> and round-trips a STATE_DB hash; `env-smoke` composes **both** libraries — reads
+> transceiver 0 via the bridge and publishes 6 CMIS fields to STATE_DB — the exact
+> `SfpStateUpdateTask` pattern. Both run green in pmon via **`bash tools/env_check.sh`**.
 
 ### 3c. Build/deploy targeting pmon
 
 pmon is **Debian 13, glibc 2.41, Python 3.13.5**. Neither the Windows dev box nor
 the `sonic-dev` host can produce a matching binary directly. So
 `tools/validate_on_dut.sh` builds inside a **Debian-13 container with Rust +
-python3.13-dev** (PyO3 links libpython3.13), then `docker cp`s the binary into
-pmon and swaps it in via supervisor — **reversible**, restoring the Python xcvrd
-after every run (same inject/restore pattern as `xcvrd-tests/tools/inject_dummy_xcvrd.sh`).
+python3.13-dev + clang + the swss c-api headers** (PyO3 links libpython3.13;
+swss-common links libswsscommon), then `docker cp`s the binary into pmon and swaps
+it in via supervisor — **reversible**, restoring the Python xcvrd after every run
+(same inject/restore pattern as `xcvrd-tests/tools/inject_dummy_xcvrd.sh`).
 
 ---
 
@@ -168,15 +189,19 @@ dev/recodeAgent/
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
+│   ├── env_check.sh              # build+run swss-smoke + env-smoke in pmon (bridge+swss proof)
 │   ├── check.sh                  # offline orchestrator mock checks (happy/repair/budget/resume)
 │   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
-│       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh  bridge_smoke.sh
+│       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh
+│       ├── bridge_smoke.sh   env_check.sh   ensure_swsslib.sh   # (ensure_swsslib pulls libswsscommon.so)
 ├── crate/                        # the Rust workspace (build target = pmon)
-│   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge
-│   ├── xcvrd-rs/                 #   the daemon — agents translate logic into here
-│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
-│       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
-│       └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
+│   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge + env-check
+│   ├── xcvrd-rs/                 #   the daemon — agents translate logic into here (uses the two below)
+│   ├── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
+│   │   ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
+│   │   └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
+│   └── env-check/                #   scaffolding proof: depends on BOTH bridge + swss-common
+│       └── src/bin/{swss_smoke,env_smoke}.rs  # swss-only + the combined agent pattern
 ├── source/                       # INPUT (gitignored, re-pullable from pmon)
 │   ├── xcvrd/                    #   the Python xcvrd source the agents translate
 │   └── sonic_platform/           #   the emulator HAL — bridge-design reference
@@ -253,10 +278,20 @@ discovers 33 SFPs over gRPC and CMIS-decodes real identity. Re-runnable any time
 with `bash tools/bridge_smoke.sh` (builds → runs in pmon → cleans up; leaves xcvrd
 untouched).
 
-Remaining Phase 0: wire `platform-bridge` + `swss-common` into a real
-`crate/xcvrd-rs` skeleton, and author the four `.agent.md` profiles. *(Done:
-deterministic core, DUT harness, platform-bridge, and pulling the Python xcvrd
-source into `source/`.)*
+**swss-common wiring + agent scaffolding: proven on the DUT.** The official
+`swss-common` crate (pinned git rev) is wired into the workspace via the
+`env-check` crate, which depends on **both** it and `platform-bridge`. `swss-smoke`
+round-trips a STATE_DB hash; `env-smoke` reads a transceiver through the bridge and
+publishes it to STATE_DB — the exact `SfpStateUpdateTask` read→publish pattern the
+agents will implement. Both green in pmon via `bash tools/env_check.sh`. The build
+container bakes the swss build prereqs (clang, pinned c-api headers, bindgen `-x c`)
+and `ensure_swsslib.sh` supplies `libswsscommon.so` from the live pmon, so agent
+builds "just work" (see §3b).
+
+Remaining Phase 0: the four `.agent.md` profiles, and (agents' job) implementing
+`crate/xcvrd-rs` on top of the proven `platform-bridge` + `swss-common`
+scaffolding. *(Done: deterministic core, DUT harness, platform-bridge, swss-common
+wiring, and pulling the Python xcvrd source into `source/`.)*
 
 ---
 
@@ -329,6 +364,23 @@ Builds `bridge-smoke` in the trixie container, runs it inside pmon against the l
 `xcvr-emu`, and cleans up. Expected: `num_sfps = 33`, every present module prints
 `type=QSFP-DD… manufacturer=xcvr-emu model=EMU-40G-LR4`, and `bridge-smoke: OK`
 (`rc=0`). It leaves the Python xcvrd untouched.
+
+### D. Agent scaffolding: bridge + swss-common (real STATE_DB in pmon, ~1 min)
+
+Proves the two libraries agents build `xcvrd-rs` on compile, link, and run
+together. From **Git Bash**:
+
+```bash
+cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
+bash tools/env_check.sh
+```
+
+Builds `swss-smoke` + `env-smoke` in the trixie container (pulling
+`libswsscommon.so` from pmon first via `ensure_swsslib.sh`), runs both inside pmon,
+and cleans up. Expected: `swss-smoke: OK` (STATE_DB round-trip) and `env-smoke: OK`
+— `bridge -> swss: wrote 6 fields to TRANSCEIVER_INFO|RECODE_ENV_SMOKE_0`
+(`manufacturer=xcvr-emu`, `cmis_rev=5.2`, …). Uses throwaway STATE_DB keys it
+deletes; leaves xcvrd untouched.
 
 ### The state machine (what the Burr graph encodes)
 

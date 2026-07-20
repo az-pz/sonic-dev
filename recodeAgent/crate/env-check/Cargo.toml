@@ -1,0 +1,33 @@
+# env-check -- proves the environment scaffolding the translation agents build on.
+#
+# It depends on BOTH libraries agents use to write xcvrd-rs, and nothing else:
+#   - platform-bridge : local PyO3 crate -> the Python sonic_platform HAL (xcvr-emu)
+#   - swss-common     : the OFFICIAL sonic-net Rust bindings -> STATE_DB (Redis)
+#
+# The two bins are NOT the daemon; they demonstrate + prove the interop so that
+# when agents implement xcvrd-rs they inherit a known-good, buildable, runnable
+# dependency set. Build in the trixie container (see tools/dut/Dockerfile.build),
+# run inside pmon (see tools/env_check.sh).
+[package]
+name = "env-check"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+platform-bridge = { path = "../platform-bridge" }
+# Pinned to a specific master commit for reproducibility. swss-common is itself a
+# member of the sonic-swss-common workspace; cargo resolves its `.workspace = true`
+# inheritance from that repo automatically when used as a git dependency.
+swss-common = { git = "https://github.com/sonic-net/sonic-swss-common", rev = "7faca59cd30367692a8c5406ad5d7c0b5341c7ef" }
+serde_json = "1"
+
+# swss only: prove the swss-common bindings link + talk to STATE_DB.
+[[bin]]
+name = "swss-smoke"
+path = "src/bin/swss_smoke.rs"
+
+# bridge + swss: the exact agent pattern -- read a transceiver via the HAL, then
+# publish it to STATE_DB.
+[[bin]]
+name = "env-smoke"
+path = "src/bin/env_smoke.rs"
