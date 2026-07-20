@@ -138,7 +138,7 @@ daemon logic strips them, exactly like the Python original).
 
 The Rust daemon reads/writes Redis STATE_DB through the upstream Rust bindings at
 [`sonic-net/sonic-swss-common` `crates/swss-common`](https://github.com/sonic-net/sonic-swss-common/tree/master/crates/swss-common/src),
-not a hand-rolled client. It's a **pinned git dependency** (`env-check/Cargo.toml`,
+not a hand-rolled client. It's a **pinned git dependency** (`xcvrd-rs/Cargo.toml`,
 rev `7faca59`) exposing `DbConnector`, `Table`, `SonicV2Connector`,
 `ProducerStateTable`, `SubscriberStateTable`, etc. Agents write STATE_DB from Rust
 with e.g. `DbConnector::new_unix(6, "/var/run/redis/redis.sock", 0)?.hset(key, field, &CxxString::from(v))`.
@@ -155,8 +155,9 @@ pmon-specific, so it's pulled from the live pmon into `~/recode/swsslib` by
 `tools/dut/ensure_swsslib.sh` and mounted at build time (`-L native=/swsslib`).
 Keep the `Dockerfile.build` `SWSS_COMMON_REV` arg in sync with the Cargo rev.
 
-> ✅ **Proven on the DUT (2026-07-20).** `swss-smoke` links `libswsscommon.so.0`
-> and round-trips a STATE_DB hash; `env-smoke` composes **both** libraries — reads
+> ✅ **Proven on the DUT (2026-07-20).** The `statedb_probe` example links
+> `libswsscommon.so.0` and round-trips a STATE_DB hash; the `hal_to_statedb`
+> example composes **both** libraries — reads
 > transceiver 0 via the bridge and publishes 6 CMIS fields to STATE_DB — the exact
 > `SfpStateUpdateTask` pattern. Both run green in pmon via **`bash tools/env_check.sh`**.
 
@@ -189,19 +190,20 @@ dev/recodeAgent/
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
-│   ├── env_check.sh              # build+run swss-smoke + env-smoke in pmon (bridge+swss proof)
+│   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
 │   ├── check.sh                  # offline orchestrator mock checks (happy/repair/budget/resume)
 │   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
 │       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh
 │       ├── bridge_smoke.sh   env_check.sh   ensure_swsslib.sh   # (ensure_swsslib pulls libswsscommon.so)
 ├── crate/                        # the Rust workspace (build target = pmon)
-│   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge + env-check
-│   ├── xcvrd-rs/                 #   the daemon — agents translate logic into here (uses the two below)
-│   ├── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
-│   │   ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
-│   │   └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
-│   └── env-check/                #   scaffolding proof: depends on BOTH bridge + swss-common
-│       └── src/bin/{swss_smoke,env_smoke}.rs  # swss-only + the combined agent pattern
+│   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge
+│   ├── xcvrd-rs/                 #   BOOTSTRAP: daemon bin + lib wiring BOTH bindings
+│   │   ├── src/main.rs           #     M0 daemon skeleton (stays RUNNING; deployed)
+│   │   ├── src/lib.rs  src/env.rs #    reusable seed: open_platform() / open_state_db()
+│   │   └── examples/{statedb_probe,hal_to_statedb}.rs  # binding demos (cargo examples, not deployed)
+│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
+│       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
+│       └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
 ├── source/                       # INPUT (gitignored, re-pullable from pmon)
 │   ├── xcvrd/                    #   the Python xcvrd source the agents translate
 │   └── sonic_platform/           #   the emulator HAL — bridge-design reference
@@ -278,12 +280,14 @@ discovers 33 SFPs over gRPC and CMIS-decodes real identity. Re-runnable any time
 with `bash tools/bridge_smoke.sh` (builds → runs in pmon → cleans up; leaves xcvrd
 untouched).
 
-**swss-common wiring + agent scaffolding: proven on the DUT.** The official
-`swss-common` crate (pinned git rev) is wired into the workspace via the
-`env-check` crate, which depends on **both** it and `platform-bridge`. `swss-smoke`
-round-trips a STATE_DB hash; `env-smoke` reads a transceiver through the bridge and
-publishes it to STATE_DB — the exact `SfpStateUpdateTask` read→publish pattern the
-agents will implement. Both green in pmon via `bash tools/env_check.sh`. The build
+**swss-common wiring + bootstrap: proven on the DUT.** The official `swss-common`
+crate (pinned git rev) is wired directly into **`xcvrd-rs`** alongside
+`platform-bridge`, so the crate agents start from already has both bindings. The
+daemon bin stays the M0 skeleton; `src/env.rs` exposes `open_platform()` /
+`open_state_db()`, and two `examples/` demonstrate the bindings — `statedb_probe`
+round-trips a STATE_DB hash; `hal_to_statedb` reads a transceiver through the
+bridge and publishes it to STATE_DB (the exact `SfpStateUpdateTask` read→publish
+pattern). Both green in pmon via `bash tools/env_check.sh`. The build
 container bakes the swss build prereqs (clang, pinned c-api headers, bindgen `-x c`)
 and `ensure_swsslib.sh` supplies `libswsscommon.so` from the live pmon, so agent
 builds "just work" (see §3b).
@@ -375,10 +379,10 @@ cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
 bash tools/env_check.sh
 ```
 
-Builds `swss-smoke` + `env-smoke` in the trixie container (pulling
-`libswsscommon.so` from pmon first via `ensure_swsslib.sh`), runs both inside pmon,
-and cleans up. Expected: `swss-smoke: OK` (STATE_DB round-trip) and `env-smoke: OK`
-— `bridge -> swss: wrote 6 fields to TRANSCEIVER_INFO|RECODE_ENV_SMOKE_0`
+Builds the `statedb_probe` + `hal_to_statedb` examples in the trixie container
+(pulling `libswsscommon.so` from pmon first via `ensure_swsslib.sh`), runs both
+inside pmon, and cleans up. Expected: `statedb_probe: OK` (STATE_DB round-trip) and
+`hal_to_statedb: OK` — `bridge -> swss: wrote 6 fields to TRANSCEIVER_INFO|RECODE_HAL2DB_0`
 (`manufacturer=xcvr-emu`, `cmis_rev=5.2`, …). Uses throwaway STATE_DB keys it
 deletes; leaves xcvrd untouched.
 
