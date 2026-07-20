@@ -121,8 +121,10 @@ fi
 echo "[dut] running xcvrd-tests (args_b64=${ARGS_B64:-<none>})"
 export PYTEST_ARGS_B64="$ARGS_B64"
 _PHASE=$(_now_ms)
-bash "$TESTS/run.sh" >"$STAGE/run.log" 2>&1
-RC=$?
+echo "==================== run.sh / pytest output ===================="
+bash "$TESTS/run.sh" 2>&1 | tee "$STAGE/run.log"
+RC=${PIPESTATUS[0]}
+echo "================== end run.sh / pytest output =================="
 printf '[dut][t] %-26s %6d ms  <== TESTS PHASE TOTAL\n' "run.sh total" "$(( $(_now_ms) - _PHASE ))"
 cp "$TESTS/results.xml" "$STAGE/results.xml" 2>/dev/null || true
 echo "[dut] run.sh exit=$RC"

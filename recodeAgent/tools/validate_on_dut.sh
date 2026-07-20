@@ -21,8 +21,12 @@ ARGS=()
 if [ "$#" -gt 0 ]; then
   ARGS=("$@")
 else
-  while IFS= read -r line; do ARGS+=("$line"); done \
-    < <(cd "$RECODE_DIR" && python -m orchestrator.milestones --args "$MILESTONE")
+  # python may run under Windows (Git Bash) and emit CRLF; strip trailing \r and
+  # skip blank lines so args like -k "a or b" survive intact.
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    [ -n "$line" ] && ARGS+=("$line")
+  done < <(cd "$RECODE_DIR" && python -m orchestrator.milestones --args "$MILESTONE")
 fi
 echo "[validate] $MILESTONE cumulative gate: ${ARGS[*]:-(deploy-smoke)}"
 

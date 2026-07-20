@@ -2,12 +2,17 @@
 
 Each milestone is a slice of the xcvrd daemon. Its gate is CUMULATIVE: a milestone
 must pass its OWN new tests **and every earlier milestone's tests** (regression
-safety -- new work must not break earlier functionality). The matrix here is the
-single source of truth; `cumulative_args(mid)` builds the pytest args, and the CLI
-(`python -m orchestrator.milestones --args M3`) exposes them to the shell harness.
+safety). The matrix here is the single source of truth; `cumulative_args(mid)`
+builds the pytest args, and the CLI (`python -m orchestrator.milestones --args M3`)
+exposes them to the shell harness.
 
-Fast-subset-first: M1..M5 run with `-m "not slow"` so the inner translate->validate
-loop stays quick; M6 drops the filter to run the full suite (incl. slow tests).
+Selection uses pytest **`-k` module selectors**, NOT file paths: the black-box
+`xcvrd-tests/run.sh` always runs `pytest <tests-dir> <extra args>`, so passing file
+paths would either collect the whole dir or error on a relative path. A `-k
+"test_presence or test_info_content"` expression narrows the already-collected dir
+to exactly the intended modules (matched by the test module stem in each node id).
+
+Fast-subset-first: M1..M5 run with `-m "not slow"`; M6 drops the filter (full suite).
 """
 from __future__ import annotations
 
@@ -20,9 +25,9 @@ DEFAULT_MARKER = "not slow"
 class Milestone:
     id: str
     title: str
-    goal: str                                   # what the Rust daemon must do
-    test_paths: list[str] = field(default_factory=list)  # NEW test files this milestone adds
-    marker: str = DEFAULT_MARKER                # pytest -m marker for the (cumulative) run
+    goal: str                                    # what the Rust daemon must do
+    test_modules: list[str] = field(default_factory=list)  # pytest module stems this milestone ADDS
+    marker: str = DEFAULT_MARKER                 # pytest -m marker for the (cumulative) run
 
 
 MILESTONES: list[Milestone] = [
@@ -32,43 +37,43 @@ MILESTONES: list[Milestone] = [
         "under supervisor. Deploy-smoke gate only: the suite's clean-baseline "
         "requires TRANSCEIVER_INFO repopulation, so no pytest passes on a bare "
         "skeleton -- the harness special-cases M0 to check supervisor RUNNING.",
-        test_paths=[], marker="",
+        test_modules=[], marker="",
     ),
     Milestone(
         "M1", "Presence + identity",
         "On insertion, read identity via the platform bridge and publish "
         "TRANSCEIVER_INFO; on removal, clear it; restore on re-plug.",
-        test_paths=["tests/test_presence.py", "tests/test_info_content.py"],
+        test_modules=["test_presence", "test_info_content"],
     ),
     Milestone(
         "M2", "DOM",
         "Periodically poll module monitors via the platform and publish "
         "TRANSCEIVER_DOM_SENSOR; the emulator Monitor trace shows real reads.",
-        test_paths=["tests/test_dom.py", "tests/test_interaction_trace.py"],
+        test_modules=["test_dom", "test_interaction_trace"],
     ),
     Milestone(
         "M3", "Status / CMIS state / errors",
         "Publish TRANSCEIVER_STATUS_SW (plug status, cmis_state=READY) and decode "
         "injected error events (blocking removes DOM, non-blocking keeps it).",
-        test_paths=["tests/test_status_error.py"],
+        test_modules=["test_status_error"],
     ),
     Milestone(
         "M4", "lpmode / reset",
         "Handle sfputil lpmode/reset: drive the CMIS ModuleGlobalControls writes "
         "and reflect lpmode state.",
-        test_paths=["tests/test_lpmode_reset.py"],
+        test_modules=["test_lpmode_reset"],
     ),
     Milestone(
         "M5", "Multiport concurrency",
         "Handle concurrent presence/DOM across many ports with per-module "
         "isolation (no cross-talk).",
-        test_paths=["tests/test_multiport.py"],
+        test_modules=["test_multiport"],
     ),
     Milestone(
         "M6", "Golden conformance (full suite)",
         "Reproduce the reference STATE_DB projection and pass the ENTIRE suite, "
         "including slow tests (no marker filter).",
-        test_paths=["tests/test_golden.py"], marker="",   # full suite incl. slow
+        test_modules=["test_golden"], marker="",   # full suite incl. slow
     ),
 ]
 
@@ -84,20 +89,26 @@ def by_id(mid: str) -> Milestone:
     return MILESTONES[index_of(mid)]
 
 
-def cumulative_args(mid: str) -> list[str]:
-    """pytest args for a milestone's CUMULATIVE gate: the union of test_paths for
-    M1..mid (in order, de-duplicated) plus the current milestone's `-m` marker.
-    M0 returns [] (deploy-smoke; no pytest)."""
+def cumulative_modules(mid: str) -> list[str]:
+    """The test module stems for a milestone's cumulative gate (M1..mid), in order."""
     idx = index_of(mid)
-    if idx == 0:
+    mods: list[str] = []
+    for m in MILESTONES[1:idx + 1]:              # M1..current
+        for mod in m.test_modules:
+            if mod not in mods:
+                mods.append(mod)
+    return mods
+
+
+def cumulative_args(mid: str) -> list[str]:
+    """pytest args for a milestone's CUMULATIVE gate: a `-k` expression selecting
+    this milestone's modules plus every earlier milestone's, plus the current
+    milestone's `-m` marker. M0 returns [] (deploy-smoke; no pytest)."""
+    mods = cumulative_modules(mid)
+    if not mods:
         return []
-    paths: list[str] = []
-    for m in MILESTONES[1:idx + 1]:            # M1..current
-        for p in m.test_paths:
-            if p not in paths:
-                paths.append(p)
-    args = list(paths)
-    marker = MILESTONES[idx].marker
+    args = ["-k", " or ".join(mods)]
+    marker = MILESTONES[index_of(mid)].marker
     if marker:
         args += ["-m", marker]
     return args
@@ -105,14 +116,14 @@ def cumulative_args(mid: str) -> list[str]:
 
 def _cli() -> int:
     """`python -m orchestrator.milestones --args M3` -> one pytest arg per line
-    (so a shell can read them into an array, preserving 'not slow')."""
+    (so a shell can read them into an array, preserving multi-word args)."""
     import sys
     argv = sys.argv[1:]
     if len(argv) >= 2 and argv[0] == "--args":
         for a in cumulative_args(argv[1]):
             print(a)
         return 0
-    for m in MILESTONES:                        # default: print the matrix
+    for m in MILESTONES:                         # default: print the matrix
         print(f"{m.id}  {m.title}")
         print(f"     gate: {' '.join(cumulative_args(m.id)) or '(deploy-smoke)'}")
     return 0
