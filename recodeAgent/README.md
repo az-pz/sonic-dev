@@ -80,8 +80,9 @@ have to reinvent fragile interop:
 ### 3a. HAL = the existing Python platform via PyO3 (`crate/platform-bridge`)
 
 The Rust xcvrd talks to `xcvr-emu` through the **exact Python `sonic_platform`
-plugin we run today** (`dev/platform/sonic_platform/`), via **PyO3**. We do NOT
-re-implement the CMIS/SFF decode stack in Rust.
+plugin we run today** (pulled to `source/sonic_platform/`; lives on pmon at
+`/usr/local/lib/python3.13/dist-packages/sonic_platform/`), via **PyO3**. We do
+NOT re-implement the CMIS/SFF decode stack in Rust.
 
 Why: `sonic_platform.Sfp` subclasses `SfpOptoeBase`, so the Python platform
 already provides the *entire* transceiver API on top of three raw hooks:
@@ -90,13 +91,13 @@ already provides the *entire* transceiver API on top of three raw hooks:
 Sfp(SfpOptoeBase)
   raw hooks     : read_eeprom / write_eeprom / get_presence   (→ emulator gRPC)
   derived (free): get_transceiver_info(), get_transceiver_dom_real_value(),
-                  get_transceiver_status(), get_xcvr_api() [CMIS mgmt], ...
+                  get_transceiver_status(), set_lpmode()/reset() [CMIS mgmt], ...
 Chassis(ChassisBase)
                 : get_num_sfps(), get_sfp(i), get_change_event(timeout)
 ```
 
-**`platform-bridge` is a PyO3 crate (built by us) that exposes this high-level
-API to Rust as clean typed structs.** So:
+**`platform-bridge` is a PyO3 crate (built by us) that embeds CPython, imports the
+real plugin, and exposes this high-level API to Rust.** So:
 
 - **What stays in Python (behind the bridge):** all CMIS/SFF parsing — "the exact
   platform we have now."
@@ -105,11 +106,33 @@ API to Rust as clean typed structs.** So:
   orchestration), polling cadence, state-update decisions, and the STATE_DB
   schema writes.
 
-> ⚠️ **Decision to confirm:** this is a *thick* HAL boundary (Rust calls
-> `get_transceiver_info()` etc. via PyO3). The alternative "thin" boundary (Rust
-> re-implements CMIS decode on top of only read/write/presence) is a far larger,
-> riskier translation surface. We chose thick to match "use the exact platform we
-> have now" and to keep the translation scoped to the *daemon*.
+**Exposed surface** (`platform_bridge::{Platform, Chassis, Sfp, ChangeEvent}`):
+`Platform::new()` → `num_sfps()`, `sfp(i)`, `get_change_event(timeout_ms)`; per-SFP
+`get_presence()/is_replaceable()/get_reset_status()/sfp_type()/get_error_description()`
+(typed scalars), `get_transceiver_info()/_dom_real_value()/_status()/_threshold_info()`
+(returned as `serde_json::Value` so the surface is stable as milestones add fields),
+`get_lpmode()/set_lpmode()/reset()` [M4], `read_eeprom()/write_eeprom()`, and a
+generic `call_json(method, args)` escape hatch. Complex dicts are marshalled via
+`json.dumps(…, default=str)`; NUL-padded CMIS strings are returned verbatim (the
+daemon logic strips them, exactly like the Python original).
+
+> ✅ **Confirmed & proven on the DUT (2026-07-20).** This *thick* boundary (Rust
+> calls `get_transceiver_info()` etc. via PyO3) beats a "thin" one (Rust
+> re-implements CMIS decode on read/write/presence) — far smaller, safer
+> translation surface, and it matches "use the exact platform we have now."
+> `bridge-smoke` runs inside pmon: PyO3 **0.22.6** links `libpython3.13.so.1.0`,
+> imports `sonic_platform`, discovers **33 SFPs** over gRPC, and CMIS-decodes real
+> identity (`type=QSFP-DD…`, `manufacturer=xcvr-emu`, `model=EMU-40G-LR4`,
+> `cmis_rev=5.2`). Reproduce end to end (build in trixie → run in pmon → clean up)
+> with **`bash tools/bridge_smoke.sh`**.
+>
+> The `TRANSCEIVER_INFO` contract M1 must reproduce (from `get_transceiver_info()`):
+> `type, type_abbrv_name, hardware_rev, serial, manufacturer, model, connector,
+> encoding, ext_identifier, ext_rateselect_compliance, cable_length,
+> nominal_bit_rate, vendor_date, vendor_oui, active_apsel_hostlane{1..8},
+> application_advertisement, host_lane_count, media_lane_count, cable_type,
+> media_interface_technology, vendor_rev, cmis_rev, specification_compliance,
+> vdm_supported`.
 
 ### 3b. STATE_DB = official `swss-common` Rust crate
 
@@ -144,13 +167,19 @@ dev/recodeAgent/
 │   ├── analyzer.agent.md  planner.agent.md  translator.agent.md  validator.agent.md
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
-│   ├── build_rust.sh             # the containerized build step
-│   └── recode_mcp_server.py      # optional PA tools (get_file_structure, ...) over MCP
+│   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
+│   ├── check.sh                  # offline orchestrator mock checks (happy/repair/budget/resume)
+│   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
+│       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh  bridge_smoke.sh
 ├── crate/                        # the Rust workspace (build target = pmon)
 │   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge
 │   ├── xcvrd-rs/                 #   the daemon — agents translate logic into here
-│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (we build this)
-├── source/xcvrd/                 # INPUT: the Python xcvrd source (pulled from pmon)
+│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
+│       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
+│       └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
+├── source/                       # INPUT (gitignored, re-pullable from pmon)
+│   ├── xcvrd/                    #   the Python xcvrd source the agents translate
+│   └── sonic_platform/           #   the emulator HAL — bridge-design reference
 └── pipeline/                     # runtime hand-off: analysis.md, plan.json, report.json (gitignored)
 ```
 
@@ -216,9 +245,18 @@ ENOSPC/partial write can never truncate xcvrd), runs `xcvrd-tests/run.sh`, parse
 > `sudo find /var/lib/docker/containers -name '*-json.log' -exec truncate -s 0 {} +`.
 > The crash-safe inject also means a future ENOSPC can no longer corrupt xcvrd.
 
+**platform-bridge (PyO3 thick HAL): proven on the DUT.** The `Platform/Chassis/Sfp`
+wrappers embed CPython, import the real `sonic_platform` plugin, and return its
+high-level results to Rust (see §3a). Built with PyO3 0.22.6 in the trixie
+container (links `libpython3.13.so.1.0`) and run inside pmon via `bridge-smoke`:
+discovers 33 SFPs over gRPC and CMIS-decodes real identity. Re-runnable any time
+with `bash tools/bridge_smoke.sh` (builds → runs in pmon → cleans up; leaves xcvrd
+untouched).
 
-Remaining Phase 0: the `platform-bridge` (PyO3) + `crate/xcvrd-rs` real skeleton,
-the four `.agent.md` profiles, and pulling the Python xcvrd source into `source/`.
+Remaining Phase 0: wire `platform-bridge` + `swss-common` into a real
+`crate/xcvrd-rs` skeleton, and author the four `.agent.md` profiles. *(Done:
+deterministic core, DUT harness, platform-bridge, and pulling the Python xcvrd
+source into `source/`.)*
 
 ---
 
@@ -260,8 +298,8 @@ an interactive shell):
 
 ```bash
 cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/validate_on_dut.sh M0                       # deploy-smoke: skeleton must be RUNNING
-bash tools/validate_on_dut.sh M1 tests/test_presence.py -m "not slow"   # a real pytest gate
+bash tools/validate_on_dut.sh M0        # deploy-smoke: skeleton must be RUNNING
+bash tools/validate_on_dut.sh M1        # first real pytest gate (auto-resolves the -k selection)
 ```
 
 It prints the verdict and writes `pipeline/report.json`:
@@ -277,6 +315,20 @@ Python xcvrd afterward; confirm the testbed is healthy any time with:
 ```powershell
 ssh sonic-dev "docker exec mgmt bash -lc 'sshpass -p password ssh -o StrictHostKeyChecking=no admin@10.250.0.101 \"docker exec pmon supervisorctl status xcvrd\"'"
 ```
+
+### C. platform-bridge smoke (real PyO3 → sonic_platform in pmon, ~1 min)
+
+Proves the HAL boundary independently of the daemon. From **Git Bash**:
+
+```bash
+cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
+bash tools/bridge_smoke.sh
+```
+
+Builds `bridge-smoke` in the trixie container, runs it inside pmon against the live
+`xcvr-emu`, and cleans up. Expected: `num_sfps = 33`, every present module prints
+`type=QSFP-DD… manufacturer=xcvr-emu model=EMU-40G-LR4`, and `bridge-smoke: OK`
+(`rc=0`). It leaves the Python xcvrd untouched.
 
 ### The state machine (what the Burr graph encodes)
 

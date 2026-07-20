@@ -16,6 +16,7 @@ crate/target/
 
 # pulled source input (large; re-pullable from pmon)
 source/xcvrd/
+source/sonic_platform/
 
 # scratch (leading-underscore convention)
 _*.sh
