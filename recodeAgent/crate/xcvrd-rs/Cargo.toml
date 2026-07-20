@@ -1,0 +1,15 @@
+[package]
+name = "xcvrd-rs"
+version = "0.1.0"
+edition = "2021"
+
+# The daemon binary that replaces python xcvrd under the pmon supervisor.
+# The agents translate the xcvrd task logic into this crate, on top of the
+# provided platform-bridge (PyO3 -> sonic_platform) and swss-common (STATE_DB).
+[[bin]]
+name = "xcvrd-rs"
+path = "src/main.rs"
+
+[dependencies]
+# platform-bridge = { path = "../platform-bridge" }   # enabled once the bridge lands
+# swss-common = { git = "https://github.com/sonic-net/sonic-swss-common", ... }

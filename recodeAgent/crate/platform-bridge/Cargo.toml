@@ -1,0 +1,15 @@
+[package]
+name = "platform-bridge"
+version = "0.1.0"
+edition = "2021"
+
+# PyO3 wrappers around the Python sonic_platform plugin (Chassis/Sfp), so the
+# Rust daemon uses "the exact platform we have now" to talk to xcvr-emu.
+# PyO3 is added in the bridge-implementation phase; kept dependency-free here so
+# the workspace compiles for the harness spine proof.
+[lib]
+name = "platform_bridge"
+path = "src/lib.rs"
+
+[dependencies]
+# pyo3 = { version = "0.22", features = ["auto-initialize"] }

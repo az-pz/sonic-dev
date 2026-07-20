@@ -1,0 +1,15 @@
+# Reproducible build environment for xcvrd-rs targeting the pmon container.
+#
+# pmon = Debian 13 (trixie), Python 3.13.5, glibc 2.41. We build in the matching
+# base so the binary's glibc and libpython3.13 SONAME resolve at runtime in pmon.
+# python3-dev / libpython3.13-dev provide PyO3's build-time headers + link lib.
+FROM rust:trixie
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-dev \
+        libpython3.13-dev \
+        pkg-config \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src

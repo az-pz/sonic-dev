@@ -1,0 +1,23 @@
+# runtime hand-off + orchestrator state (never committed)
+pipeline/
+*.db
+*.sqlite
+*.sqllite.db
+.burr.db
+
+# python
+__pycache__/
+*.pyc
+.pydeps/
+
+# rust build artifacts
+crate/target/
+**/*.rs.bk
+
+# pulled source input (large; re-pullable from pmon)
+source/xcvrd/
+
+# scratch (leading-underscore convention)
+_*.sh
+_*.py
+!**/__init__.py

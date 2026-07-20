@@ -1,0 +1,18 @@
+[project]
+name = "recodeagent-xcvrd"
+version = "0.1.0"
+description = "Multi-agent Python->Rust translation of SONiC xcvrd (ReCodeAgent-style, driven by GitHub Copilot CLI, orchestrated by Apache Burr)."
+requires-python = ">=3.11"
+dependencies = [
+    "apache-burr>=0.42.0",
+]
+
+[project.optional-dependencies]
+# Burr's telemetry UI. Heavy (pyarrow); install separately where wheels exist.
+ui = ["apache-burr[start]"]
+
+[project.scripts]
+recode = "orchestrator.app:main"
+
+[tool.setuptools]
+packages = ["orchestrator"]
