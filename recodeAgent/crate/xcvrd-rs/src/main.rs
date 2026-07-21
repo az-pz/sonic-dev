@@ -1,24 +1,15 @@
-//! xcvrd-rs — Rust reimplementation of the SONiC xcvrd transceiver daemon.
+//! xcvrd-rs daemon entrypoint.
 //!
-//! SKELETON (Phase 0 / milestone M0). This default binary is just a supervised
-//! daemon that stays RUNNING so the build->inject->test->restore harness can be
-//! proven end to end (gate: `test_xcvrd_running`). The translation agents flesh
-//! this out milestone by milestone on top of the two bindings already wired into
-//! the crate (see the `xcvrd_rs` library docs + `src/env.rs`):
-//!   - platform-bridge  (PyO3 wrappers around the Python sonic_platform plugin)
-//!   - swss-common      (STATE_DB access)
+//! Runs the M1 bootstrap (presence + identity): populate TRANSCEIVER_INFO /
+//! TRANSCEIVER_STATUS_SW for present transceivers and react to plug/unplug, so the
+//! black-box suite gets past the clean-baseline fixture and the M1 tests actually
+//! run. The logic lives in `xcvrd_rs::daemon` (built on the platform-bridge HAL +
+//! swss-common STATE_DB bindings); the translation agents extend it milestone by
+//! milestone. See the crate lib docs + `examples/` for the binding usage patterns.
 //!
-//! Runnable demonstrations of both bindings live in `examples/` (they are NOT part
-//! of this deployed binary). Run under the pmon supervisor via a Python shim that
-//! execs this binary, so `supervisorctl status xcvrd` reports RUNNING.
-
-use std::{thread, time::Duration};
+//! Runs under the pmon supervisor via a Python shim that execs this binary, so
+//! `supervisorctl status xcvrd` reports RUNNING.
 
 fn main() {
-    eprintln!("xcvrd-rs: starting (skeleton M0)");
-    // Default SIGTERM behaviour (terminate) is fine for supervisor stop/restart.
-    loop {
-        thread::sleep(Duration::from_secs(3600));
-    }
+    xcvrd_rs::daemon::run();
 }
-

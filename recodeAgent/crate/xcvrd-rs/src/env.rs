@@ -10,6 +10,9 @@ use swss_common::DbConnector;
 /// SONiC STATE_DB logical index (Redis db number).
 pub const STATE_DB: i32 = 6;
 
+/// SONiC CONFIG_DB logical index (Redis db number).
+pub const CONFIG_DB: i32 = 4;
+
 /// Redis unix socket path inside pmon (override with the `REDIS_SOCK` env var).
 pub fn redis_sock() -> String {
     std::env::var("REDIS_SOCK").unwrap_or_else(|_| "/var/run/redis/redis.sock".to_string())
@@ -32,4 +35,10 @@ pub fn open_platform() -> platform_bridge::Result<Platform> {
 /// writes like `TRANSCEIVER_INFO`.
 pub fn open_state_db() -> swss_common::Result<DbConnector> {
     DbConnector::new_unix(STATE_DB, redis_sock(), 0)
+}
+
+/// Open a CONFIG_DB connection over the Redis unix socket (for the PORT table /
+/// logical↔physical port mapping).
+pub fn open_config_db() -> swss_common::Result<DbConnector> {
+    DbConnector::new_unix(CONFIG_DB, redis_sock(), 0)
 }

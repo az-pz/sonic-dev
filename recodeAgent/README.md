@@ -198,8 +198,8 @@ dev/recodeAgent/
 ├── crate/                        # the Rust workspace (build target = pmon)
 │   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge
 │   ├── xcvrd-rs/                 #   BOOTSTRAP: daemon bin + lib wiring BOTH bindings
-│   │   ├── src/main.rs           #     M0 daemon skeleton (stays RUNNING; deployed)
-│   │   ├── src/lib.rs  src/env.rs #    reusable seed: open_platform() / open_state_db()
+│   │   ├── src/main.rs           #     thin entrypoint -> xcvrd_rs::daemon::run()
+│   │   ├── src/lib.rs  src/env.rs  src/daemon.rs  # M1 bootstrap: presence + identity
 │   │   └── examples/{statedb_probe,hal_to_statedb}.rs  # binding demos (cargo examples, not deployed)
 │   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
 │       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
@@ -283,19 +283,28 @@ untouched).
 **swss-common wiring + bootstrap: proven on the DUT.** The official `swss-common`
 crate (pinned git rev) is wired directly into **`xcvrd-rs`** alongside
 `platform-bridge`, so the crate agents start from already has both bindings. The
-daemon bin stays the M0 skeleton; `src/env.rs` exposes `open_platform()` /
-`open_state_db()`, and two `examples/` demonstrate the bindings — `statedb_probe`
-round-trips a STATE_DB hash; `hal_to_statedb` reads a transceiver through the
-bridge and publishes it to STATE_DB (the exact `SfpStateUpdateTask` read→publish
-pattern). Both green in pmon via `bash tools/env_check.sh`. The build
-container bakes the swss build prereqs (clang, pinned c-api headers, bindgen `-x c`)
-and `ensure_swsslib.sh` supplies `libswsscommon.so` from the live pmon, so agent
-builds "just work" (see §3b).
+daemon (`src/daemon.rs`) is a minimal **M1 bootstrap** (presence + identity):
+`src/env.rs` exposes `open_platform()` / `open_state_db()` / `open_config_db()`,
+and the daemon reads identity via the HAL and publishes `TRANSCEIVER_INFO` +
+`TRANSCEIVER_STATUS_SW`, reacting to plug/unplug via `get_change_event`. Two
+`examples/` also demonstrate the bindings — `statedb_probe` round-trips a STATE_DB
+hash; `hal_to_statedb` reads a transceiver and publishes it (the exact
+`SfpStateUpdateTask` read→publish pattern), both green via `bash tools/env_check.sh`.
+The build container bakes the swss build prereqs (clang, pinned c-api headers,
+bindgen `-x c`) and `ensure_swsslib.sh` supplies `libswsscommon.so` from the live
+pmon, so agent builds "just work" (see §3b).
 
-Remaining Phase 0: the four `.agent.md` profiles, and (agents' job) implementing
-`crate/xcvrd-rs` on top of the proven `platform-bridge` + `swss-common`
-scaffolding. *(Done: deterministic core, DUT harness, platform-bridge, swss-common
-wiring, and pulling the Python xcvrd source into `source/`.)*
+> ✅ **M1 green on the DUT (2026-07-21).** `validate_on_dut.sh M1` → **11 passed,
+> 0 failed** (`test_info_content` ×5 + `test_presence` ×6): identity fields,
+> plug/unplug clear+restore, `STATUS_SW.status` 1/0, and `cmis_state=READY`. The
+> bootstrap gets the suite past the clean-baseline fixture so the real tests run
+> and pass, giving the agents a working M1 starting point instead of a no-op.
+
+Remaining Phase 0: the four `.agent.md` profiles, and (agents' job) extending
+`crate/xcvrd-rs` beyond M1 (DOM, CMIS state, errors, …) on the proven
+`platform-bridge` + `swss-common` scaffolding. *(Done: deterministic core, DUT
+harness, platform-bridge, swss-common wiring, the M1 bootstrap daemon, and pulling
+the Python xcvrd source into `source/`.)*
 
 ---
 
@@ -347,9 +356,10 @@ It prints the verdict and writes `pipeline/report.json`:
 { "milestone": "M0", "passed": true, "tests": {"total":1,"passed":1,"failed":0}, "failures": [] }
 ```
 
-M0 passes on the current no-op skeleton (proves the harness). M1+ will fail until
-the daemon logic is translated — that's expected. The harness ALWAYS restores the
-Python xcvrd afterward; confirm the testbed is healthy any time with:
+M0 passes (deploy-smoke) and **M1 passes 11/11** on the current bootstrap daemon
+(presence + identity). M2+ (DOM, CMIS state, errors, …) will fail until that logic
+is added — that's expected. The harness ALWAYS restores the Python xcvrd
+afterward; confirm the testbed is healthy any time with:
 
 ```powershell
 ssh sonic-dev "docker exec mgmt bash -lc 'sshpass -p password ssh -o StrictHostKeyChecking=no admin@10.250.0.101 \"docker exec pmon supervisorctl status xcvrd\"'"

@@ -22,4 +22,5 @@
 //!                          then publish it to STATE_DB (what `SfpStateUpdateTask`
 //!                          will do for real).
 
+pub mod daemon;
 pub mod env;
