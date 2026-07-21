@@ -504,4 +504,15 @@ node's state update **as a run progresses** — just refresh the browser (the UI
 also polls on its own). Requires Docker Desktop running. Override the port with
 `BURR_PORT`.
 
+**Per-step Copilot chat in the UI.** Every stage logs its Copilot invocation as
+**attributes** on that action node (visible in the UI's action/attributes panel):
+- `copilot_chat` — the readable transcript (assistant messages + each tool call
+  and its result), reconstructed from the JSONL by `copilot.transcript_from_events`;
+- `copilot_prompt`, `final_text`, `files_modified`, `lines_added`/`lines_removed`,
+  `premium_requests`, `duration_s`, `returncode`, and (for validate) `milestone_passed`
+  + `report_tests`/`report_failures`.
+So clicking a `translate:M2` node shows exactly what the Translator did — the chat,
+the shell/edit tool calls, and which files it changed. (Full raw JSONL is also on
+disk at `pipeline/logs/<agent>.stdout.jsonl`.)
+
 

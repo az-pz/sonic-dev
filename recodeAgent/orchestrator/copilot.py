@@ -53,6 +53,91 @@ def ensure_agents_installed() -> list[str]:
     return installed
 
 
+def _truncate(s: str, limit: int) -> str:
+    s = s or ""
+    return s if len(s) <= limit else s[:limit] + f"\n…[truncated {len(s) - limit} chars]"
+
+
+def transcript_from_events(events: list, max_chars: int = 60000) -> str:
+    """Render Copilot's JSONL events into a readable chat transcript for the UI.
+
+    Captures, in order: the user prompt, each assistant message (reasoning +
+    text), every tool call (name + intent + command) and its result, and a final
+    usage line. Matches the CLI 1.0.72 event shapes (assistant.message /
+    tool.execution_start / tool.execution_complete / result)."""
+    lines: list[str] = []
+    results: dict = {}
+    # index tool results by call id so we can print them under their call
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "tool.execution_complete":
+            d = ev.get("data", {}) or {}
+            res = (d.get("result") or {}).get("content") or ""
+            results[d.get("toolCallId")] = (bool(d.get("success")), res)
+
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        etype = ev.get("type")
+        d = ev.get("data", {}) or {}
+        if etype == "user.message":
+            txt = d.get("content") or d.get("text") or ""
+            if txt.strip():
+                lines.append(f"### 👤 user\n{txt.strip()}")
+        elif etype == "assistant.message":
+            reasoning = (d.get("reasoningText") or "").strip()
+            content = (d.get("content") or "").strip()
+            if reasoning:
+                lines.append(f"### 🤖 assistant (thinking)\n{reasoning}")
+            if content:
+                lines.append(f"### 🤖 assistant\n{content}")
+            for tr in d.get("toolRequests") or []:
+                name = tr.get("name", "tool")
+                intent = tr.get("intentionSummary") or ""
+                args = tr.get("arguments") or {}
+                cmd = args.get("command") or args.get("prompt") or args.get("path") or ""
+                head = f"  ↳ 🔧 {name}" + (f": {intent}" if intent else "")
+                lines.append(head)
+                if cmd:
+                    lines.append(f"     $ {_truncate(str(cmd), 800)}")
+                ok, res = results.get(tr.get("toolCallId"), (None, ""))
+                if res:
+                    tag = "ok" if ok else "ERR"
+                    lines.append(f"     ⤷ ({tag}) {_truncate(str(res), 800)}")
+        elif etype == "result":
+            u = ev.get("usage", {}) or {}
+            cc = u.get("codeChanges", {}) or {}
+            fm = cc.get("filesModified") or []
+            lines.append(
+                f"### ✅ result  exit={ev.get('exitCode')}  "
+                f"files_modified={len(fm)} (+{cc.get('linesAdded', 0)}/-{cc.get('linesRemoved', 0)})  "
+                f"premium_requests={u.get('premiumRequests')}  "
+                f"duration={round((u.get('sessionDurationMs') or 0) / 1000, 1)}s"
+            )
+            if fm:
+                lines.append("  changed: " + ", ".join(map(str, fm[:50])))
+    return _truncate("\n\n".join(lines), max_chars)
+
+
+def summary_from_events(events: list) -> dict:
+    """Structured summary of a run for UI attributes: exit code, files changed,
+    line deltas, premium requests, duration."""
+    out = {"exit_code": None, "files_modified": [], "lines_added": 0,
+           "lines_removed": 0, "premium_requests": None, "duration_s": None}
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            u = ev.get("usage", {}) or {}
+            cc = u.get("codeChanges", {}) or {}
+            out.update(
+                exit_code=ev.get("exitCode"),
+                files_modified=cc.get("filesModified") or [],
+                lines_added=cc.get("linesAdded", 0),
+                lines_removed=cc.get("linesRemoved", 0),
+                premium_requests=u.get("premiumRequests"),
+                duration_s=round((u.get("sessionDurationMs") or 0) / 1000, 1),
+            )
+    return out
+
+
 def _git_bash_dirs() -> list[str]:
     """On Windows, the DUT tools (validate_on_dut.sh, build_check.sh, unit_test.sh)
     must run under **Git Bash** + the Git/Windows ssh/scp/tar (which read the

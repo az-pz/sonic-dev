@@ -33,6 +33,7 @@ def initial_state(max_iter: int = 5) -> dict:
         "plan_done": False,
         "history": [],
         "done": False,
+        "last_agent": "",
     }
 
 
