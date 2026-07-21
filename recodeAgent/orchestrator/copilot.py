@@ -8,10 +8,13 @@ result. Real inter-stage STATE is passed via files in pipeline/ (see actions.py)
 not by parsing agent chatter -- the parsed output is used for
 success/failure detection and logging.
 
-Verified against GitHub Copilot CLI 1.0.67 (`copilot --help`):
-  -p/--prompt, --agent, --model, --effort/--reasoning-effort {none..max},
-  --allow-all-tools (required for non-interactive), --no-ask-user,
-  --output-format {text,json(JSONL)}, --add-dir, -C <cwd>, --log-dir, --share.
+Verified against GitHub Copilot CLI 1.0.72 (`copilot --help`):
+  -p/--prompt, --agent, --model, --effort/--reasoning-effort {none,minimal,low,
+  medium,high,xhigh,max}, --allow-all (= --allow-all-tools --allow-all-paths
+  --allow-all-urls; required for non-interactive autonomy incl. web fetch),
+  --no-ask-user, --output-format {text,json(JSONL)}, --add-dir, --log-dir, --share.
+Custom agents are discovered from ~/.copilot/agents/ (user level); ensure_agents_installed()
+mirrors agents/*.agent.md there before each run.
 """
 from __future__ import annotations
 
@@ -30,6 +33,22 @@ DEFAULT_EFFORT = os.environ.get("RECODE_EFFORT", "high")
 # When set, skip Copilot entirely and return a canned response so the Burr graph,
 # transitions and crash-resume can be exercised offline (Phase-0 harness tests).
 MOCK = os.environ.get("RECODE_MOCK") == "1"
+
+# Canonical agent profiles live in agents/; the CLI discovers custom agents from
+# ~/.copilot/agents/ (or COPILOT_HOME/agents). Mirror them there before running.
+AGENTS_SRC = Path(__file__).resolve().parent.parent / "agents"
+
+
+def ensure_agents_installed() -> list[str]:
+    """Copy agents/*.agent.md into the Copilot user-level agents dir so
+    `--agent NAME` resolves. Idempotent; returns the installed profile names."""
+    dest = Path(os.environ.get("COPILOT_HOME", Path.home() / ".copilot")) / "agents"
+    dest.mkdir(parents=True, exist_ok=True)
+    installed = []
+    for src in sorted(AGENTS_SRC.glob("*.agent.md")):
+        (dest / src.name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        installed.append(src.stem.replace(".agent", ""))
+    return installed
 
 
 @dataclass
@@ -53,9 +72,12 @@ def _mock(agent_name: str, prompt: str) -> AgentResult:
 def _parse_jsonl(raw: str) -> tuple[list, str]:
     """Return (events, final_assistant_text) from Copilot's --output-format json.
 
-    JSONL = one JSON object per line. We tolerate non-JSON lines (they are kept
-    out of `events`) and pick the last object that looks like an assistant/result
-    message for `final_text`.
+    Copilot CLI 1.0.72 emits one JSON object per line shaped like
+    {"type": "...", "data": {...}, "id", "timestamp", ...}. The assistant's text
+    is `data.content` on a `type == "assistant.message"` event (streamed via
+    `assistant.message_delta` -> `data.deltaContent`); the run ends with a
+    `type == "result"` event carrying `exitCode`. We tolerate non-JSON lines and
+    also fall back to legacy top-level {result,text,content,message} shapes.
     """
     events: list = []
     final = ""
@@ -68,11 +90,20 @@ def _parse_jsonl(raw: str) -> tuple[list, str]:
         except ValueError:
             continue
         events.append(obj)
-        # Heuristic: capture the most recent human-readable text field.
-        for key in ("result", "text", "content", "message"):
-            val = obj.get(key) if isinstance(obj, dict) else None
-            if isinstance(val, str) and val.strip():
-                final = val
+        if not isinstance(obj, dict):
+            continue
+        etype = obj.get("type")
+        data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+        if etype == "assistant.message":
+            content = data.get("content")
+            if isinstance(content, str) and content.strip():
+                final = content
+        elif etype is None:
+            # Legacy/alternate shapes: capture the most recent human-readable text.
+            for key in ("result", "text", "content", "message"):
+                val = obj.get(key)
+                if isinstance(val, str) and val.strip():
+                    final = val
     return events, final
 
 
@@ -104,13 +135,14 @@ def invoke_agent(
     if MOCK:
         return _mock(agent_name, prompt)
 
+    ensure_agents_installed()   # make sure agents/<name>.agent.md is discoverable
     cwd = str(cwd)
     cmd = [
         "copilot", "-p", prompt,
         "--agent", agent_name,
         "--model", model,
         "--reasoning-effort", effort,
-        "--allow-all-tools",          # required for non-interactive autonomy
+        "--allow-all",                # tools + paths + urls: full non-interactive autonomy
         "--no-ask-user",              # never block on a question
         "--output-format", "json",    # JSONL: machine-parseable
         "--no-color",

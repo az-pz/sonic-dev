@@ -185,10 +185,13 @@ dev/recodeAgent/
 │   ├── actions.py                #   @action: analyze/plan/select_milestone/translate/validate
 │   ├── copilot.py                #   invoke_agent(): subprocess wrapper around `copilot`
 │   └── milestones.py             #   the M0..M6 matrix (§5)
-├── agents/                       # Copilot CLI personas (paper §3.2–3.5), Opus 4.8
+├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5)
 │   ├── analyzer.agent.md  planner.agent.md  translator.agent.md  validator.agent.md
+│   │                             #   installed to ~/.copilot/agents/ by tools/install_agents.sh
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
+│   ├── build_check.sh            # compile-only check for planner/translator (no inject/tests)
+│   ├── install_agents.sh         # install the .agent.md profiles where the CLI discovers them
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
 │   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
 │   ├── check.sh                  # offline orchestrator mock checks (happy/repair/budget/resume)
@@ -212,9 +215,33 @@ dev/recodeAgent/
 
 Inter-stage state is passed as **files in `pipeline/`** (each agent ends its run
 by writing a parseable artifact there — `analysis.md`, `plan.json`,
-`report.json`). Copilot CLI 1.0.67 also supports `--output-format json` (JSONL),
+`report.json`). Copilot CLI 1.0.72 also supports `--output-format json` (JSONL),
 which the orchestrator parses for success/failure detection and logging; the
 file artifacts remain the authoritative state channel.
+
+### 4a. The four agents (`agents/*.agent.md`)
+
+Each stage is a **GitHub Copilot CLI custom agent** — a Markdown profile with YAML
+frontmatter (`name`, `description`, scoped `tools`) plus a system prompt. The CLI
+discovers custom agents from `~/.copilot/agents/` (user level) or a repo's
+`.github/agents/`; since our profiles must live under `dev/recodeAgent/`, they are
+version-controlled in `agents/` and mirrored to `~/.copilot/agents/` by
+`tools/install_agents.sh` (and automatically by `copilot.py`'s
+`ensure_agents_installed()` before every run — honoring `COPILOT_HOME`).
+
+| Agent | Paper | Reads → Writes | Adaptation for this project |
+|-------|-------|----------------|------------------------------|
+| **analyzer** | §3.2 | `source/xcvrd/` → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design). Bakes in the thick-HAL + swss-common + fixed-oracle + milestone constraints. Writes no Rust. |
+| **planner** | §3.3 | `analysis.md` → `pipeline/plan.json` + skeleton stubs | Fragment extraction (validated), name mapping, compilable skeleton, dependency-aware **milestone** plan. **No test translation** (Part B dropped). |
+| **translator** | §3.4 | `plan.json`/`report.json` → edits `crate/xcvrd-rs/` | Implements the current milestone (or repairs reported failures) on the provided bindings; `tools/build_check.sh` for compile feedback. Edits only the daemon. |
+| **validator** | §3.5 | runs `validate_on_dut.sh` → `pipeline/report.json` | **Black-box**: runs the fixed `xcvrd-tests` on the DUT and writes an actionable verdict. **No test generation** (§3.5.2 removed) — the oracle can't be gamed; never edits the daemon/tests/platform. |
+
+`tools` are scoped per role (all omit the `agent` alias, so an agent can't
+delegate to another — the Burr graph is the only sequencer). The orchestrator runs
+each with `--model claude-opus-4.8 --reasoning-effort high --allow-all
+--no-ask-user --output-format json` (model/effort overridable via `RECODE_MODEL` /
+`RECODE_EFFORT`). Verified on CLI 1.0.72: the profiles are discovered, the model +
+flags are accepted, and JSONL parsing extracts the agent's final message.
 
 ---
 
@@ -300,18 +327,28 @@ pmon, so agent builds "just work" (see §3b).
 > bootstrap gets the suite past the clean-baseline fixture so the real tests run
 > and pass, giving the agents a working M1 starting point instead of a no-op.
 
-Remaining Phase 0: the four `.agent.md` profiles, and (agents' job) extending
-`crate/xcvrd-rs` beyond M1 (DOM, CMIS state, errors, …) on the proven
-`platform-bridge` + `swss-common` scaffolding. *(Done: deterministic core, DUT
-harness, platform-bridge, swss-common wiring, the M1 bootstrap daemon, and pulling
-the Python xcvrd source into `source/`.)*
+**The four Copilot agents: implemented + wired.** `agents/{analyzer,planner,
+translator,validator}.agent.md` encode the paper's §3.2–3.5 roles with this
+project's adaptations (thick HAL, fixed black-box oracle, milestone-incremental).
+`copilot.py` auto-installs them and invokes each with `--model claude-opus-4.8
+--reasoning-effort high --allow-all --output-format json`. Verified on CLI 1.0.72:
+profiles discovered, model + flags accepted, JSONL parsing fixed for the 1.0.72
+event shape. This completes Phase 0 — the pipeline can now be driven end to end
+(`python -m orchestrator.app --app-id run1`), authentication permitting.
+
+**Phase 0 complete.** *(Done: deterministic Burr core, DUT validation harness,
+platform-bridge, swss-common wiring, the M1 bootstrap daemon, the source pull, and
+the four agent profiles.)* Next is Phase 1 — actually running the pipeline so the
+agents extend `crate/xcvrd-rs` beyond M1 (DOM, CMIS state, errors, …) on the proven
+scaffolding.
 
 ---
 
 ## 7. Running the checks yourself
 
-Two things are runnable today. Neither needs a Copilot token (the orchestrator
-check uses the offline mock; the DUT harness exercises build/inject/test/restore).
+Checks **A–D** need no Copilot token (the orchestrator check uses the offline
+mock; the DUT harness + smokes exercise build/inject/test/restore). Check **E**
+drives the real Copilot agents and needs a login + AI credits.
 
 ### A. Deterministic orchestrator (offline, ~30s, no DUT)
 
@@ -395,6 +432,32 @@ inside pmon, and cleans up. Expected: `statedb_probe: OK` (STATE_DB round-trip) 
 `hal_to_statedb: OK` — `bridge -> swss: wrote 6 fields to TRANSCEIVER_INFO|RECODE_HAL2DB_0`
 (`manufacturer=xcvr-emu`, `cmis_rev=5.2`, …). Uses throwaway STATE_DB keys it
 deletes; leaves xcvrd untouched.
+
+### E. Driving the real agents (needs a Copilot login + AI credits)
+
+Unlike A–D, this runs the actual LLM pipeline. Install the profiles and drive the
+orchestrator against Copilot (authenticate first with `copilot login`, or set
+`COPILOT_GITHUB_TOKEN`):
+
+```bash
+cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
+bash tools/install_agents.sh                     # -> ~/.copilot/agents/*.agent.md
+python -m orchestrator.app --app-id run1          # analyze ▶ plan ▶ (translate ▶ validate)*
+```
+
+`copilot.py` also auto-installs the profiles before each call. To exercise a single
+agent by hand:
+
+```bash
+copilot -p "Analyze source/xcvrd and write pipeline/analysis.md" \
+  --agent analyzer --model claude-opus-4.8 --reasoning-effort high \
+  --allow-all --no-ask-user --add-dir ../xcvrd-tests
+```
+
+Smoke-verified on CLI 1.0.72: all four agents are discovered, `claude-opus-4.8` +
+`--allow-all` + `--reasoning-effort high` are accepted, and the JSONL result is
+parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
+`xcvrd-tests` and always restores the Python xcvrd.
 
 ### The state machine (what the Burr graph encodes)
 
