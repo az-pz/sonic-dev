@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -49,6 +51,30 @@ def ensure_agents_installed() -> list[str]:
         (dest / src.name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
         installed.append(src.stem.replace(".agent", ""))
     return installed
+
+
+def _git_bash_dirs() -> list[str]:
+    """On Windows, the DUT tools (validate_on_dut.sh, build_check.sh, unit_test.sh)
+    must run under **Git Bash** + the Git/Windows ssh/scp/tar (which read the
+    Windows ~/.ssh/config) -- NOT the WSL `bash` that usually wins on PATH. Return
+    Git-for-Windows bin dirs to prepend to the agent's PATH so `bash tools/...`
+    resolves to Git Bash. Empty on non-Windows (bash is already correct)."""
+    if platform.system() != "Windows":
+        return []
+    roots: list[Path] = []
+    git = shutil.which("git")
+    if git:
+        # ...\Git\cmd\git.exe -> ...\Git
+        roots.append(Path(git).resolve().parent.parent)
+    roots.append(Path(r"C:\Program Files\Git"))
+    roots.append(Path(r"C:\Program Files (x86)\Git"))
+    dirs: list[str] = []
+    for root in roots:
+        for sub in ("bin", os.path.join("usr", "bin")):
+            d = root / sub
+            if (d / "bash.exe").exists() and str(d) not in dirs:
+                dirs.append(str(d))
+    return dirs
 
 
 @dataclass
@@ -158,6 +184,11 @@ def invoke_agent(
     env = dict(os.environ)
     # Auth precedence documented by the CLI: COPILOT_GITHUB_TOKEN > GH_TOKEN > GITHUB_TOKEN.
     # We do not inject a token here; the caller's environment must provide one.
+    # Make the agent's shell use Git Bash (not the broken/foreign WSL bash) so the
+    # DUT tool scripts run in the environment they were built for.
+    gb = _git_bash_dirs()
+    if gb:
+        env["PATH"] = os.pathsep.join(gb) + os.pathsep + env.get("PATH", "")
     if extra_env:
         # e.g. RECODE_CRATE_DIR -> the pipeline working copy the tools should build.
         env.update({k: str(v) for k, v in extra_env.items()})
