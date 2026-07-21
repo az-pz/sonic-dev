@@ -118,6 +118,7 @@ def invoke_agent(
     timeout: float | None = None,
     log_dir: str | os.PathLike | None = None,
     share_path: str | os.PathLike | None = None,
+    extra_env: dict | None = None,
 ) -> AgentResult:
     """Run one Copilot custom agent non-interactively to completion.
 
@@ -157,6 +158,9 @@ def invoke_agent(
     env = dict(os.environ)
     # Auth precedence documented by the CLI: COPILOT_GITHUB_TOKEN > GH_TOKEN > GITHUB_TOKEN.
     # We do not inject a token here; the caller's environment must provide one.
+    if extra_env:
+        # e.g. RECODE_CRATE_DIR -> the pipeline working copy the tools should build.
+        env.update({k: str(v) for k, v in extra_env.items()})
 
     t0 = time.monotonic()
     proc = subprocess.run(

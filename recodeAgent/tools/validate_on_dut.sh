@@ -12,6 +12,10 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECODE_DIR="$(cd "$HERE/.." && pwd)"          # dev/recodeAgent
+# The crate to build. Defaults to the immutable input crate/; the agent pipeline
+# sets RECODE_CRATE_DIR=<recodeAgent>/pipeline/crate so translation works on a copy
+# and the pristine crate/ is never modified.
+CRATE_DIR="${RECODE_CRATE_DIR:-$RECODE_DIR/crate}"
 MILESTONE="${1:?milestone id (e.g. M0)}"; shift || true
 
 # Resolve the pytest gate. Explicit args (after the milestone) override; otherwise
@@ -39,10 +43,10 @@ fi
 
 SD="${RECODE_SSH_HOST:-sonic-dev}"
 
-echo "[validate] shipping crate + dut scripts to $SD"
+echo "[validate] shipping crate ($CRATE_DIR) + dut scripts to $SD"
 ssh "$SD" "mkdir -p ~/recode/dut ~/recode/crate"
 # Ship crate SOURCE (build happens on the DUT side; keep sonic-dev's target/ cache).
-tar -C "$RECODE_DIR/crate" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
+tar -C "$CRATE_DIR" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
 scp -q "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build" "$SD:/home/sonic/recode/dut/"
 
 echo "[validate] running build+inject+test+restore on the DUT"

@@ -50,21 +50,27 @@ Apache Burr  (deterministic state machine + telemetry UI + SQLite resume)
 
 ## 2. How we adapt the paper (deliberately)
 
-Faithful to ReCodeAgent's four agents and Algorithm 1 loop, with two adaptations
+Faithful to ReCodeAgent's four agents and Algorithm 1 loop, with these adaptations
 for our environment:
 
-1. **Validator = black-box test runner, not test translator.** The paper's
-   Validator translates the developer tests, runs them, does coverage-gap
-   analysis, and *generates* tests. We already have a trusted, human-validated
-   suite (`xcvrd-tests`), so our Validator instead **deploys the candidate Rust
-   daemon to the DUT and runs that suite unchanged.** This sidesteps the paper's
-   biggest risk (assertion relaxation / test-translation coupling): the oracle
-   cannot be gamed by the Translator.
+1. **Two validation layers — unit tests (Part B) *and* a fixed black-box oracle.**
+   We keep the paper's Part B (test translation): the Translator rewrites xcvrd's
+   Python **behavioral unit tests** (`source/xcvrd/tests/test_xcvrd.py`) into Rust
+   and adds new unit tests for new code, running them against **mocks** of the HAL
+   and STATE_DB (mirroring the Python `mock_platform.py` / `mock_swsscommon.py`) via
+   `cargo test` — fast, no DUT. On top of that, the **end-to-end `xcvrd-tests`** are
+   an *additional, authoritative* oracle: the Validator deploys the candidate Rust
+   daemon to the DUT and runs that suite **unchanged** (never translated or
+   generated), so the ultimate oracle cannot be gamed. A milestone passes only when
+   **both** layers pass.
 
-2. **Plan = prioritized functionality milestones.** Instead of "Part A (source) +
-   Part B (tests)", the plan is an ordered list of xcvrd functionality slices,
-   each gated by a specific `xcvrd-tests` subset (§5). "Coverage" = which test
-   groups pass. A milestone must go green before the next begins.
+2. **Plan = prioritized functionality milestones.** The plan is an ordered list of
+   xcvrd functionality slices M0–M6, each gated by a specific `xcvrd-tests` subset
+   (§5) plus its unit tests. A milestone must go green before the next begins.
+
+3. **Immutable input, mutable working copy.** `crate/` (the M1 bootstrap +
+   scaffolding) is a read-only input; the Planner copies it to `pipeline/crate/` and
+   all translation happens there. `crate/` is never modified.
 
 Everything else — Analyzer, Planner, skeleton-first, name mapping, the
 translate→validate→repair loop with `maxIter` — is the paper's design.
@@ -190,7 +196,8 @@ dev/recodeAgent/
 │   │                             #   installed to ~/.copilot/agents/ by tools/install_agents.sh
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
-│   ├── build_check.sh            # compile-only check for planner/translator (no inject/tests)
+│   ├── build_check.sh            # compile-only check (no inject/tests) for planner/translator
+│   ├── unit_test.sh              # cargo test (Part-B unit tests, mocked) in the trixie container
 │   ├── install_agents.sh         # install the .agent.md profiles where the CLI discovers them
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
 │   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
@@ -207,10 +214,12 @@ dev/recodeAgent/
 │   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
 │       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
 │       └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
-├── source/                       # INPUT (gitignored, re-pullable from pmon)
+├── source/                       # INPUT (gitignored, re-pullable)
 │   ├── xcvrd/                    #   the Python xcvrd source the agents translate
+│   │   └── tests/               #     Python behavioral unit tests + mocks (Part-B input, from upstream)
 │   └── sonic_platform/           #   the emulator HAL — bridge-design reference
-└── pipeline/                     # runtime hand-off: analysis.md, plan.json, report.json (gitignored)
+└── pipeline/                     # runtime hand-off (gitignored): analysis.md, plan.json, report.json,
+                                  #   and crate/ = the mutable working copy (crate/ stays immutable)
 ```
 
 Inter-stage state is passed as **files in `pipeline/`** (each agent ends its run
@@ -231,10 +240,10 @@ version-controlled in `agents/` and mirrored to `~/.copilot/agents/` by
 
 | Agent | Paper | Reads → Writes | Adaptation for this project |
 |-------|-------|----------------|------------------------------|
-| **analyzer** | §3.2 | `source/xcvrd/` → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design). Bakes in the thick-HAL + swss-common + fixed-oracle + milestone constraints. Writes no Rust. |
-| **planner** | §3.3 | `analysis.md` → `pipeline/plan.json` + skeleton stubs | Fragment extraction (validated), name mapping, compilable skeleton, dependency-aware **milestone** plan. **No test translation** (Part B dropped). |
-| **translator** | §3.4 | `plan.json`/`report.json` → edits `crate/xcvrd-rs/` | Implements the current milestone (or repairs reported failures) on the provided bindings; `tools/build_check.sh` for compile feedback. Edits only the daemon. |
-| **validator** | §3.5 | runs `validate_on_dut.sh` → `pipeline/report.json` | **Black-box**: runs the fixed `xcvrd-tests` on the DUT and writes an actionable verdict. **No test generation** (§3.5.2 removed) — the oracle can't be gamed; never edits the daemon/tests/platform. |
+| **analyzer** | §3.2 | `source/xcvrd/` (+ `tests/`) → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design). Bakes in the thick-HAL, swss-common, two-layer-validation, immutable-input, and M0–M6 constraints; designs the mockable HAL/DB seams. Writes no Rust. |
+| **planner** | §3.3 | `analysis.md` → copies `crate/`→`pipeline/crate/`, writes `pipeline/plan.json` + skeleton | Fragment extraction (Part A daemon **+ Part B unit tests**, validated), name mapping, compilable skeleton with mock/test seams, dependency-aware **M0–M6** plan. |
+| **translator** | §3.4 | `plan.json`/`report.json` → edits `pipeline/crate/xcvrd-rs/` | Implements the milestone's daemon logic (Part A) **and** rewrites the matching Python unit tests + adds new Rust unit tests with mocks (Part B); `build_check.sh` + `unit_test.sh`. Never touches `crate/`. |
+| **validator** | §3.5 | runs `unit_test.sh` + `validate_on_dut.sh` → `pipeline/report.json` | **Two layers**: Rust unit tests (mocked, `cargo test`) **and** the fixed e2e `xcvrd-tests` on the DUT. Combined verdict (`passed` iff both), actionable per-failure hints. Never edits daemon/tests/platform. |
 
 `tools` are scoped per role (all omit the `agent` alias, so an agent can't
 delegate to another — the Burr graph is the only sequencer). The orchestrator runs

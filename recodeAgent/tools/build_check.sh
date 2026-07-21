@@ -11,11 +11,12 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECODE_DIR="$(cd "$HERE/.." && pwd)"          # dev/recodeAgent
+CRATE_DIR="${RECODE_CRATE_DIR:-$RECODE_DIR/crate}"   # immutable crate/ by default; pipeline sets pipeline/crate
 SD="${RECODE_SSH_HOST:-sonic-dev}"
 
-echo "[build-check] shipping crate to $SD"
+echo "[build-check] shipping crate ($CRATE_DIR) to $SD"
 ssh "$SD" "mkdir -p ~/recode/dut ~/recode/crate"
-tar -C "$RECODE_DIR/crate" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
+tar -C "$CRATE_DIR" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
 scp -q "$HERE/dut/build_crate.sh" "$HERE/dut/ensure_swsslib.sh" "$SD:/home/sonic/recode/dut/"
 
 echo "[build-check] compiling xcvrd-rs for pmon (trixie container)"
