@@ -483,21 +483,25 @@ parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
                                        (last milestone passed, or budget exhausted)
 ```
 
-### Burr telemetry UI (via sonic-dev)
+### Burr telemetry UI (local, live)
 
 Traces are captured to `~/.burr/recodeagent-xcvrd/` on every run. The interactive
 UI server (`burr`) needs `apache-burr[start]` (pyarrow), which has **no wheel for
-this box's Python 3.12 ARM64** — so it can't run natively here. Use the helper,
-which runs the UI on the `sonic-dev` host (Linux x64) and forwards the port:
+this box's Python 3.12 ARM64** — so it can't run *natively* here. The helper runs
+it in a local Docker container (Docker Desktop's Linux/arm64 engine, where pyarrow
+*does* have wheels) and **bind-mounts your real `~/.burr`**, so the UI reads the
+same files the pipeline writes — it's **live**, no syncing:
 
 ```bash
-bash tools/burr_ui.sh          # syncs traces up, starts the UI on sonic-dev, opens an SSH tunnel
+bash tools/burr_ui.sh          # build (once) + start the UI locally on :7241
 #  -> open http://localhost:7241   (project: recodeagent-xcvrd)
-bash tools/burr_ui.sh --stop   # stop the remote UI container
+bash tools/burr_ui.sh --stop   # stop the UI container
+bash tools/burr_ui.sh --logs   # tail the UI server logs
 ```
 
-Re-run it to refresh traces after a pipeline run (Ctrl-C only closes the tunnel;
-the container keeps running). The graph, per-step timings, and state at each node
-are all browsable there.
+Because the trace dir is mounted directly, the graph, per-step timings, and each
+node's state update **as a run progresses** — just refresh the browser (the UI
+also polls on its own). Requires Docker Desktop running. Override the port with
+`BURR_PORT`.
 
 
