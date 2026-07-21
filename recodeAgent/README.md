@@ -483,12 +483,21 @@ parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
                                        (last milestone passed, or budget exhausted)
 ```
 
-### Burr telemetry UI (optional)
+### Burr telemetry UI (via sonic-dev)
 
-Traces ARE captured to `~/.burr/recodeagent-xcvrd/` on every run. The interactive
+Traces are captured to `~/.burr/recodeagent-xcvrd/` on every run. The interactive
 UI server (`burr`) needs `apache-burr[start]` (pyarrow), which has **no wheel for
-this box's Python 3.12 ARM64** — so the live UI is unavailable here. To use it,
-run on a Linux/x64 host: `pip install "apache-burr[start]"` then `burr`, and open
-the printed URL (project `recodeagent-xcvrd`).
+this box's Python 3.12 ARM64** — so it can't run natively here. Use the helper,
+which runs the UI on the `sonic-dev` host (Linux x64) and forwards the port:
+
+```bash
+bash tools/burr_ui.sh          # syncs traces up, starts the UI on sonic-dev, opens an SSH tunnel
+#  -> open http://localhost:7241   (project: recodeagent-xcvrd)
+bash tools/burr_ui.sh --stop   # stop the remote UI container
+```
+
+Re-run it to refresh traces after a pipeline run (Ctrl-C only closes the tunnel;
+the container keeps running). The graph, per-step timings, and state at each node
+are all browsable there.
 
 
