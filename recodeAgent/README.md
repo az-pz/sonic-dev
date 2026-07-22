@@ -247,10 +247,14 @@ version-controlled in `agents/` and mirrored to `~/.copilot/agents/` by
 
 `tools` are scoped per role (all omit the `agent` alias, so an agent can't
 delegate to another — the Burr graph is the only sequencer). The orchestrator runs
-each with `--model claude-opus-4.8 --reasoning-effort high --allow-all
---no-ask-user --output-format json` (model/effort overridable via `RECODE_MODEL` /
-`RECODE_EFFORT`). Verified on CLI 1.0.72: the profiles are discovered, the model +
-flags are accepted, and JSONL parsing extracts the agent's final message.
+each with `--model claude-opus-4.8 --allow-all --no-ask-user --output-format json`
+and a **per-agent reasoning effort**: the heavy reasoning stages (analyzer,
+planner, translator) run at `--reasoning-effort max`; the validator (mostly tool
+execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Model/effort are
+overridable via `RECODE_MODEL` / `RECODE_EFFORT` (a set `RECODE_EFFORT` overrides
+all agents). Verified on CLI 1.0.72: the profiles are discovered, the model +
+`max`/`high` efforts + flags are accepted, and JSONL parsing extracts the agent's
+final message.
 
 ---
 

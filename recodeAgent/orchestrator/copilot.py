@@ -27,10 +27,31 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Opus 4.8, high reasoning, per project decision. NOTE: confirm the exact model
-# identifier the installed CLI accepts before the first real run (see verify_cli()).
+# Opus 4.8, per project decision. NOTE: confirm the exact model identifier the
+# installed CLI accepts before the first real run (see verify_cli()).
 DEFAULT_MODEL = os.environ.get("RECODE_MODEL", "claude-opus-4.8")
-DEFAULT_EFFORT = os.environ.get("RECODE_EFFORT", "high")
+DEFAULT_EFFORT = "high"   # fallback effort (e.g. validator, which mostly runs tools)
+
+# Per-agent reasoning effort. The heavy reasoning stages (analysis, planning,
+# translation) run at "max"; validation is mostly tool execution -> "high".
+# A global RECODE_EFFORT env var overrides all of these when set.
+AGENT_EFFORT = {
+    "analyzer": "max",
+    "planner": "max",
+    "translator": "max",
+    "validator": "high",
+}
+
+
+def _resolve_effort(agent_name: str, explicit: str | None) -> str:
+    """Precedence: explicit arg > RECODE_EFFORT env (global override) > per-agent
+    default > DEFAULT_EFFORT."""
+    if explicit:
+        return explicit
+    env = os.environ.get("RECODE_EFFORT")
+    if env:
+        return env
+    return AGENT_EFFORT.get(agent_name, DEFAULT_EFFORT)
 
 # When set, skip Copilot entirely and return a canned response so the Burr graph,
 # transitions and crash-resume can be exercised offline (Phase-0 harness tests).
@@ -224,7 +245,7 @@ def invoke_agent(
     *,
     cwd: str | os.PathLike,
     model: str = DEFAULT_MODEL,
-    effort: str = DEFAULT_EFFORT,
+    effort: str | None = None,   # None -> per-agent default (see AGENT_EFFORT)
     add_dirs: list[str] | None = None,
     timeout: float | None = None,
     log_dir: str | os.PathLike | None = None,
@@ -258,6 +279,7 @@ def invoke_agent(
                 timeout = None
 
     ensure_agents_installed()   # make sure agents/<name>.agent.md is discoverable
+    effort = _resolve_effort(agent_name, effort)
     cwd = str(cwd)
     cmd = [
         "copilot", "-p", prompt,
