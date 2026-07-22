@@ -12,13 +12,15 @@ paths would either collect the whole dir or error on a relative path. A `-k
 "test_presence or test_info_content"` expression narrows the already-collected dir
 to exactly the intended modules (matched by the test module stem in each node id).
 
-Fast-subset-first: M1..M5 run with `-m "not slow"`; M6 drops the filter (full suite).
+Every milestone runs its FULL cumulative module set, **including slow tests** (no
+`-m` marker filter). Earlier the inner loop filtered `-m "not slow"` for speed;
+now correctness at each milestone is checked against the slow tests too.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-DEFAULT_MARKER = "not slow"
+DEFAULT_MARKER = ""   # no pytest -m filter: run slow tests at every milestone
 
 
 @dataclass(frozen=True)

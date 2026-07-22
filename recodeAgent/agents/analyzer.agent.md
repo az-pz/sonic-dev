@@ -17,6 +17,13 @@ You run in `dev/recodeAgent/` (the project root). Key locations:
 - `../xcvrd-tests/` (granted via --add-dir) — the **end-to-end black-box** test suite that is the **ultimate oracle**. Read it to understand the required STATE_DB contract; **never plan to translate or modify it**.
 - `README.md` — the living design doc (architecture, milestones M0–M6, the thick-HAL decision). Read it first.
 
+**Upstream reference:** xcvrd is SONiC's transceiver daemon —
+<https://github.com/sonic-net/sonic-platform-daemons/tree/master/sonic-xcvrd>
+(the package lives under `sonic-xcvrd/xcvrd/`). Use `web` to consult it for
+upstream docs, commit history, or behavior that isn't obvious from the local
+`source/xcvrd/` snapshot. The local snapshot is authoritative for what to
+translate; the GitHub repo is background/context.
+
 ## Non-negotiable project adaptations (bake these into your design)
 1. **Thick HAL boundary.** The Rust daemon must use the provided `platform-bridge` (PyO3 → `sonic_platform`) for ALL transceiver I/O. Do **not** design a Rust reimplementation of CMIS/SFF decode, gRPC, or the emulator client — that logic stays in Python behind the bridge. The daemon translation is only the **daemon logic** (task loops, polling cadence, STATE_DB writes, state decisions).
 2. **STATE_DB via swss-common.** All Redis STATE_DB access uses the `swss-common` bindings, not a hand-rolled client.
@@ -44,8 +51,8 @@ For each significant Python dependency, give: Overview, how xcvrd Uses it, and t
 ### 3. Target Project Design
 The authoritative reference for later agents. Include:
 - **Overview & Translation Requirements** — functional equivalence measured by `xcvrd-tests`; the thick-HAL + swss-common constraints.
-- **Source→Rust structural mapping** — one-to-one where sensible: Python module → Rust module, Python class/task → Rust struct + methods (or a thread `run` loop), Python dict STATE_DB writes → `swss_common::Table`/`DbConnector` calls. Preserve identifier names/conventions (snake_case) so translation is traceable. Note idiom mappings (Python exceptions → `Result`, `None` → `Option`, threads → `std::thread`).
-- **Module structure for the `xcvrd-rs` crate** (created by the Planner in `pipeline/crate/`) — proposed `src/` layout that extends the current bootstrap (`env.rs`, `daemon.rs`) toward the full daemon (e.g. `port_mapping.rs`, `sfp_state.rs`/presence, `dom.rs`, `status.rs`, `cmis.rs`) plus the **mock + unit-test modules** (e.g. a `mock` module implementing the HAL/DB traits, `#[cfg(test)]` unit tests per module) — without breaking M0/M1.
+- **Source→Rust structural mapping** — one-to-one where sensible, **preserving the Python package/directory structure**: Python module → Rust module of the same name, Python subpackage (`cmis/`, `dom/`, `xcvrd_utilities/`) → Rust submodule directory, Python class/task → Rust struct + methods (or a thread `run` loop), Python dict STATE_DB writes → `swss_common::Table`/`DbConnector` calls. Preserve identifier names/conventions (snake_case) so translation is traceable. Note idiom mappings (Python exceptions → `Result`, `None` → `Option`, threads → `std::thread`).
+- **Module structure for the `xcvrd-rs` crate** (created by the Planner in `pipeline/crate/`) — **mirror the Python package layout** so the port is easy to trace. The Python source is a package (`xcvrd/` with `xcvrd.py`, `sff_mgr.py`, and subpackages `cmis/`, `dom/`, `xcvrd_utilities/`); propose a Rust module tree that follows the same shape (e.g. `src/xcvrd.rs` or `src/xcvrd/mod.rs`, `src/sff_mgr.rs`, `src/cmis/`, `src/dom/`, `src/xcvrd_utilities/` — matching directory→module and file→submodule). It need not be identical (Rust idioms differ, and it must extend the current bootstrap `env.rs`/`daemon.rs`), but each Python module should have a recognizable Rust counterpart. Include the **mock + unit-test modules** (a `mock` module implementing the HAL/DB traits, `#[cfg(test)]` unit tests per module) — without breaking M0/M1.
 - **STATE_DB schema contract** — the exact table→field mapping each milestone must reproduce, tied to the `xcvrd-tests` assertions.
 - **Error handling & the PyO3 platform-bridge boundary** — exactly which high-level bridge calls replace which Python platform calls.
 - **Unit-test strategy (Part B)** — how the Rust crate will be made unit-testable with mocks: define trait seams for the HAL and STATE_DB (real impl = platform-bridge / swss-common; mock impl for tests) so the daemon logic can be exercised without the DUT, mirroring how the Python tests use `mock_platform.py` / `mock_swsscommon.py`. Specify where mocks + unit tests live in the crate (e.g. `#[cfg(test)]` modules or `tests/`, a `mock` module) and which Python `test_xcvrd.py` behaviors translate per milestone vs. need new Rust tests.

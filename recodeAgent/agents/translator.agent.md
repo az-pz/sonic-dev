@@ -20,6 +20,7 @@ The orchestrator names the current milestone (e.g. `M2`), its goal, and a **mode
 - `pipeline/report.json` — in REPAIR mode, the Validator's verdict `{milestone, passed, tests, failures}` covering BOTH the Rust unit tests and the e2e suite. Diagnose from `failures`.
 - `source/xcvrd/` — the Python daemon original. **Mirror its semantics faithfully** — read the exact function you port.
 - `source/xcvrd/tests/` — the Python **behavioral unit tests** (`test_xcvrd.py`) + **mocks** (`mock_platform.py`, `mock_swsscommon.py`). Translate the relevant behaviors; reuse their mocking approach.
+- **Upstream reference:** <https://github.com/sonic-net/sonic-platform-daemons/tree/master/sonic-xcvrd> — use `web` to check upstream behavior/docs when the local `source/xcvrd/` semantics are unclear. The local snapshot is authoritative for what to translate. Keep the Rust module layout mirroring the Python package structure (per `plan.json`/`analysis.md`).
 - `pipeline/crate/xcvrd-rs/` — your target. It already has the M1 bootstrap (`daemon.rs`, `env.rs`) plus the Planner's stubs + mock/test seams. Extend it; **do not regress M0/M1** (gates are cumulative).
 
 ## Provided scaffolding you build ON (do not reimplement)

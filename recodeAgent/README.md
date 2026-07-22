@@ -262,24 +262,25 @@ safety — new work can't break earlier functionality). `orchestrator/milestones
 is the single source of truth; `python -m orchestrator.milestones --args M3`
 prints the resolved gate, and `tools/validate_on_dut.sh M3` runs it automatically.
 
-Fast-subset-first: M1–M5 run `-m "not slow"`; M6 drops the filter (full suite).
-Selection uses a pytest **`-k` module expression** (not file paths): `run.sh`
-always runs `pytest <tests-dir> …`, so a `-k "test_presence or test_info_content"`
-narrows the already-collected dir to exactly the intended modules.
+**Every milestone runs its full cumulative set, including slow tests** (no `-m`
+marker filter). Selection uses a pytest **`-k` module expression** (not file
+paths): `run.sh` always runs `pytest <tests-dir> …`, so a `-k "test_presence or
+test_info_content"` narrows the already-collected dir to exactly the intended
+modules — while slow tests within those modules still run.
 
 | #  | Milestone (adds) | Cumulative gate (this + all earlier) |
 |----|------------------|--------------------------------------|
 | M0 | **Skeleton** (compiles, injects, RUNNING) | *deploy-smoke* — supervisor RUNNING (no pytest) |
-| M1 | **Presence + identity** | `-k "test_presence or test_info_content"` `-m "not slow"` |
+| M1 | **Presence + identity** | `-k "test_presence or test_info_content"` |
 | M2 | **DOM** | + `test_dom or test_interaction_trace` |
 | M3 | **Status / CMIS / errors** | + `test_status_error` |
 | M4 | **lpmode / reset** | + `test_lpmode_reset` |
 | M5 | **Multiport concurrency** | + `test_multiport` |
-| M6 | **Golden conformance** | + `test_golden`, **no marker** (full suite incl. slow) |
+| M6 | **Golden conformance** | + `test_golden` (all eight modules) |
 
 So M3's gate is `-k "test_presence or test_info_content or test_dom or
-test_interaction_trace or test_status_error" -m "not slow"`; M6 selects all eight
-modules with no marker. Verified: M1 → `29 items / 18 deselected / 11 selected`.
+test_interaction_trace or test_status_error"` (slow tests included), and M6
+selects all eight modules.
 
 ---
 

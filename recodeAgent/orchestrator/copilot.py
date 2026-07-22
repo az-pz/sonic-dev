@@ -192,7 +192,7 @@ def _parse_jsonl(raw: str) -> tuple[list, str]:
     """
     events: list = []
     final = ""
-    for line in raw.splitlines():
+    for line in (raw or "").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -247,6 +247,16 @@ def invoke_agent(
     if MOCK:
         return _mock(agent_name, prompt)
 
+    # Optional wall-clock cap (paper uses 5000s). None = no timeout. Override with
+    # RECODE_AGENT_TIMEOUT (seconds); an explicit `timeout=` arg still wins.
+    if timeout is None:
+        _env_to = os.environ.get("RECODE_AGENT_TIMEOUT", "").strip()
+        if _env_to:
+            try:
+                timeout = float(_env_to)
+            except ValueError:
+                timeout = None
+
     ensure_agents_installed()   # make sure agents/<name>.agent.md is discoverable
     cwd = str(cwd)
     cmd = [
@@ -279,27 +289,43 @@ def invoke_agent(
         env.update({k: str(v) for k, v in extra_env.items()})
 
     t0 = time.monotonic()
-    proc = subprocess.run(
-        cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout,
-    )
+    try:
+        proc = subprocess.run(
+            cmd, cwd=cwd, env=env, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=timeout,
+        )
+        returncode = proc.returncode
+        # capture_output=True should make these strings, but be defensive: a
+        # crashed/killed child or a decode edge case can leave them None.
+        stdout = proc.stdout or ""
+        stderr = proc.stderr or ""
+    except subprocess.TimeoutExpired as e:
+        # Long milestones (e.g. M6 with slow tests) can exceed the budget; record a
+        # failure instead of crashing the pipeline so the repair loop can proceed.
+        stdout = (e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or ""))
+        stderr = (e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) else (e.stderr or "")) \
+            + f"\n[recode] agent '{agent_name}' timed out after {timeout}s"
+        returncode = 124
+    except OSError as e:
+        stdout, stderr, returncode = "", f"[recode] failed to launch copilot: {e!r}", 1
     dt = time.monotonic() - t0
 
-    events, final = _parse_jsonl(proc.stdout)
+    events, final = _parse_jsonl(stdout)
     if not final:
-        final = (proc.stdout or proc.stderr or "").strip()
+        final = (stdout or stderr or "").strip()
 
     stdout_path = None
     if log_dir:
         stdout_path = str(Path(log_dir) / f"{agent_name}.stdout.jsonl")
         try:
-            Path(stdout_path).write_text(proc.stdout, encoding="utf-8")
+            Path(stdout_path).write_text(stdout, encoding="utf-8")
         except OSError:
             stdout_path = None
 
     return AgentResult(
         agent=agent_name,
-        ok=(proc.returncode == 0),
-        returncode=proc.returncode,
+        ok=(returncode == 0),
+        returncode=returncode,
         final_text=final,
         duration_s=dt,
         stdout_path=stdout_path,

@@ -21,6 +21,8 @@ Everything below (skeleton, stubs) is created under `pipeline/crate/`. The DUT t
 - `orchestrator/milestones.py` — the authoritative **M0–M6** matrix (ids, goals, e2e `xcvrd-tests` modules per milestone). Your plan MUST align to it.
 - `../xcvrd-tests/` (via --add-dir) — the end-to-end black-box oracle; read to know the target contract. **Never plan to translate or modify it** (it is the fixed final oracle, distinct from the Part-B unit tests you DO translate).
 
+**Upstream reference:** <https://github.com/sonic-net/sonic-platform-daemons/tree/master/sonic-xcvrd> (the `sonic-xcvrd/xcvrd/` package). Background/context for the local `source/xcvrd/` snapshot, which stays authoritative. Preserve its package structure in the Rust skeleton (see step 3).
+
 ## Your outputs (paper Figure 6, extended with Part B) — consolidated into `pipeline/plan.json` + skeleton on disk under `pipeline/crate/`
 
 ### 1. Fragment Extraction (`"fragments"`)
@@ -33,7 +35,7 @@ Extract every translation unit, in TWO groups, each recorded as `"file:fragment"
 A one-to-one map from source symbols to Rust counterparts, preserving names/conventions so translation is traceable (snake_case fns/modules, UpperCamelCase types; keep the stem recognizable). Cover daemon symbols AND the test/mock symbols.
 
 ### 3. Skeleton Generation (on disk in `pipeline/crate/` + `"skeleton"`)
-Create a **compilable** module skeleton under `pipeline/crate/xcvrd-rs/` that mirrors the design:
+Create a **compilable** module skeleton under `pipeline/crate/xcvrd-rs/` that mirrors the design **and the Python package layout** (per `analysis.md`): the Python source is a package (`xcvrd.py`, `sff_mgr.py`, subpackages `cmis/`, `dom/`, `xcvrd_utilities/`), so create matching Rust modules/dirs (e.g. `src/sff_mgr.rs`, `src/cmis/mod.rs`, `src/dom/mod.rs`, `src/xcvrd_utilities/mod.rs`) — directory→module, file→submodule, recognizable names. Not identical to Python, but easy to trace back. Then:
 - daemon module files with **stubbed** signatures (`todo!()`/no-op behind clear TODOs) — NOT real logic;
 - the **mock + unit-test seams**: trait(s) for the HAL and STATE_DB, a `mock` module implementing them for tests, and `#[cfg(test)]`/`tests/` unit-test modules (empty or `#[ignore]` stubs) mirroring the Python test structure.
 Wire it into `lib.rs`/`daemon.rs` without disturbing the existing M0/M1 behaviour. Verify it compiles with `bash tools/build_check.sh` and that `bash tools/unit_test.sh` runs (even if the stub tests are trivial). Record the layout in `"skeleton"`.
