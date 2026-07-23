@@ -35,6 +35,12 @@
 #                                              #   assert xcvrd clears+restores it (needs emulator)
 #   ./setup-sonic-testbed.sh xcvrd_tests [-- pytest args]  # ship dev/xcvrd-tests to the DUT and
 #                                              #   run the pytest black-box suite there (needs emulator)
+#   ./setup-sonic-testbed.sh transceiver_tests_rust <folder> [-v]      # build a Rust xcvrd from a
+#                                              #   recodeAgent pipeline folder (e.g. recodeAgent/pipeline_run3),
+#                                              #   inject it into pmon, run the vs-compatible transceiver subset
+#                                              #   against it, then ALWAYS restore the Python xcvrd
+#   ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder> [-v]  # same, but the FULL validated
+#                                              #   xcvrd/SFP set (needs emulator deployed first)
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
 #
@@ -482,6 +488,100 @@ transceiver_eeprom_tests() {
   inject_conn_graph
   run_pytest "transceiver/eeprom/"
 }
+
+# ---------------------------------------------------------------------------
+# Rust xcvrd variants: build a Rust xcvrd from a recodeAgent PIPELINE FOLDER,
+#   reversibly inject it into pmon (crash-safe), run the SAME sonic-mgmt suite
+#   against it, then ALWAYS restore the Python xcvrd. This lets you grade how
+#   complete a translated Rust implementation is against the real transceiver
+#   tests, without disturbing the stock testbed.
+#
+#   <folder> is a recodeAgent pipeline-run dir that contains a buildable crate/
+#   workspace (crate/xcvrd-rs, crate/platform-bridge), e.g.
+#   dev/recodeAgent/pipeline_run3. Build + inject reuse the proven recodeAgent
+#   harness: tools/dut/build_crate.sh (Debian-13 build container matching pmon)
+#   and tools/dut/rust_xcvrd_ctl.sh (the crash-safe pmon inject/restore).
+#
+#   Requires the emulator to be deployed first (run `emulator`), exactly like
+#   transceiver_tests_all. Env RESET_TESTS / VERBOSE / -v behave as usual.
+#     ./setup-sonic-testbed.sh transceiver_tests_rust      <folder> [-v]
+#     ./setup-sonic-testbed.sh transceiver_tests_all_rust  <folder> [-v]
+#     RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder>
+# ---------------------------------------------------------------------------
+RECODE_DUT_DIR="${RECODE_DUT_DIR:-$SCRIPT_DIR/recodeAgent/tools/dut}"
+
+# Idempotent restore of the Python xcvrd on the DUT (explicit + EXIT-trap safety
+# net). Vars are recomputed from globals so it works from the trap context.
+_rust_restore() {
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh restore'" 2>/dev/null || true
+}
+
+_rust_build_and_inject() {
+  local folder="$1"
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+
+  [ -n "$folder" ] || die "no rust pipeline folder given (usage: <cmd> <folder> [-v])"
+  [ -d "$folder" ] || die "rust pipeline folder not found: $folder"
+  folder="$(cd "$folder" && pwd)"          # absolute: docker -v needs it (relative => empty volume!)
+  local crate="$folder/crate"
+  local bin="$crate/target/release/xcvrd-rs"
+  local ctl="$RECODE_DUT_DIR/rust_xcvrd_ctl.sh"
+  [ -d "$crate" ] || die "no crate/ workspace under $folder (expected $crate with xcvrd-rs/, platform-bridge/)"
+  [ -f "$crate/Cargo.toml" ] || die "no Cargo.toml at $crate — is this a recodeAgent pipeline folder?"
+  [ -f "$ctl" ] || die "control script missing: $ctl"
+
+  # 0) ensure the Debian-13 build image exists (one-time; matches pmon runtime).
+  if ! docker image inspect recode-rust-build >/dev/null 2>&1; then
+    log "Building recode-rust-build image (one-time; trixie / py3.13 / glibc2.41)"
+    docker build -t recode-rust-build -f "$RECODE_DUT_DIR/Dockerfile.build" "$RECODE_DUT_DIR" \
+      || die "failed to build recode-rust-build image"
+  fi
+
+  # 1) build xcvrd-rs for pmon (glibc2.41, links libpython3.13 + libswsscommon).
+  log "Building Rust xcvrd from $crate"
+  bash "$RECODE_DUT_DIR/build_crate.sh" "$crate" || die "rust build FAILED for $crate"
+  [ -x "$bin" ] || die "build produced no binary at $bin"
+  ok "built $bin"
+
+  # 2) ship binary + control script to the DUT (host -> mgmt container -> vlab).
+  log "Shipping Rust xcvrd to $DUT"
+  docker cp "$bin" "$MGMT_CONTAINER:/tmp/xcvrd-rs"            || die "docker cp binary -> mgmt failed"
+  docker cp "$ctl" "$MGMT_CONTAINER:/tmp/rust_xcvrd_ctl.sh"   || die "docker cp ctl -> mgmt failed"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/xcvrd-rs $dut:/home/admin/xcvrd-rs && \
+     $sshp scp $sshopt /tmp/rust_xcvrd_ctl.sh $dut:/home/admin/rust_xcvrd_ctl.sh" \
+    || die "failed to copy Rust artifacts to DUT"
+
+  # 3) inject (crash-safe) — arm the restore trap BEFORE touching pmon's xcvrd.
+  log "Injecting Rust xcvrd into pmon (reversible)"
+  trap '_rust_restore' EXIT INT TERM
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs'" \
+    || die "inject FAILED (Python xcvrd left intact)"
+  ok "Rust xcvrd injected + RUNNING in pmon"
+}
+
+# _rust_run <folder> <test-fn> [test-args...] : build+inject, run the suite, restore.
+_rust_run() {
+  local folder="$1"; local testfn="$2"; shift 2
+  _rust_build_and_inject "$folder"
+  log "Running '$testfn' against the injected Rust xcvrd"
+  "$testfn" "$@"
+  local rc=$?
+  _rust_restore
+  trap - EXIT INT TERM
+  if [ "$rc" -eq 0 ]; then ok "Rust xcvrd: $testfn PASSED"; else warn "Rust xcvrd: $testfn exited rc=$rc"; fi
+  return "$rc"
+}
+
+transceiver_tests_rust()     { _rust_run "${1:-}" transceiver_tests     "${@:2}"; }
+transceiver_tests_all_rust() { _rust_run "${1:-}" transceiver_tests_all "${@:2}"; }
 
 # ---------------------------------------------------------------------------
 # inject_conn_graph: provide a lab connection graph for the KVM DUT (vlab-01).
