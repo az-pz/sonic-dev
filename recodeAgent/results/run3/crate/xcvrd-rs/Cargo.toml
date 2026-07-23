@@ -1,0 +1,42 @@
+[package]
+name = "xcvrd-rs"
+version = "0.1.0"
+edition = "2021"
+
+# The daemon that replaces python xcvrd under the pmon supervisor, PLUS the
+# bootstrap library the ReCodeAgent translation pipeline builds on. Both
+# environment bindings are wired in as ordinary dependencies so agents can `use`
+# them directly and never re-solve interop:
+#   - platform-bridge : the Python sonic_platform HAL (xcvr-emu) via PyO3
+#   - swss-common     : STATE_DB (Redis) via the official sonic-net Rust bindings
+#
+# The default binary (src/main.rs) is the M0 skeleton (stays RUNNING under
+# supervisor). src/env.rs is the reusable seed (open_platform / open_state_db) the
+# agents grow into the real HAL/DB layer. examples/ are runnable demonstrations of
+# each binding and the combined read-transceiver-then-publish pattern; they are
+# built/run with `cargo build --examples` and are NOT part of the deployed daemon.
+
+[lib]
+name = "xcvrd_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xcvrd-rs"
+path = "src/main.rs"
+
+[dependencies]
+platform-bridge = { path = "../platform-bridge" }
+# Pinned for reproducibility; keep in sync with tools/dut/Dockerfile.build's
+# SWSS_COMMON_REV (that clone supplies the c-api headers bindgen parses).
+swss-common = { git = "https://github.com/sonic-net/sonic-swss-common", rev = "7faca59cd30367692a8c5406ad5d7c0b5341c7ef" }
+# preserve_order keeps a decoded dict's insertion order (IndexMap) so nested
+# identity fields render exactly like the reference — most notably
+# TRANSCEIVER_INFO.application_advertisement, whose Python str(dict) repr the M6
+# golden pins field-for-field (its inner key order is the CMIS-decode order).
+serde_json = { version = "1", features = ["preserve_order"] }
+# Direct PyO3 access (same interpreter platform-bridge embeds) for the one thing
+# the JSON bridge can't marshal: DOM thresholds with non-finite floats. rx/tx
+# power thresholds are float('-inf') -> json.dumps '-Infinity', which serde_json
+# rejects, so Sfp::get_transceiver_threshold_info() fails; we read them via
+# sonic_platform and str() each value Python-side (see hal::read_thresholds_stringified).
+pyo3 = { version = "0.22", features = ["auto-initialize"] }

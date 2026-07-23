@@ -1,6 +1,7 @@
 # runtime hand-off + orchestrator state (never committed)
 pipeline/
 pipeline*/
+*process-*.log
 *.db
 *.sqlite
 *.sqllite.db

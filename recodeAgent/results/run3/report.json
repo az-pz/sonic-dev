@@ -1,0 +1,9 @@
+{
+  "milestone": "M6",
+  "passed": true,
+  "tests": {
+    "unit": { "total": 97, "passed": 97, "failed": 0 },
+    "e2e":  { "total": 27, "passed": 27, "failed": 0 }
+  },
+  "failures": []
+}
