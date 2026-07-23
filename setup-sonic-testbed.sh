@@ -508,7 +508,23 @@ transceiver_eeprom_tests() {
 #     ./setup-sonic-testbed.sh transceiver_tests_all_rust  <folder> [-v]
 #     RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder>
 # ---------------------------------------------------------------------------
-RECODE_DUT_DIR="${RECODE_DUT_DIR:-$SCRIPT_DIR/recodeAgent/tools/dut}"
+# The bundled DUT helper scripts (rust_xcvrd_ctl.sh, build_crate.sh,
+# ensure_swsslib.sh, Dockerfile.build) ship NEXT TO this script under
+# recodeAgent/tools/dut/, and are copied to the host together with
+# setup-sonic-testbed.sh. _dut_dir returns the first layout that actually holds
+# them, so the ONLY argument you pass to the rust subcommands is the crate folder.
+# RECODE_DUT_DIR still works as an explicit override but is not required.
+_dut_dir() {
+  local c
+  for c in \
+      "${RECODE_DUT_DIR:-}" \
+      "$SCRIPT_DIR/recodeAgent/tools/dut" \
+      "$SCRIPT_DIR/tools/dut" \
+      "$SCRIPT_DIR/dut"; do
+    [ -n "$c" ] && [ -f "$c/rust_xcvrd_ctl.sh" ] && [ -f "$c/build_crate.sh" ] && { echo "$c"; return 0; }
+  done
+  return 1
+}
 
 # Idempotent restore of the Python xcvrd on the DUT (explicit + EXIT-trap safety
 # net). Vars are recomputed from globals so it works from the trap context.
@@ -531,21 +547,22 @@ _rust_build_and_inject() {
   folder="$(cd "$folder" && pwd)"          # absolute: docker -v needs it (relative => empty volume!)
   local crate="$folder/crate"
   local bin="$crate/target/release/xcvrd-rs"
-  local ctl="$RECODE_DUT_DIR/rust_xcvrd_ctl.sh"
+  local dutdir; dutdir="$(_dut_dir)" \
+    || die "DUT helper scripts not found — expected recodeAgent/tools/dut next to $SCRIPT_DIR/$(basename "$0") (copy recodeAgent/tools/dut alongside setup-sonic-testbed.sh, or set RECODE_DUT_DIR)"
+  local ctl="$dutdir/rust_xcvrd_ctl.sh"
   [ -d "$crate" ] || die "no crate/ workspace under $folder (expected $crate with xcvrd-rs/, platform-bridge/)"
   [ -f "$crate/Cargo.toml" ] || die "no Cargo.toml at $crate — is this a recodeAgent pipeline folder?"
-  [ -f "$ctl" ] || die "control script missing: $ctl"
 
   # 0) ensure the Debian-13 build image exists (one-time; matches pmon runtime).
   if ! docker image inspect recode-rust-build >/dev/null 2>&1; then
     log "Building recode-rust-build image (one-time; trixie / py3.13 / glibc2.41)"
-    docker build -t recode-rust-build -f "$RECODE_DUT_DIR/Dockerfile.build" "$RECODE_DUT_DIR" \
+    docker build -t recode-rust-build -f "$dutdir/Dockerfile.build" "$dutdir" \
       || die "failed to build recode-rust-build image"
   fi
 
   # 1) build xcvrd-rs for pmon (glibc2.41, links libpython3.13 + libswsscommon).
   log "Building Rust xcvrd from $crate"
-  bash "$RECODE_DUT_DIR/build_crate.sh" "$crate" || die "rust build FAILED for $crate"
+  bash "$dutdir/build_crate.sh" "$crate" || die "rust build FAILED for $crate"
   [ -x "$bin" ] || die "build produced no binary at $bin"
   ok "built $bin"
 
