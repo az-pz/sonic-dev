@@ -473,6 +473,27 @@ Smoke-verified on CLI 1.0.72: all four agents are discovered, `claude-opus-4.8` 
 parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
 `xcvrd-tests` and always restores the Python xcvrd.
 
+### F. Grading a pipeline output with the real sonic-mgmt suites (on the VM)
+
+Beyond the recodeAgent `xcvrd-tests` gate, you can run the **official sonic-mgmt**
+transceiver suites against a Rust xcvrd built from any pipeline-run folder. Two
+subcommands were added to the sibling `../setup-sonic-testbed.sh` (run on the
+sonic-dev VM; the emulator must be deployed first):
+
+```bash
+cd /c/Users/t-fhabibi/Desktop/toRust/dev            # on the VM: sonic-develop/dev
+./setup-sonic-testbed.sh transceiver_tests_rust     recodeAgent/pipeline_run3      # vs-compatible subset
+./setup-sonic-testbed.sh transceiver_tests_all_rust recodeAgent/pipeline_run3 -v   # full validated set
+RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust recodeAgent/pipeline_run3
+```
+
+Each builds `<folder>/crate` in the Debian-13 container (`build_crate.sh`),
+crash-safely injects the binary into pmon via `tools/dut/rust_xcvrd_ctl.sh`
+(backup-verify + atomic shim, mirroring `dut_validate.sh`), runs the existing
+`transceiver_tests` / `transceiver_tests_all` against it, then **always restores
+the Python xcvrd** (explicit + EXIT/INT/TERM trap). The suite's exit code
+propagates so a CI wrapper can gate on it.
+
 ### The state machine (what the Burr graph encodes)
 
 ```
