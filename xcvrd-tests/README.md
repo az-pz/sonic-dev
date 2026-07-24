@@ -133,17 +133,19 @@ at a time:
     the full rich `TRANSCEIVER_STATUS` (ModuleReady, `DP{n}State=DataPathActivated`,
     ConfigSuccess) + `TRANSCEIVER_STATUS_SW`. The CMIS bring-up parity gate.
 - Goldens live at `golden/<scenario>/<port>.json` (volatile timestamps stripped).
-- `test_golden.py` is parametrized over every registered scenario.
+- Each scenario has its **own test function** in `tests/test_golden.py`
+  (`test_steady_state`, `test_activated_datapath`, …) so it is selectable by
+  pytest function name. Scenario definitions live in `tests/scenarios.py`.
 - Each e2e feature adds a scenario (+ the emulator/bridge work only if the data
   isn't already observable), recaptures from Python, and commits the new golden.
 
 ```bash
 # (re)capture EVERY scenario's golden from the reference Python xcvrd, then commit golden/**
-./run.sh --capture-golden -k test_state_matches_golden
+./run.sh --capture-golden tests/test_golden.py
 # compare the live daemon against the committed goldens
-./run.sh -k test_state_matches_golden
-# just one scenario
-./run.sh -k steady_state
+./run.sh tests/test_golden.py
+# just one scenario (by test function name)
+./run.sh -k test_activated_datapath
 ```
 
 Capture **refuses to run against a non-reference (Rust-injected) xcvrd**

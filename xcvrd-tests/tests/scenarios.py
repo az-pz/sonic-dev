@@ -20,11 +20,11 @@ A scenario is:
 future scenarios can drive CONFIG_DB (breakout, media settings), raw EEPROM
 (flags, VDM), or presence (post-error / post-reset) without changing the runner.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, List, Optional
 import os
 
-from .waits import wait_until, T_FAST, T_DOM
+from lib.waits import wait_until, T_FAST, T_DOM
 
 # Every STATE_DB table xcvrd can populate for a port. A scenario goldens a subset;
 # the union grows as features land. Kept here as the single source of truth so the
@@ -59,29 +59,13 @@ class Scenario:
     tables: List[str]
     prepare: Callable[[ScenarioCtx], None]
     description: str = ""
-    slow: bool = False
     # None -> the harness's default TEST_PORT (Ethernet100). A scenario can pin a
     # different port (e.g. an admin-up one whose datapath xcvrd actually drives).
     port: Optional[str] = None
 
 
-# --- registry ----------------------------------------------------------------
-_REGISTRY: "dict[str, Scenario]" = {}
-
-
-def register(scenario: Scenario) -> Scenario:
-    if scenario.name in _REGISTRY:
-        raise ValueError(f"duplicate scenario name: {scenario.name}")
-    _REGISTRY[scenario.name] = scenario
-    return scenario
-
-
-def all_scenarios() -> List[Scenario]:
-    return list(_REGISTRY.values())
-
-
-def get(name: str) -> Scenario:
-    return _REGISTRY[name]
+# Scenarios are plain module-level constants (below); each gets its OWN test
+# function in test_golden.py so they are selectable by pytest function name.
 
 
 # --- steady_state ------------------------------------------------------------
@@ -101,13 +85,12 @@ def _prepare_steady_state(ctx: ScenarioCtx) -> None:
                msg=f"{port} DOM_THRESHOLD populated before golden snapshot")
 
 
-register(Scenario(
+STEADY_STATE = Scenario(
     name="steady_state",
     description="present module at rest: identity + SW status + DOM thresholds",
     tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS_SW", "TRANSCEIVER_DOM_THRESHOLD"],
     prepare=_prepare_steady_state,
-    slow=True,
-))
+)
 
 
 # --- activated_datapath (CMIS bring-up parity gate) --------------------------
@@ -139,11 +122,15 @@ def _prepare_activated_datapath(ctx: ScenarioCtx) -> None:
                timeout=T_FAST, msg=f"{port} active_apsel populated before snapshot")
 
 
-register(Scenario(
+ACTIVATED_DATAPATH = Scenario(
     name="activated_datapath",
     description="admin-up port with CMIS datapath driven to activated (real active_apsel)",
     tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS", "TRANSCEIVER_STATUS_SW"],
     prepare=_prepare_activated_datapath,
-    slow=True,
     port=_ACTIVATED_PORT,
-))
+)
+
+
+# Convenience list (e.g. for a capture-all helper). Each scenario still gets its
+# own named test function in test_golden.py.
+ALL = [STEADY_STATE, ACTIVATED_DATAPATH]
