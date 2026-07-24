@@ -88,7 +88,8 @@ assertions genuinely validate the daemon rather than passing on residue.
 - `tests/test_dom.py` — DOM table present; raw temperature/voltage writes propagate after refresh (`slow`).
 - `tests/test_interaction_trace.py` — xcvrd really polls the module and re-reads on plug (Monitor trace).
 - `tests/test_multiport.py` — concurrent multi-port presence/change/DOM: simultaneous unplug/replug, partial-unplug isolation, and distinct per-port DOM writes with no cross-talk (per-module isolation).
-- `tests/test_golden.py` — STATE_DB projection matches the committed golden baseline (conformance gate).
+- `tests/test_golden.py` — STATE_DB projection matches the committed golden baseline (conformance gate), **per scenario** (see below).
+- `tests/test_cmis_datapath.py` — **CMIS datapath bring-up** parity gate (`slow`): an admin-up port (default `Ethernet4`, override `XCVRD_ACTIVATED_PORT`) must be driven to `module_state=ModuleReady`, every configured `DP{n}State=DataPathActivated`, `config_state=ConfigSuccess`, and a **real** `active_apsel_hostlane{n}` (not `N/A`) with real `host_lane_count`. Cross-checks the emulator's own datapath state machine via `GetInfo.dpsms`, so it proves xcvrd drove the module — not just wrote STATE_DB. A reduced daemon that only marks `cmis_state=READY` with `N/A` apsel fails it. **No emulator change** was needed — the emulator already models the control-driven datapath SM (`dpsm.py`) and Python drives it for admin-up ports.
 
 No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2.)
 
@@ -123,8 +124,14 @@ at a time:
 
 - `lib/scenarios.py` registers named scenarios — each pins the module in one
   reproducible state (`prepare`) and declares the STATE_DB tables that form its
-  golden. The seed scenario is `steady_state` (present module at rest:
-  `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`).
+  golden. Registered scenarios:
+  - `steady_state` — admin-down port at rest on `Ethernet100`:
+    `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`
+    (module in low power, datapath deactivated, `active_apsel='N/A'`).
+  - `activated_datapath` — admin-up port (`Ethernet4`) whose CMIS datapath xcvrd
+    drove to activated: `TRANSCEIVER_INFO` (real `active_apsel`/lane counts) +
+    the full rich `TRANSCEIVER_STATUS` (ModuleReady, `DP{n}State=DataPathActivated`,
+    ConfigSuccess) + `TRANSCEIVER_STATUS_SW`. The CMIS bring-up parity gate.
 - Goldens live at `golden/<scenario>/<port>.json` (volatile timestamps stripped).
 - `test_golden.py` is parametrized over every registered scenario.
 - Each e2e feature adds a scenario (+ the emulator/bridge work only if the data

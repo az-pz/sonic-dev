@@ -22,6 +22,7 @@ future scenarios can drive CONFIG_DB (breakout, media settings), raw EEPROM
 """
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
+import os
 
 from .waits import wait_until, T_FAST, T_DOM
 
@@ -44,8 +45,9 @@ ALL_TRANSCEIVER_TABLES = [
 
 @dataclass
 class ScenarioCtx:
-    """Everything a scenario's ``prepare`` may need to drive the system."""
-    module: object
+    """Everything a scenario's ``prepare`` needs to drive + observe one port."""
+    port: str
+    index: int
     statedb: object
     emu: object
     configdb: object = None
@@ -58,6 +60,9 @@ class Scenario:
     prepare: Callable[[ScenarioCtx], None]
     description: str = ""
     slow: bool = False
+    # None -> the harness's default TEST_PORT (Ethernet100). A scenario can pin a
+    # different port (e.g. an admin-up one whose datapath xcvrd actually drives).
+    port: Optional[str] = None
 
 
 # --- registry ----------------------------------------------------------------
@@ -83,16 +88,17 @@ def get(name: str) -> Scenario:
 # The baseline: a present module at rest. Its golden is the stable identity + SW
 # status + DOM thresholds projection (the original golden/<port>.json contract).
 def _prepare_steady_state(ctx: ScenarioCtx) -> None:
-    m, statedb = ctx.module, ctx.statedb
-    m.plug()
-    m.wait_info_populated(timeout=T_FAST)
-    wait_until(lambda: m.status_sw().get("cmis_state") == "READY", timeout=T_FAST,
-               msg=f"{m.port} cmis_state READY before golden snapshot")
+    db, port = ctx.statedb, ctx.port
+    ctx.emu.plug(ctx.index)
+    wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST, msg=f"{port} TRANSCEIVER_INFO populated before snapshot")
+    wait_until(lambda: db.hgetall(f"TRANSCEIVER_STATUS_SW|{port}").get("cmis_state") == "READY",
+               timeout=T_FAST, msg=f"{port} cmis_state READY before golden snapshot")
     # DOM_THRESHOLD lands on xcvrd's ~60s DOM poll, so wait for it explicitly
     # rather than relying on test order -- this is why the case is `slow`.
-    wait_until(lambda: statedb.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{m.port}"),
+    wait_until(lambda: db.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{port}"),
                timeout=T_DOM,
-               msg=f"{m.port} DOM_THRESHOLD populated before golden snapshot")
+               msg=f"{port} DOM_THRESHOLD populated before golden snapshot")
 
 
 register(Scenario(
@@ -104,16 +110,40 @@ register(Scenario(
 ))
 
 
-# --- adding a scenario (template for feature work) ---------------------------
-# Each e2e feature registers a scenario here, extends the emulator/bridge only if
-# the data isn't already observable, recaptures from Python (--capture-golden),
-# and commits the new golden. Sketch:
-#
-#   def _prepare_activated_datapath(ctx):
-#       # configure the port speed/app so the CMIS manager drives bring-up, then
-#       # wait for the emulator's datapath to reach DPACTIVATED (emu.get_info().dpsms).
-#       ...
-#   register(Scenario(
-#       name="activated_datapath",
-#       tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS", "TRANSCEIVER_STATUS_SW"],
-#       prepare=_prepare_activated_datapath, slow=True))
+# --- activated_datapath (CMIS bring-up parity gate) --------------------------
+# An ADMIN-UP CMIS port whose datapath xcvrd's CmisManagerTask has driven all the
+# way up: module in high power (module_state=ModuleReady), every datapath
+# DataPathActivated, per-host-lane ConfigSuccess, and a REAL active
+# application-select in TRANSCEIVER_INFO (active_apsel_hostlaneN != 'N/A'). The
+# admin-down baseline (steady_state) short-circuits to cmis_state=READY with 'N/A'
+# apsel and DataPathDeactivated; a reduced daemon that only reproduces THAT will
+# fail this scenario. The port must be admin-up in CONFIG_DB (default Ethernet4 on
+# the KVM testbed); override with XCVRD_ACTIVATED_PORT.
+_ACTIVATED_PORT = os.environ.get("XCVRD_ACTIVATED_PORT", "Ethernet4")
+
+
+def _prepare_activated_datapath(ctx: ScenarioCtx) -> None:
+    db, port = ctx.statedb, ctx.port
+    ctx.emu.plug(ctx.index)
+    wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST, msg=f"{port} TRANSCEIVER_INFO populated before snapshot")
+
+    def _activated():
+        st = db.hgetall(f"TRANSCEIVER_STATUS|{port}")
+        return (st.get("module_state") == "ModuleReady"
+                and st.get("DP1State") == "DataPathActivated")
+    wait_until(_activated, timeout=T_DOM,
+               msg=f"{port} CMIS datapath activated (ModuleReady + DP1State) before snapshot")
+    # real active application-select, not the reduced 'N/A'
+    wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "active_apsel_hostlane1") not in (None, "N/A"),
+               timeout=T_FAST, msg=f"{port} active_apsel populated before snapshot")
+
+
+register(Scenario(
+    name="activated_datapath",
+    description="admin-up port with CMIS datapath driven to activated (real active_apsel)",
+    tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS", "TRANSCEIVER_STATUS_SW"],
+    prepare=_prepare_activated_datapath,
+    slow=True,
+    port=_ACTIVATED_PORT,
+))
