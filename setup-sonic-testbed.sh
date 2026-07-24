@@ -41,6 +41,8 @@
 #                                              #   against it, then ALWAYS restore the Python xcvrd
 #   ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder> [-v]  # same, but the FULL validated
 #                                              #   xcvrd/SFP set (needs emulator deployed first)
+#   ./setup-sonic-testbed.sh xcvrd_status      # report the xcvrd running in pmon: PYTHON vs injected
+#                                              #   RUST xcvrd-rs, supervisor state + inject markers (read-only)
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
 #   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
 #
@@ -599,6 +601,35 @@ _rust_run() {
 
 transceiver_tests_rust()     { _rust_run "${1:-}" transceiver_tests     "${@:2}"; }
 transceiver_tests_all_rust() { _rust_run "${1:-}" transceiver_tests_all "${@:2}"; }
+
+# ---------------------------------------------------------------------------
+# xcvrd_status (alias: xcvrd_info): show which xcvrd is currently running in
+#   pmon on the DUT -- stock PYTHON vs an injected RUST xcvrd-rs -- plus the
+#   supervisor state (RUNNING/…, pid, uptime), the actually-running process
+#   image, and the inject/backup markers. Read-only: changes nothing. Handy to
+#   confirm an inject took effect, or that a run restored the Python xcvrd.
+#     ./setup-sonic-testbed.sh xcvrd_status
+# ---------------------------------------------------------------------------
+xcvrd_status() {
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+  local dutdir ctl
+  dutdir="$(_dut_dir)" \
+    || die "DUT helper scripts not found — expected recodeAgent/tools/dut next to $SCRIPT_DIR/$(basename "$0")"
+  ctl="$dutdir/rust_xcvrd_ctl.sh"
+  log "xcvrd status on $DUT (pmon)"
+  # Ship the (read-only) control script and run its status verb on the DUT --
+  # same proven host->mgmt->ssh->pmon path used by inject/restore.
+  docker cp "$ctl" "$MGMT_CONTAINER:/tmp/rust_xcvrd_ctl.sh" || die "docker cp ctl -> mgmt failed"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/rust_xcvrd_ctl.sh $dut:/home/admin/rust_xcvrd_ctl.sh" \
+    || die "failed to copy control script to DUT"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh status'" \
+    || die "failed to query xcvrd status on $DUT"
+}
+xcvrd_info() { xcvrd_status "$@"; }
 
 # ---------------------------------------------------------------------------
 # inject_conn_graph: provide a lab connection graph for the KVM DUT (vlab-01).

@@ -33,7 +33,41 @@ wait_running() {
 }
 
 status() {
-  docker exec "$PMON" supervisorctl status xcvrd 2>/dev/null || true
+  # Read-only: report which xcvrd pmon is currently running (stock PYTHON vs an
+  # injected RUST xcvrd-rs), the supervisor state, the actually-running process
+  # image, and the inject/backup markers. Touches nothing.
+  if ! docker exec "$PMON" true 2>/dev/null; then
+    echo "[xcvrd] pmon container not available (is the DUT up?)"; return 0
+  fi
+  local sup pid fl rs bk exe cmd run
+  sup=$(docker exec "$PMON" supervisorctl status xcvrd 2>/dev/null)
+  pid=$(printf '%s\n' "$sup" | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p')
+  docker exec "$PMON" sh -c "[ -e $XRUST ]" 2>/dev/null && rs=present || rs=none
+  docker exec "$PMON" sh -c "[ -e $XORIG ]" 2>/dev/null && bk=present || bk=none
+  # The injected shim execs /usr/local/bin/xcvrd-rs; stock python xcvrd never
+  # mentions it. The backup (xcvrd.pyorig) only exists while Rust is injected.
+  if docker exec "$PMON" grep -q xcvrd-rs "$XBIN" 2>/dev/null; then
+    fl="RUST (xcvrd-rs)"
+  elif [ "$rs" = present ] && [ "$bk" = present ]; then
+    fl="RUST (xcvrd-rs)"
+  else
+    fl="PYTHON (stock)"
+  fi
+  # Confirm against the actually-running process image (robust mid-restart).
+  run="n/a (not running)"
+  if [ -n "$pid" ]; then
+    exe=$(docker exec "$PMON" readlink -f "/proc/$pid/exe" 2>/dev/null)
+    cmd=$(docker exec "$PMON" cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')
+    case "$exe $cmd" in
+      *xcvrd-rs*) run="xcvrd-rs (native binary)" ;;
+      *python*)   run="python (interpreter)" ;;
+      *)          run="${exe:-unknown}" ;;
+    esac
+  fi
+  echo "[xcvrd] flavor     : $fl"
+  echo "[xcvrd] supervisor : ${sup:-<xcvrd not found in pmon>}"
+  echo "[xcvrd] running    : $run"
+  echo "[xcvrd] markers    : xcvrd-rs=$rs  py-backup=$bk  (py-backup present => Rust injected)"
 }
 
 restore() {
