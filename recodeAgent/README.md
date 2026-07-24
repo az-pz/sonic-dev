@@ -494,6 +494,18 @@ crash-safely injects the binary into pmon via `tools/dut/rust_xcvrd_ctl.sh`
 the Python xcvrd** (explicit + EXIT/INT/TERM trap). The suite's exit code
 propagates so a CI wrapper can gate on it.
 
+To check which xcvrd is live in pmon at any time (stock **PYTHON** vs an injected
+**RUST** `xcvrd-rs`) — supervisor state, the running process image, and the
+inject/backup markers — use the read-only status command (changes nothing):
+
+```bash
+./setup-sonic-testbed.sh xcvrd_status      # alias: xcvrd_info
+# [xcvrd] flavor     : PYTHON (stock) | RUST (xcvrd-rs)
+# [xcvrd] supervisor : xcvrd   RUNNING   pid 37, uptime 0:08:23
+# [xcvrd] running    : python (interpreter) | xcvrd-rs (native binary)
+# [xcvrd] markers    : xcvrd-rs=none  py-backup=none  (py-backup present => Rust injected)
+```
+
 ### The state machine (what the Burr graph encodes)
 
 ```
