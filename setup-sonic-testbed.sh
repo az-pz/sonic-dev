@@ -37,10 +37,14 @@
 #                                              #   run the pytest black-box suite there (needs emulator)
 #   ./setup-sonic-testbed.sh transceiver_tests_rust <folder> [-v]      # build a Rust xcvrd from a
 #                                              #   recodeAgent pipeline folder (e.g. recodeAgent/pipeline_run3),
-#                                              #   inject it into pmon, run the vs-compatible transceiver subset
-#                                              #   against it, then ALWAYS restore the Python xcvrd
+#                                              #   inject it into pmon, FLUSH STATE_DB (clean baseline so the
+#                                              #   Rust daemon must repopulate), run the vs-compatible subset,
+#                                              #   then ALWAYS restore the Python xcvrd
 #   ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder> [-v]  # same, but the FULL validated
 #                                              #   xcvrd/SFP set (needs emulator deployed first)
+#   ./setup-sonic-testbed.sh transceiver_tests_noop      # NEGATIVE CONTROL: inject a no-op xcvrd + clean
+#                                              #   baseline, run the subset — the STATE_DB tests SHOULD fail
+#                                              #   (proves the suite actually exercises xcvrd). No folder arg.
 #   ./setup-sonic-testbed.sh xcvrd_status      # report the xcvrd running in pmon: PYTHON vs injected
 #                                              #   RUST xcvrd-rs, supervisor state + inject markers (read-only)
 #   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
@@ -601,6 +605,54 @@ _rust_run() {
 
 transceiver_tests_rust()     { _rust_run "${1:-}" transceiver_tests     "${@:2}"; }
 transceiver_tests_all_rust() { _rust_run "${1:-}" transceiver_tests_all "${@:2}"; }
+
+# _rust_ship_ctl: copy the DUT control script to the DUT (host -> mgmt -> vlab).
+_rust_ship_ctl() {
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP" dutdir ctl
+  dutdir="$(_dut_dir)" \
+    || die "DUT helper scripts not found — expected recodeAgent/tools/dut next to $SCRIPT_DIR/$(basename "$0")"
+  ctl="$dutdir/rust_xcvrd_ctl.sh"
+  docker cp "$ctl" "$MGMT_CONTAINER:/tmp/rust_xcvrd_ctl.sh" || die "docker cp ctl -> mgmt failed"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/rust_xcvrd_ctl.sh $dut:/home/admin/rust_xcvrd_ctl.sh" \
+    || die "failed to copy control script to DUT"
+}
+
+# _rust_run_noop <test-fn> [args...] : NEGATIVE CONTROL. Inject a no-op xcvrd with
+#   the SAME clean-baseline flush used by the real runs, run the suite, restore.
+#   The xcvrd-dependent tests (STATE_DB-backed: sfpshow, test_xcvr_info_in_db) MUST
+#   fail here; the platform-API tests (sfputil, api/test_sfp) may still pass since
+#   they bypass xcvrd. This proves which tests actually exercise the daemon, so a
+#   PASS from the real Rust run is attributable to the Rust xcvrd, not stale data.
+_rust_run_noop() {
+  local testfn="$1"; shift
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+  log "NEGATIVE CONTROL: inject a NO-OP xcvrd (clean baseline), then run '$testfn'"
+  _rust_ship_ctl
+  trap '_rust_restore' EXIT INT TERM
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh inject-noop'" \
+    || die "inject-noop FAILED (Python xcvrd left intact)"
+  ok "no-op xcvrd injected + RUNNING (STATE_DB flushed; nothing is repopulating it)"
+  log "Running '$testfn' against the NO-OP xcvrd (expect the STATE_DB-backed tests to FAIL)"
+  "$testfn" "$@"
+  local rc=$?
+  _rust_restore
+  trap - EXIT INT TERM
+  if [ "$rc" -ne 0 ]; then
+    ok "negative control OK: '$testfn' did NOT fully pass (rc=$rc) — the STATE_DB tests have teeth"
+  else
+    warn "negative control: '$testfn' PASSED with a no-op xcvrd (rc=0) — those tests do NOT depend on xcvrd!"
+  fi
+  return "$rc"
+}
+
+transceiver_tests_noop()     { _rust_run_noop transceiver_tests     "$@"; }
+transceiver_tests_all_noop() { _rust_run_noop transceiver_tests_all "$@"; }
 
 # ---------------------------------------------------------------------------
 # xcvrd_status (alias: xcvrd_info): show which xcvrd is currently running in

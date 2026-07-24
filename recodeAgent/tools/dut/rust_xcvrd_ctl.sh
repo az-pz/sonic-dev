@@ -10,9 +10,14 @@
 #
 # Verbs:
 #   inject <staged-binary>   back up python xcvrd, install a shim that execv's the
-#                            rust binary, restart under supervisor, wait RUNNING
+#                            rust binary, then clean-baseline restart: flush stale
+#                            TRANSCEIVER_* rows so the injected daemon MUST
+#                            repopulate STATE_DB (stale python data can't mask it)
+#   inject-noop              negative control: install a NO-OP xcvrd (stays RUNNING
+#                            but never writes STATE_DB) + same clean baseline, so
+#                            xcvrd-dependent tests MUST fail (proves they have teeth)
 #   restore                  restore the python xcvrd (idempotent; safe to re-run)
-#   status                   print the supervisor xcvrd status word
+#   status                   report which xcvrd is running (python vs rust) + markers
 #
 # Usage (on the DUT): bash rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs
 set -uo pipefail
@@ -30,6 +35,36 @@ wait_running() {
     sleep 0.3
   done
   return 1
+}
+
+# Clean baseline: delete every TRANSCEIVER_* row so a freshly (re)started daemon
+# must repopulate STATE_DB from scratch. Without this, stale Python-written rows
+# survive an xcvrd restart and can make STATE_DB-reading tests false-pass even if
+# the injected daemon does nothing. STATE_DB is reached via sonic-db-cli on the
+# DUT host (mirrors recodeAgent xcvrd-tests' flush_transceiver_tables).
+flush_baseline() {
+  local keys n
+  keys=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_*' 2>/dev/null)
+  n=$(printf '%s' "$keys" | grep -c .)
+  if [ "$n" -gt 0 ]; then
+    # shellcheck disable=SC2086
+    sonic-db-cli STATE_DB DEL $keys >/dev/null 2>&1
+  fi
+  echo "[rust-ctl] flushed $n stale TRANSCEIVER_* row(s) from STATE_DB"
+}
+
+# Bounded, NON-fatal wait for the just-started daemon to repopulate
+# TRANSCEIVER_INFO. A correct daemon fills it within a few seconds; a no-op never
+# does -- which is exactly what the negative control demonstrates via test FAILs.
+wait_repopulate() {
+  local i n
+  for i in $(seq 1 20); do
+    n=$(sonic-db-cli STATE_DB KEYS 'TRANSCEIVER_INFO|*' 2>/dev/null | grep -c .)
+    [ "${n:-0}" -gt 0 ] && { echo "[rust-ctl] TRANSCEIVER_INFO repopulated ($n port(s))"; return 0; }
+    sleep 1
+  done
+  echo "[rust-ctl] note: TRANSCEIVER_INFO still empty after wait (daemon not populating?)" >&2
+  return 0
 }
 
 status() {
@@ -89,6 +124,33 @@ inject() {
   # is fully staged. Any failure (e.g. ENOSPC) aborts with xcvrd untouched.
   docker cp "$staged" "$PMON:$XRUST" || { echo "[rust-ctl] docker cp binary failed" >&2; return 1; }
   docker exec "$PMON" chmod +x "$XRUST" || return 1
+  _backup_and_shim || return 1
+  _restart_clean
+  echo "[rust-ctl] injected rust xcvrd (clean baseline); status: $(sup_word)"
+}
+
+inject_noop() {
+  # Negative control: install a NO-OP xcvrd-rs that stays RUNNING under supervisor
+  # but never touches STATE_DB. With the clean-baseline flush, every xcvrd-dependent
+  # test MUST fail -- proof the suite actually exercises the daemon (not stale data
+  # or platform-only code paths). Uses the same crash-safe backup+shim as inject.
+  docker exec -i "$PMON" sh -c "cat > $XRUST" <<'NOOP'
+#!/bin/sh
+# no-op xcvrd-rs (negative control): stay alive for supervisor, write nothing.
+trap 'exit 0' TERM INT
+while true; do sleep 3600; done
+NOOP
+  docker exec "$PMON" sh -c "[ -s $XRUST ] && chmod +x $XRUST" \
+      || { echo "[rust-ctl] no-op write failed" >&2; return 1; }
+  _backup_and_shim || return 1
+  _restart_clean
+  echo "[rust-ctl] injected NO-OP xcvrd (negative control, clean baseline); status: $(sup_word)"
+}
+
+# --- shared inject internals ------------------------------------------------
+sup_word() { docker exec "$PMON" supervisorctl status xcvrd 2>/dev/null | awk '{print $1, $2}'; }
+
+_backup_and_shim() {
   # 1) back up the real xcvrd FIRST and verify the backup is non-empty.
   docker exec "$PMON" sh -c "[ -s $XBIN ] || exit 1; [ -e $XORIG ] || cp $XBIN $XORIG" \
       || { echo "[rust-ctl] backup of xcvrd failed" >&2; return 1; }
@@ -101,18 +163,23 @@ os.execv("/usr/local/bin/xcvrd-rs", ["xcvrd-rs"])
 SHIM
   docker exec "$PMON" sh -c "[ -s $XBIN.new ] && mv $XBIN.new $XBIN && chmod +x $XBIN" \
       || { echo "[rust-ctl] shim write failed; aborting" >&2; docker exec "$PMON" rm -f "$XBIN.new" 2>/dev/null; return 1; }
-  docker exec "$PMON" supervisorctl restart xcvrd >/dev/null 2>&1
-  if wait_running; then
-    echo "[rust-ctl] injected rust xcvrd; supervisor status: $(status | awk '{print $1, $2}')"
-  else
-    echo "[rust-ctl] warning: xcvrd not RUNNING after inject" >&2
-    return 1
-  fi
+}
+
+_restart_clean() {
+  # Clean-baseline restart: stop the daemon, flush stale TRANSCEIVER_* rows while
+  # nothing is writing, start fresh, then (soft) verify repopulation. Stopping
+  # first guarantees no daemon can re-add rows between flush and start.
+  docker exec "$PMON" supervisorctl stop xcvrd >/dev/null 2>&1
+  flush_baseline
+  docker exec "$PMON" supervisorctl start xcvrd >/dev/null 2>&1
+  wait_running || echo "[rust-ctl] warning: xcvrd not RUNNING after start" >&2
+  wait_repopulate
 }
 
 case "${1:-}" in
-  inject)  inject "${2:-}" ;;
-  restore) restore ;;
-  status)  status ;;
-  *) echo "usage: rust_xcvrd_ctl.sh {inject <binary>|restore|status}" >&2; exit 2 ;;
+  inject)      inject "${2:-}" ;;
+  inject-noop) inject_noop ;;
+  restore)     restore ;;
+  status)      status ;;
+  *) echo "usage: rust_xcvrd_ctl.sh {inject <binary>|inject-noop|restore|status}" >&2; exit 2 ;;
 esac

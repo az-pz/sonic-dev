@@ -489,10 +489,34 @@ RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust recodeAgent/pi
 
 Each builds `<folder>/crate` in the Debian-13 container (`build_crate.sh`),
 crash-safely injects the binary into pmon via `tools/dut/rust_xcvrd_ctl.sh`
-(backup-verify + atomic shim, mirroring `dut_validate.sh`), runs the existing
-`transceiver_tests` / `transceiver_tests_all` against it, then **always restores
-the Python xcvrd** (explicit + EXIT/INT/TERM trap). The suite's exit code
-propagates so a CI wrapper can gate on it.
+(backup-verify + atomic shim, mirroring `dut_validate.sh`), **flushes STATE_DB to a
+clean baseline** (stop xcvrd → delete every `TRANSCEIVER_*` row → start → soft-verify
+repopulation), runs the existing `transceiver_tests` / `transceiver_tests_all`
+against it, then **always restores the Python xcvrd** (explicit + EXIT/INT/TERM
+trap). The suite's exit code propagates so a CI wrapper can gate on it.
+
+**Why the flush matters (test validity).** STATE_DB rows survive an xcvrd restart,
+so the Python xcvrd's `TRANSCEIVER_INFO` would otherwise persist and let a broken
+Rust daemon *false-pass* the STATE_DB-backed tests. Flushing first means any pass
+must be because the injected daemon **repopulated** the tables. Note the sonic-mgmt
+suites split into two kinds: STATE_DB-backed (`test_sfpshow`, `test_xcvr_info_in_db`)
+which genuinely exercise xcvrd, and platform-API-direct (`test_sfputil`,
+`api/test_sfp`) which read `sonic_platform` and pass even if xcvrd is dead — count
+only the former as xcvrd evidence.
+
+**Negative control (proves the tests have teeth):**
+
+```bash
+./setup-sonic-testbed.sh transceiver_tests_noop     # inject a NO-OP xcvrd + same flush
+```
+
+Injects a no-op daemon (stays RUNNING under supervisor but writes nothing) with the
+same clean baseline, so the STATE_DB tests **must fail**. Demonstrated live: with the
+no-op, `sfpshow presence`→`Not present` and `sfpshow eeprom`→`SFP EEPROM Not detected`
+across all 32 ports (`TRANSCEIVER_INFO`=0); with the real Rust xcvrd, the same flush
+is followed by `TRANSCEIVER_INFO`=32 and `sfpshow`→`Present` / `SFP EEPROM detected`.
+Same tests, opposite outcome — so a real-run pass is attributable to the Rust daemon,
+not stale data.
 
 To check which xcvrd is live in pmon at any time (stock **PYTHON** vs an injected
 **RUST** `xcvrd-rs`) — supervisor state, the running process image, and the
