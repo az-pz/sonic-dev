@@ -47,11 +47,26 @@ class XcvrdControl:
         return self._sv("restart", "xcvrd")
 
     def flush_transceiver_tables(self):
-        """Delete every TRANSCEIVER_* row so a restart repopulates from scratch."""
-        total = 0
-        for tbl in TRANSCEIVER_TABLES:
-            total += self.statedb.delete_pattern(f"{tbl}|*")
-        return total
+        """Delete every TRANSCEIVER_* row so a restart repopulates from scratch.
+
+        A single glob (rather than the per-table list) so it also clears
+        STATUS_SW / *_FLAG / VDM / PM rows that scenarios now golden -- stale rows
+        in ANY transceiver table could otherwise mask a dead daemon.
+        """
+        return self.statedb.delete_pattern("TRANSCEIVER_*")
+
+    def is_reference_python(self):
+        """True iff the deployed /usr/local/bin/xcvrd is the stock **Python**
+        daemon and NOT a Rust-injected shim (which execs /usr/local/bin/xcvrd-rs).
+
+        Guards golden capture: the golden is the oracle, so it must be baselined
+        from the reference Python xcvrd, never from the Rust candidate under test.
+        """
+        out = subprocess.run(
+            ["docker", "exec", self.container, "sh", "-c",
+             "grep -q xcvrd-rs /usr/local/bin/xcvrd 2>/dev/null && echo rust || echo python"],
+            capture_output=True, text=True, timeout=30)
+        return out.stdout.strip() == "python"
 
     def wait_healthy(self, probe_port, timeout=T_BASELINE, poll=1.0):
         """Force a fresh, verified-live baseline and return True iff healthy.

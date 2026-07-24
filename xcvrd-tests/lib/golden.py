@@ -32,7 +32,11 @@ def project(statedb, port, tables=GOLDEN_TABLES):
     return out
 
 
-def path_for(golden_dir, port):
+def path_for(golden_dir, port, scenario=None):
+    """Golden file path. With a scenario -> ``<golden_dir>/<scenario>/<port>.json``;
+    without -> the legacy ``<golden_dir>/<port>.json``."""
+    if scenario:
+        return os.path.join(golden_dir, scenario, f"{port}.json")
     return os.path.join(golden_dir, f"{port}.json")
 
 

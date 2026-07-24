@@ -114,19 +114,34 @@ production/virtual platform pays zero cost and carries no test backdoor. The
 testbed enables it via `EMU_TEST_HOOKS=1` (default in `setup-sonic-testbed.sh`);
 a clean platform deploy leaves it off.
 
-## Golden baseline (conformance mode)
+## Golden baseline (conformance mode) — per-scenario, differential
 
-`golden/<port>.json` is the reference xcvrd's normalized STATE_DB projection
-(`TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`, with
-volatile timestamps stripped). `test_golden.py` asserts a candidate xcvrd
-reproduces it — the gate for a future (e.g. Rust) reimplementation.
+The golden is captured from the reference **Python** xcvrd (it is the oracle) and
+a candidate xcvrd (e.g. the Rust reimplementation) must reproduce it exactly. As
+of T0 the golden is organized **per scenario** so coverage can grow one behavior
+at a time:
+
+- `lib/scenarios.py` registers named scenarios — each pins the module in one
+  reproducible state (`prepare`) and declares the STATE_DB tables that form its
+  golden. The seed scenario is `steady_state` (present module at rest:
+  `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`).
+- Goldens live at `golden/<scenario>/<port>.json` (volatile timestamps stripped).
+- `test_golden.py` is parametrized over every registered scenario.
+- Each e2e feature adds a scenario (+ the emulator/bridge work only if the data
+  isn't already observable), recaptures from Python, and commits the new golden.
 
 ```bash
-# capture/refresh the golden from the current reference xcvrd, then commit golden/*.json
+# (re)capture EVERY scenario's golden from the reference Python xcvrd, then commit golden/**
 ./run.sh --capture-golden -k test_state_matches_golden
-# normal run compares against the committed golden
+# compare the live daemon against the committed goldens
 ./run.sh -k test_state_matches_golden
+# just one scenario
+./run.sh -k steady_state
 ```
+
+Capture **refuses to run against a non-reference (Rust-injected) xcvrd**
+(`XcvrdControl.is_reference_python`), so a golden can never be accidentally
+baselined from the very candidate it is meant to grade.
 
 ## Running
 

@@ -5,51 +5,52 @@ committed golden captured from the reference (current) xcvrd. This is the
 conformance gate for a future xcvrd reimplementation.
 
 Workflow:
-  # (re)capture the golden from the reference daemon, then commit golden/*.json
-  XCVRD_GOLDEN_CAPTURE=1 ./run.sh tests/test_golden.py
-  # normal run compares against the committed golden
-  ./run.sh tests/test_golden.py
+  ./run.sh --capture-golden tests/test_golden.py   # (re)capture every scenario from Python
+  ./run.sh tests/test_golden.py                    # compare the live daemon
+  ./run.sh tests/test_golden.py -k steady_state    # one scenario
+Capture refuses a non-reference (Rust-injected) xcvrd, so a golden can never be
+baselined from the candidate it is meant to grade.
 """
 import os
 
 import pytest
 
-from lib import golden
-from lib.waits import wait_until, T_FAST, T_DOM
+from lib import golden, scenarios
+from lib.scenarios import ScenarioCtx
 
 GOLDEN_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "golden")
 CAPTURE = os.environ.get("XCVRD_GOLDEN_CAPTURE") == "1"
 
 
-def _stable_projection(module, statedb):
-    """Bring the module to a steady state, then snapshot its projection."""
-    module.plug()
-    module.wait_info_populated(timeout=T_FAST)
-    wait_until(lambda: module.status_sw().get("cmis_state") == "READY", timeout=T_FAST,
-               msg=f"{module.port} cmis_state READY before golden snapshot")
-    # DOM_THRESHOLD is part of the projection and lands on xcvrd's ~60s DOM poll,
-    # so wait for it explicitly rather than relying on test order -- this is why
-    # test_state_matches_golden is marked `slow`.
-    wait_until(lambda: statedb.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{module.port}"),
-               timeout=T_DOM,
-               msg=f"{module.port} DOM_THRESHOLD populated before golden snapshot")
-    return golden.project(statedb, module.port)
+def _params():
+    for s in scenarios.all_scenarios():
+        marks = [pytest.mark.slow] if s.slow else []
+        yield pytest.param(s, id=s.name, marks=marks)
 
 
-@pytest.mark.slow
-def test_state_matches_golden(module, statedb):
-    proj = _stable_projection(module, statedb)
-    path = golden.path_for(GOLDEN_DIR, module.port)
+@pytest.mark.parametrize("scenario", list(_params()))
+def test_state_matches_golden(scenario, module, statedb, emu, configdb, xcvrd):
+    ctx = ScenarioCtx(module=module, statedb=statedb, emu=emu, configdb=configdb)
+    scenario.prepare(ctx)
+    proj = golden.project(statedb, module.port, scenario.tables)
+    path = golden.path_for(GOLDEN_DIR, module.port, scenario.name)
 
     if CAPTURE:
+        # The golden is the ORACLE: it must come from the reference Python xcvrd,
+        # never from an injected Rust candidate (that would defeat the diff).
+        if not xcvrd.is_reference_python():
+            pytest.fail(
+                f"refusing to capture golden [{scenario.name}] from a non-reference "
+                "xcvrd: the deployed /usr/local/bin/xcvrd is the Rust shim, not the "
+                "stock Python daemon. Restore Python xcvrd, then re-capture.")
         golden.save(proj, path)
-        pytest.skip(f"captured golden baseline -> {path}")
+        pytest.skip(f"captured golden [{scenario.name}] -> {path}")
 
     if not os.path.exists(path):
-        pytest.skip(f"no golden baseline for {module.port}; capture with "
-                    f"XCVRD_GOLDEN_CAPTURE=1 ./run.sh tests/test_golden.py")
+        pytest.skip(f"no golden for [{scenario.name}] {module.port}; capture with "
+                    f"--capture-golden ./run.sh tests/test_golden.py")
 
     diffs = golden.diff(proj, golden.load(path))
     assert not diffs, (
-        f"{module.port}: xcvrd STATE_DB projection diverged from golden:\n  "
-        + "\n  ".join(diffs))
+        f"[{scenario.name}] {module.port}: xcvrd STATE_DB projection diverged from "
+        f"golden:\n  " + "\n  ".join(diffs))
