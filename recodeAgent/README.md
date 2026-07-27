@@ -399,7 +399,14 @@ an interactive shell):
 cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
 bash tools/validate_on_dut.sh M0        # deploy-smoke: skeleton must be RUNNING
 bash tools/validate_on_dut.sh M1        # first real pytest gate (auto-resolves the -k selection)
+bash tools/validate_on_dut.sh --all     # run the ENTIRE xcvrd-tests suite (every module, incl. the
+                                         #   T-series parity tests not wired into the milestone matrix)
 ```
+
+`--all` (aliases `-a`, `all`) drops the milestone `-k` gate and runs `run.sh` over
+the whole `tests/` dir under the report label `ALL`; append pytest args to narrow
+it (e.g. `--all -m "not slow"`). Set `RECODE_PRINT_GATE=1` to print the resolved
+milestone + gate and exit before any build/inject/DUT run.
 
 It prints the verdict and writes `pipeline/report.json`:
 
