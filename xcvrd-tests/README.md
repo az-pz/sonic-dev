@@ -90,6 +90,7 @@ assertions genuinely validate the daemon rather than passing on residue.
 - `tests/test_multiport.py` — concurrent multi-port presence/change/DOM: simultaneous unplug/replug, partial-unplug isolation, and distinct per-port DOM writes with no cross-talk (per-module isolation).
 - `tests/test_golden.py` — STATE_DB projection matches the committed golden baseline (conformance gate), **per scenario** (see below).
 - `tests/test_cmis_datapath.py` — **CMIS datapath bring-up** parity gate (`slow`): an admin-up port (default `Ethernet4`, override `XCVRD_ACTIVATED_PORT`) must be driven to `module_state=ModuleReady`, every configured `DP{n}State=DataPathActivated`, `config_state=ConfigSuccess`, and a **real** `active_apsel_hostlane{n}` (not `N/A`) with real `host_lane_count`. Cross-checks the emulator's own datapath state machine via `GetInfo.dpsms`, so it proves xcvrd drove the module — not just wrote STATE_DB. A reduced daemon that only marks `cmis_state=READY` with `N/A` apsel fails it. **No emulator change** was needed — the emulator already models the control-driven datapath SM (`dpsm.py`) and Python drives it for admin-up ports.
+- `tests/test_transceiver_status.py` — rich `TRANSCEIVER_STATUS` coverage (`slow`): asserts xcvrd publishes the module + all 8 per-lane datapath/config fields, and that the admin-down baseline reads the **deactivated** state (`ModuleLowPwr` / `DataPathDeactivated`). A daemon that only publishes `TRANSCEIVER_STATUS_SW` fails it. (The activated case is `test_cmis_datapath.py`.)
 
 No changes to xcvrd or the emulator. (Error-injection + lpmode/reset are v2.)
 
@@ -126,8 +127,9 @@ at a time:
   reproducible state (`prepare`) and declares the STATE_DB tables that form its
   golden. Registered scenarios:
   - `steady_state` — admin-down port at rest on `Ethernet100`:
-    `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + `TRANSCEIVER_DOM_THRESHOLD`
-    (module in low power, datapath deactivated, `active_apsel='N/A'`).
+    `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + the full rich `TRANSCEIVER_STATUS`
+    (ModuleLowPwr, every `DP{n}State=DataPathDeactivated`, `active_apsel='N/A'`) +
+    `TRANSCEIVER_DOM_THRESHOLD`. The deactivated complement of `activated_datapath`.
   - `activated_datapath` — admin-up port (`Ethernet4`) whose CMIS datapath xcvrd
     drove to activated: `TRANSCEIVER_INFO` (real `active_apsel`/lane counts) +
     the full rich `TRANSCEIVER_STATUS` (ModuleReady, `DP{n}State=DataPathActivated`,

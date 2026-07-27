@@ -78,6 +78,11 @@ def _prepare_steady_state(ctx: ScenarioCtx) -> None:
                timeout=T_FAST, msg=f"{port} TRANSCEIVER_INFO populated before snapshot")
     wait_until(lambda: db.hgetall(f"TRANSCEIVER_STATUS_SW|{port}").get("cmis_state") == "READY",
                timeout=T_FAST, msg=f"{port} cmis_state READY before golden snapshot")
+    # Rich TRANSCEIVER_STATUS (module + per-lane datapath state) is published by the
+    # DomInfoUpdateTask; for an admin-down port it reads the deactivated baseline
+    # (ModuleLowPwr / DataPathDeactivated). Wait for it before snapshotting.
+    wait_until(lambda: db.hgetall(f"TRANSCEIVER_STATUS|{port}").get("module_state"),
+               timeout=T_DOM, msg=f"{port} TRANSCEIVER_STATUS populated before golden snapshot")
     # DOM_THRESHOLD lands on xcvrd's ~60s DOM poll, so wait for it explicitly
     # rather than relying on test order -- this is why the case is `slow`.
     wait_until(lambda: db.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{port}"),
@@ -87,8 +92,9 @@ def _prepare_steady_state(ctx: ScenarioCtx) -> None:
 
 STEADY_STATE = Scenario(
     name="steady_state",
-    description="present module at rest: identity + SW status + DOM thresholds",
-    tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS_SW", "TRANSCEIVER_DOM_THRESHOLD"],
+    description="admin-down port at rest: identity + SW status + rich STATUS + DOM thresholds",
+    tables=["TRANSCEIVER_INFO", "TRANSCEIVER_STATUS_SW", "TRANSCEIVER_STATUS",
+            "TRANSCEIVER_DOM_THRESHOLD"],
     prepare=_prepare_steady_state,
 )
 
