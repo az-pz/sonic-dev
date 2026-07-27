@@ -1,0 +1,12 @@
+{
+  "GLOBAL_MEDIA_SETTINGS": {
+    "0-127": {
+      "10G_SPEED": {
+        "XCVR-EMU.*": {
+          "CDREnableTx": {"CDREnableTx1": 1, "CDREnableTx2": 1, "CDREnableTx3": 1, "CDREnableTx4": 1},
+          "CDREnableRx": {"CDREnableRx1": 1, "CDREnableRx2": 1, "CDREnableRx3": 1, "CDREnableRx4": 1}
+        }
+      }
+    }
+  }
+}

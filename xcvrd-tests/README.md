@@ -116,6 +116,17 @@ No changes to xcvrd. The only bridge addition is a test-only error-injection hoo
   emulator boots modules in low power, so a cleared write is the daemon driving),
   and cross-checks `module_state=ModuleReady` in STATE_DB + the emulator's
   `GetInfo.msm`. A reduced daemon that never drives module power fails. Ties to 3.1.
+- `tests/test_optics_si.py` — **media / optics SI application** (T3.3, `slow`):
+  xcvrd applies per-vendor Signal-Integrity settings from `optics_si_settings.json`
+  during CMIS bring-up. The test provisions an SI file (vendor `XCVR-EMU`) into the
+  platform dir + restarts xcvrd (see `lib/optics_si.py`), advertises SI-control
+  support (`01h:161/162`) on the module, forces a fresh bring-up, and asserts xcvrd
+  stages the CDR-enable SI controls into the page-10h Staged Control Set
+  (offsets 153-175) and sets `ExplicitControl=1` in the DPConfigLane bytes. A
+  daemon that stubs media/SI application never writes that region. Pure harness
+  stimulus (no emulator image change); the fixture fully restores the no-SI
+  baseline on teardown. (The JSON vendor key is a regex because the emulator
+  returns a NUL-padded vendor name the SI parser's `.strip()` leaves intact.)
 
 Error injection uses a **gated** bridge hook: only when the deploy drops a
 `.test_hooks` marker next to the bridge does `chassis.get_change_event` read a

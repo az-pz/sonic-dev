@@ -37,6 +37,23 @@ TEMP_HIGH_ALARM_FLAG = 0x01   # 00h:9.0 TempMonHighAlarmFlag
 MODULE_FLAGS_FW_STATE = (0, 0, 8, 1)
 MODULE_FW_FAULT_FLAG = 0x02   # 00h:8.1 ModuleFirmwareErrorFlag
 
+# CMIS page 01h Supported Signal Integrity Controls Advertisement (8.4.7). xcvrd
+# only stages a given SI control if the module advertises support for it; the
+# emulator config advertises none, so the SI-application test writes these bits.
+SI_ADV_TX_CDR_OFFSET = 161    # 01h:161 bit0 TxCDRSupported
+SI_ADV_RX_CDR_OFFSET = 162    # 01h:162 bit0 RxCDRSupported
+TX_CDR_SUPPORTED = 0x01
+RX_CDR_SUPPORTED = 0x01
+
+# CMIS page 10h Staged Control Set 0. The SI controls (TX/RX CDR enable, input EQ,
+# output EQ/amplitude) live at offsets 153-175 (TX 153-160, RX 161-175); the
+# DPConfigLane bytes at 145-152 carry ExplicitControl in bit 0 -- 1 means the lane
+# uses the Staged Control Set (i.e. the custom SI values) instead of the
+# application defaults.
+SCS0_SI_CONTROL_RANGE = range(153, 176)
+SCS0_DPCONFIG_RANGE = range(145, 153)
+EXPLICIT_CONTROL_BIT = 0x01
+
 
 def encode_temperature(celsius):
     """Encode degrees Celsius as CMIS S16 (1/256 degC), big-endian 2 bytes."""
