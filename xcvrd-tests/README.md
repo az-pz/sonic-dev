@@ -123,7 +123,7 @@ a candidate xcvrd (e.g. the Rust reimplementation) must reproduce it exactly. As
 of T0 the golden is organized **per scenario** so coverage can grow one behavior
 at a time:
 
-- `lib/scenarios.py` registers named scenarios — each pins the module in one
+- `tests/scenarios.py` registers named scenarios — each pins the module in one
   reproducible state (`prepare`) and declares the STATE_DB tables that form its
   golden. Registered scenarios:
   - `steady_state` — admin-down port at rest on `Ethernet100`:
@@ -134,6 +134,14 @@ at a time:
     drove to activated: `TRANSCEIVER_INFO` (real `active_apsel`/lane counts) +
     the full rich `TRANSCEIVER_STATUS` (ModuleReady, `DP{n}State=DataPathActivated`,
     ConfigSuccess) + `TRANSCEIVER_STATUS_SW`. The CMIS bring-up parity gate.
+  - `dom_flag` — a module with a **raised DOM alarm flag** (`Ethernet4`, override
+    `XCVRD_FLAG_PORT`): the scenario raises `TempMonHighAlarm` on the emulator
+    (lower page byte 9) and goldens `TRANSCEIVER_DOM_FLAG` (`tempHAlarm=True`, every
+    other flag `False`). A daemon that doesn't read + publish the module's latched
+    monitor flags — e.g. the reduced Rust, which emits no flag tables — fails it.
+    **No emulator change** was needed: the emulator holds the flag register with no
+    clear-on-read, so xcvrd reads it on the next DOM poll and the projection is
+    stable; a scenario `teardown` clears the flag back to the unflagged baseline.
 - Goldens live at `golden/<scenario>/<port>.json` (volatile timestamps stripped).
 - Each scenario has its **own test function** in `tests/test_golden.py`
   (`test_steady_state`, `test_activated_datapath`, …) so it is selectable by

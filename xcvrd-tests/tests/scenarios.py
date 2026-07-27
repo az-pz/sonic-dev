@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 import os
 
+from lib import cmis
 from lib.waits import wait_until, T_FAST, T_DOM
 
 # Every STATE_DB table xcvrd can populate for a port. A scenario goldens a subset;
@@ -62,6 +63,9 @@ class Scenario:
     # None -> the harness's default TEST_PORT (Ethernet100). A scenario can pin a
     # different port (e.g. an admin-up one whose datapath xcvrd actually drives).
     port: Optional[str] = None
+    # Optional cleanup run after capture/compare (e.g. clear a raised flag) so a
+    # scenario's stimulus doesn't leak into subsequent tests / the next user.
+    teardown: Optional[Callable[[ScenarioCtx], None]] = None
 
 
 # Scenarios are plain module-level constants (below); each gets its OWN test
@@ -137,6 +141,50 @@ ACTIVATED_DATAPATH = Scenario(
 )
 
 
+# --- dom_flag (T2: DOM flag reporting) ---------------------------------------
+# xcvrd's DomInfoUpdateTask reads the module's latched monitor flags (CMIS v5.2
+# 8.9, lower page byte 9) and publishes TRANSCEIVER_DOM_FLAG. The reduced Rust
+# daemon publishes no flag tables at all, so any raised flag is a hard parity
+# gate. We raise TempMonHighAlarm directly on the emulator register -- it holds
+# the value with no clear-on-read, so the projection is stable across xcvrd's
+# ~60s DOM poll and the golden is deterministic. The teardown clears the flag so
+# the module returns to the unflagged baseline for later tests.
+_FLAG_PORT = os.environ.get("XCVRD_FLAG_PORT", "Ethernet4")
+
+
+def _prepare_dom_flag(ctx: ScenarioCtx) -> None:
+    db, port = ctx.statedb, ctx.port
+    ctx.emu.plug(ctx.index)
+    wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST,
+               msg=f"{port} TRANSCEIVER_INFO populated before flag stimulus")
+    ctx.emu.write_field(ctx.index, cmis.MODULE_FLAGS_TEMP_VCC,
+                        bytes([cmis.TEMP_HIGH_ALARM_FLAG]))
+    # xcvrd latches the raised flag on its next DOM poll -> DOM_FLAG.tempHAlarm.
+    wait_until(lambda: db.hgetall(f"TRANSCEIVER_DOM_FLAG|{port}").get("tempHAlarm") == "True",
+               timeout=T_DOM,
+               msg=f"{port} DOM_FLAG tempHAlarm raised before golden snapshot")
+
+
+def _teardown_dom_flag(ctx: ScenarioCtx) -> None:
+    # Clear the raised flag so the emulator register (and, on xcvrd's next poll,
+    # STATE_DB) return to the unflagged baseline for subsequent tests.
+    try:
+        ctx.emu.write_field(ctx.index, cmis.MODULE_FLAGS_TEMP_VCC, bytes([0x00]))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+DOM_FLAG = Scenario(
+    name="dom_flag",
+    description="module with TempMonHighAlarm raised: TRANSCEIVER_DOM_FLAG projection",
+    tables=["TRANSCEIVER_DOM_FLAG"],
+    prepare=_prepare_dom_flag,
+    teardown=_teardown_dom_flag,
+    port=_FLAG_PORT,
+)
+
+
 # Convenience list (e.g. for a capture-all helper). Each scenario still gets its
 # own named test function in test_golden.py.
-ALL = [STEADY_STATE, ACTIVATED_DATAPATH]
+ALL = [STEADY_STATE, ACTIVATED_DATAPATH, DOM_FLAG]

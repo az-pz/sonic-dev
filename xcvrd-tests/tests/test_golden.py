@@ -36,29 +36,35 @@ def _run_golden(scenario, statedb, emu, configdb, xcvrd, test_index):
         pytest.skip(f"emulator has no module {idx} ({port}) for scenario {scenario.name}")
 
     ctx = ScenarioCtx(port=port, index=idx, statedb=statedb, emu=emu, configdb=configdb)
-    scenario.prepare(ctx)
-    proj = golden.project(statedb, port, scenario.tables)
-    path = golden.path_for(GOLDEN_DIR, port, scenario.name)
+    try:
+        scenario.prepare(ctx)
+        proj = golden.project(statedb, port, scenario.tables)
+        path = golden.path_for(GOLDEN_DIR, port, scenario.name)
 
-    if CAPTURE:
-        # The golden is the ORACLE: it must come from the reference Python xcvrd,
-        # never from an injected Rust candidate (that would defeat the diff).
-        if not xcvrd.is_reference_python():
-            pytest.fail(
-                f"refusing to capture golden [{scenario.name}] from a non-reference "
-                "xcvrd: the deployed /usr/local/bin/xcvrd is the Rust shim, not the "
-                "stock Python daemon. Restore Python xcvrd, then re-capture.")
-        golden.save(proj, path)
-        pytest.skip(f"captured golden [{scenario.name}] -> {path}")
+        if CAPTURE:
+            # The golden is the ORACLE: it must come from the reference Python xcvrd,
+            # never from an injected Rust candidate (that would defeat the diff).
+            if not xcvrd.is_reference_python():
+                pytest.fail(
+                    f"refusing to capture golden [{scenario.name}] from a non-reference "
+                    "xcvrd: the deployed /usr/local/bin/xcvrd is the Rust shim, not the "
+                    "stock Python daemon. Restore Python xcvrd, then re-capture.")
+            golden.save(proj, path)
+            pytest.skip(f"captured golden [{scenario.name}] -> {path}")
 
-    if not os.path.exists(path):
-        pytest.skip(f"no golden for [{scenario.name}] {port}; capture with "
-                    f"--capture-golden ./run.sh -k test_{scenario.name}")
+        if not os.path.exists(path):
+            pytest.skip(f"no golden for [{scenario.name}] {port}; capture with "
+                        f"--capture-golden ./run.sh -k test_{scenario.name}")
 
-    diffs = golden.diff(proj, golden.load(path))
-    assert not diffs, (
-        f"[{scenario.name}] {port}: xcvrd STATE_DB projection diverged from "
-        f"golden:\n  " + "\n  ".join(diffs))
+        diffs = golden.diff(proj, golden.load(path))
+        assert not diffs, (
+            f"[{scenario.name}] {port}: xcvrd STATE_DB projection diverged from "
+            f"golden:\n  " + "\n  ".join(diffs))
+    finally:
+        # Run the scenario's cleanup (e.g. clear a raised flag) even on
+        # skip/fail so its stimulus can't leak into later tests.
+        if scenario.teardown:
+            scenario.teardown(ctx)
 
 
 @pytest.mark.slow
@@ -71,3 +77,14 @@ def test_steady_state(statedb, emu, configdb, xcvrd, test_index):
 def test_activated_datapath(statedb, emu, configdb, xcvrd, test_index):
     """Admin-up port with CMIS datapath driven to activated (real active_apsel)."""
     _run_golden(scenarios.ACTIVATED_DATAPATH, statedb, emu, configdb, xcvrd, test_index)
+
+
+@pytest.mark.slow
+def test_dom_flag(statedb, emu, configdb, xcvrd, test_index):
+    """Module with a raised DOM alarm flag: TRANSCEIVER_DOM_FLAG projection.
+
+    Stimulus raises TempMonHighAlarm on the emulator; a daemon that doesn't read
+    and publish the module's latched monitor flags (e.g. the reduced Rust, which
+    emits no flag tables) fails this gate.
+    """
+    _run_golden(scenarios.DOM_FLAG, statedb, emu, configdb, xcvrd, test_index)

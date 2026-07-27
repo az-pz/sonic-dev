@@ -22,6 +22,14 @@ LOW_PWR_REQUEST_BIT = 0x10  # 00h:26.4 -- set by set_lpmode(True)
 # Identity fields (page 00h) used by info-content sanity checks.
 SFF8024_IDENTIFIER = (0, 0, 0, 1)
 
+# Module Flags, page 00h lower memory (CMIS v5.2 8.9). Byte 9 holds the latched
+# temp/vcc monitor flags: bit0 TempMonHighAlarm, bit1 TempLowAlarm,
+# bit2 TempHighWarn, bit3 TempLowWarn, bit4 VccHighAlarm, ... On real hardware
+# these are RO/COR (clear-on-read); the emulator holds the written value (no
+# clear-on-read), so a raised flag is a stable stimulus for the DOM-flag scenario.
+MODULE_FLAGS_TEMP_VCC = (0, 0, 9, 1)
+TEMP_HIGH_ALARM_FLAG = 0x01   # 00h:9.0 TempMonHighAlarmFlag
+
 
 def encode_temperature(celsius):
     """Encode degrees Celsius as CMIS S16 (1/256 degC), big-endian 2 bytes."""
