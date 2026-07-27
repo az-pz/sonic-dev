@@ -30,6 +30,13 @@ SFF8024_IDENTIFIER = (0, 0, 0, 1)
 MODULE_FLAGS_TEMP_VCC = (0, 0, 9, 1)
 TEMP_HIGH_ALARM_FLAG = 0x01   # 00h:9.0 TempMonHighAlarmFlag
 
+# Module Flags byte 8 (page 0 lower, CMIS v5.2 8.9): module/datapath firmware
+# fault + module state-change latched flags. xcvrd decodes bit0 ->
+# module_state_changed, bit1 -> module_firmware_fault, bit2 ->
+# datapath_firmware_fault in TRANSCEIVER_STATUS_FLAG.
+MODULE_FLAGS_FW_STATE = (0, 0, 8, 1)
+MODULE_FW_FAULT_FLAG = 0x02   # 00h:8.1 ModuleFirmwareErrorFlag
+
 
 def encode_temperature(celsius):
     """Encode degrees Celsius as CMIS S16 (1/256 degC), big-endian 2 bytes."""
