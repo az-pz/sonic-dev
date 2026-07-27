@@ -109,6 +109,13 @@ No changes to xcvrd. The only bridge addition is a test-only error-injection hoo
 - `tests/test_lpmode_reset.py` — `sfputil reset` / `lpmode` drive the module and
   we assert the exact ModuleGlobalControls (00h:26) write on the Monitor stream
   (reset → SoftwareReset 0x08, lpmode on → LowPwrRequestSW 0x10) + lpmode show.
+- `tests/test_daemon_control.py` — **daemon-driven** module power control (T3.2,
+  `slow`): distinct from the operator `sfputil` commands above, xcvrd ITSELF takes
+  an admin-up port out of low power during CMIS bring-up. Asserts xcvrd's own
+  ModuleGlobalControls write clearing `LowPwrRequestSW` on the Monitor stream (the
+  emulator boots modules in low power, so a cleared write is the daemon driving),
+  and cross-checks `module_state=ModuleReady` in STATE_DB + the emulator's
+  `GetInfo.msm`. A reduced daemon that never drives module power fails. Ties to 3.1.
 
 Error injection uses a **gated** bridge hook: only when the deploy drops a
 `.test_hooks` marker next to the bridge does `chassis.get_change_event` read a
