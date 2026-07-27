@@ -71,3 +71,33 @@ def stays(predicate, duration=5.0, interval=POLL):
             return False
         time.sleep(interval)
     return True
+
+
+def wait_stable(fn, stable_polls=6, interval=POLL, timeout=30.0, msg=None):
+    """Poll ``fn`` until its value is unchanged for ``stable_polls`` consecutive
+    reads, then return that settled value.
+
+    For snapshotting an eventually-consistent projection only AFTER it stops
+    changing — e.g. the TX-disable of a module's unused host lanes settles a beat
+    after CMIS bring-up, so a golden captured the instant the datapath activates
+    can catch a transient. Raises WaitTimeout if the value never holds still
+    within ``timeout``. ``fn`` should be cheap and side-effect free; compare a
+    volatile-stripped projection so a routine timestamp tick isn't seen as change.
+    """
+    deadline = time.time() + timeout
+    last = object()  # sentinel that never equals a real reading
+    count = 0
+    while time.time() < deadline:
+        cur = fn()
+        if cur == last:
+            count += 1
+            if count >= stable_polls:
+                return cur
+        else:
+            last = cur
+            count = 1
+        time.sleep(interval)
+    detail = msg or getattr(fn, "__name__", "value")
+    raise WaitTimeout(
+        f"timed out after {timeout:.0f}s waiting for {detail} to stabilise "
+        f"(last={last!r})")

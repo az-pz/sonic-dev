@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 import os
 
-from lib import cmis
-from lib.waits import wait_until, T_FAST, T_DOM
+from lib import cmis, golden
+from lib.waits import wait_until, wait_stable, POLL, T_FAST, T_DOM
 
 # Every STATE_DB table xcvrd can populate for a port. A scenario goldens a subset;
 # the union grows as features land. Kept here as the single source of truth so the
@@ -130,6 +130,14 @@ def _prepare_activated_datapath(ctx: ScenarioCtx) -> None:
     # real active application-select, not the reduced 'N/A'
     wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "active_apsel_hostlane1") not in (None, "N/A"),
                timeout=T_FAST, msg=f"{port} active_apsel populated before snapshot")
+    # The TX-disable state of the module's UNUSED host lanes settles a beat after
+    # DP1 activation -- a golden captured the instant the datapath activates can
+    # catch a mid-bring-up transient (git history: a stale tx_disabled_channel
+    # slipped into this golden that way). Snapshot only once the STATUS projection
+    # has stopped changing so the capture is deterministic.
+    wait_stable(lambda: golden.project(db, port, ["TRANSCEIVER_STATUS"]),
+                stable_polls=6, interval=POLL, timeout=T_DOM,
+                msg=f"{port} TRANSCEIVER_STATUS settled (tx-disable) before snapshot")
 
 
 ACTIVATED_DATAPATH = Scenario(
