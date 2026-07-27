@@ -84,3 +84,24 @@ def test_cmis_emulator_datapath_agrees(activated, emu, statedb):
     bad = [(dp.bank, dp.dpid, dp.state) for dp in info.dpsms if not _is_activated(dp.state)]
     assert not bad, (f"{port}: emulator datapath(s) not activated: {bad} -- xcvrd did not "
                      "drive the module's datapath state machine")
+
+
+def test_cmis_emulator_module_state_agrees(activated, emu, statedb):
+    """Cross-check: xcvrd drove the EMULATOR's MODULE state machine to ModuleReady
+    (GetInfo.msm), proving real module bring-up (high power), not just a STATE_DB
+    write. Complements the datapath cross-check above.
+
+    Requires an emulator that exposes the module state machine via GetInfo.msm;
+    older emulators leave it unset and this test skips rather than fails."""
+    port, idx = activated
+    wait_until(lambda: _status(statedb, port).get("module_state") == "ModuleReady",
+               timeout=T_DOM,
+               msg=f"{port} module_state ModuleReady before emulator cross-check")
+
+    info = emu.get_info(idx)
+    if not info.msm.state:
+        pytest.skip("emulator does not expose the module state machine (GetInfo.msm); "
+                    "update the emulator (feature/getinfo-msm) to enable this cross-check")
+    assert "READY" in info.msm.state, (
+        f"{port}: emulator module state machine msm.state={info.msm.state!r} "
+        "(expected MODULE_READY) -- xcvrd did not drive the module to high power")
