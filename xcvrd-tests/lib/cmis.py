@@ -58,3 +58,54 @@ def encode_voltage(volts):
 def decode_voltage(data):
     """Decode 2 big-endian bytes as CMIS U16 supply voltage -> volts."""
     return int.from_bytes(bytes(data), "big", signed=False) * 100e-6
+
+
+# --- CMIS page 02h Module Thresholds (CMIS v5.2 8.11) ------------------------
+# Each threshold is a 2-byte big-endian register at an absolute page-02h offset;
+# xcvrd decodes value = raw / scale (temp signed 1/256 C; voltage 100 uV -> V;
+# tx/rx power raw/10000 mW then -> dBm; tx bias raw/500 mA). The emulator's EEPROM
+# serves 0 for any unwritten byte, so a module has NO meaningful thresholds until
+# these are written -- write_dom_thresholds gives the TRANSCEIVER_DOM_THRESHOLD
+# projection real, discriminating values (otherwise every field is 0.0 / -inf and
+# a daemon that publishes zeros would pass the golden).
+THRESHOLDS_PAGE = 2
+
+# (offset, raw_register_value, signed). raw = natural_value * cmis_scale.
+DOM_THRESHOLD_WRITES = [
+    (128,  75 * 256, True),   # temphighalarm      75.0 C
+    (130,  -5 * 256, True),   # templowalarm       -5.0 C
+    (132,  70 * 256, True),   # temphighwarning    70.0 C
+    (134, -10 * 256, True),   # templowwarning    -10.0 C
+    (136, 36000, False),      # vcchighalarm        3.6 V
+    (138, 30000, False),      # vcclowalarm         3.0 V
+    (140, 35000, False),      # vcchighwarning      3.5 V
+    (142, 31000, False),      # vcclowwarning       3.1 V
+    (176, 40000, False),      # txpowerhighalarm    4.0 mW
+    (178, 10000, False),      # txpowerlowalarm     1.0 mW
+    (180, 35000, False),      # txpowerhighwarning  3.5 mW
+    (182, 12000, False),      # txpowerlowwarning   1.2 mW
+    (184,  6500, False),      # txbiashighalarm    13.0 mA
+    (186,  3000, False),      # txbiaslowalarm      6.0 mA
+    (188,  6000, False),      # txbiashighwarning  12.0 mA
+    (190,  3500, False),      # txbiaslowwarning    7.0 mA
+    (192, 20000, False),      # rxpowerhighalarm    2.0 mW
+    (194,  5000, False),      # rxpowerlowalarm     0.5 mW
+    (196, 18000, False),      # rxpowerhighwarning  1.8 mW
+    (198,  6000, False),      # rxpowerlowwarning   0.6 mW
+]
+
+# Sentinel a scenario can wait on to confirm xcvrd re-read the enriched thresholds.
+DOM_THRESHOLD_SENTINEL = ("temphighalarm", "75.0")
+
+
+def write_dom_thresholds(emu, index):
+    """Write the CMIS page-02h Module Thresholds on the emulated module so xcvrd
+    reads and publishes real TRANSCEIVER_DOM_THRESHOLD values.
+
+    Thresholds are static EEPROM data cached by xcvrd at module insertion (NOT
+    re-read on the periodic DOM poll), so the caller must re-insert the module
+    (unplug + plug) after writing for xcvrd to pick them up.
+    """
+    for offset, raw, signed in DOM_THRESHOLD_WRITES:
+        emu.write(index, 0, THRESHOLDS_PAGE, offset,
+                  int(raw).to_bytes(2, "big", signed=signed))

@@ -132,7 +132,13 @@ at a time:
   - `steady_state` — admin-down port at rest on `Ethernet100`:
     `TRANSCEIVER_INFO` + `TRANSCEIVER_STATUS_SW` + the full rich `TRANSCEIVER_STATUS`
     (ModuleLowPwr, every `DP{n}State=DataPathDeactivated`, `active_apsel='N/A'`) +
-    `TRANSCEIVER_DOM_THRESHOLD`. The deactivated complement of `activated_datapath`.
+    the **enriched** `TRANSCEIVER_DOM_THRESHOLD`. The prepare writes the CMIS
+    page-02h Module Thresholds (temp/vcc/tx-power/rx-power/tx-bias) on the emulator
+    and re-inserts the module so xcvrd reads them — the emulator serves 0 for
+    unwritten threshold bytes, so without this every threshold is `0.0`/`-inf` and a
+    daemon that publishes zeros would pass. **No emulator change** (the harness
+    writes the raw page-02h bytes via the emulator's table-agnostic EEPROM store).
+    The deactivated complement of `activated_datapath`.
   - `activated_datapath` — admin-up port (`Ethernet4`) whose CMIS datapath xcvrd
     drove to activated: `TRANSCEIVER_INFO` (real `active_apsel`/lane counts) +
     the full rich `TRANSCEIVER_STATUS` (ModuleReady, `DP{n}State=DataPathActivated`,

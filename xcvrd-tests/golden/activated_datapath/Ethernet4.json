@@ -85,14 +85,14 @@
     "tx4OutputStatus": "False",
     "tx4disable": "False",
     "tx5OutputStatus": "False",
-    "tx5disable": "False",
+    "tx5disable": "True",
     "tx6OutputStatus": "False",
-    "tx6disable": "False",
+    "tx6disable": "True",
     "tx7OutputStatus": "False",
-    "tx7disable": "False",
+    "tx7disable": "True",
     "tx8OutputStatus": "False",
-    "tx8disable": "False",
-    "tx_disabled_channel": "0"
+    "tx8disable": "True",
+    "tx_disabled_channel": "240"
   },
   "TRANSCEIVER_STATUS_SW": {
     "cmis_state": "READY",

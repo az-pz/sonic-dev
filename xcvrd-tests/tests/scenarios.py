@@ -77,6 +77,18 @@ class Scenario:
 # status + DOM thresholds projection (the original golden/<port>.json contract).
 def _prepare_steady_state(ctx: ScenarioCtx) -> None:
     db, port = ctx.statedb, ctx.port
+    # Enrich the module's page-02h DOM thresholds so the DOM_THRESHOLD projection
+    # is discriminating: the emulator serves 0 for unwritten threshold bytes, so
+    # without this every threshold reads 0.0 / -inf and a daemon that publishes
+    # zeros would pass. Thresholds are cached by xcvrd at insertion (not re-read on
+    # the DOM poll), so re-insert the module after writing to force a fresh read.
+    cmis.write_dom_thresholds(ctx.emu, ctx.index)
+    ctx.emu.unplug(ctx.index)
+    # Wait for xcvrd to actually SEE the removal (INFO cleared) before re-plugging:
+    # a back-to-back unplug/plug is too fast for its presence poll, so the module
+    # never re-inserts and the cached (stale) thresholds are never re-read.
+    wait_until(lambda: not db.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST, msg=f"{port} removal detected before re-insert")
     ctx.emu.plug(ctx.index)
     wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
                timeout=T_FAST, msg=f"{port} TRANSCEIVER_INFO populated before snapshot")
@@ -87,11 +99,13 @@ def _prepare_steady_state(ctx: ScenarioCtx) -> None:
     # (ModuleLowPwr / DataPathDeactivated). Wait for it before snapshotting.
     wait_until(lambda: db.hgetall(f"TRANSCEIVER_STATUS|{port}").get("module_state"),
                timeout=T_DOM, msg=f"{port} TRANSCEIVER_STATUS populated before golden snapshot")
-    # DOM_THRESHOLD lands on xcvrd's ~60s DOM poll, so wait for it explicitly
-    # rather than relying on test order -- this is why the case is `slow`.
-    wait_until(lambda: db.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{port}"),
-               timeout=T_DOM,
-               msg=f"{port} DOM_THRESHOLD populated before golden snapshot")
+    # DOM_THRESHOLD lands on xcvrd's ~60s DOM poll after the re-insertion; wait
+    # specifically for the ENRICHED value (the sentinel) so we snapshot the real
+    # thresholds, not the transient all-zero read. Allow ~2 DOM cycles' headroom.
+    _sentinel_field, _sentinel_value = cmis.DOM_THRESHOLD_SENTINEL
+    wait_until(lambda: db.hget(f"TRANSCEIVER_DOM_THRESHOLD|{port}", _sentinel_field) == _sentinel_value,
+               timeout=2 * T_DOM,
+               msg=f"{port} enriched DOM_THRESHOLD ({_sentinel_field}={_sentinel_value}) before golden snapshot")
 
 
 STEADY_STATE = Scenario(
@@ -130,11 +144,22 @@ def _prepare_activated_datapath(ctx: ScenarioCtx) -> None:
     # real active application-select, not the reduced 'N/A'
     wait_until(lambda: db.hget(f"TRANSCEIVER_INFO|{port}", "active_apsel_hostlane1") not in (None, "N/A"),
                timeout=T_FAST, msg=f"{port} active_apsel populated before snapshot")
-    # The TX-disable state of the module's UNUSED host lanes settles a beat after
-    # DP1 activation -- a golden captured the instant the datapath activates can
-    # catch a mid-bring-up transient (git history: a stale tx_disabled_channel
-    # slipped into this golden that way). Snapshot only once the STATUS projection
-    # has stopped changing so the capture is deterministic.
+    # xcvrd TX-disables the module's UNUSED host lanes (those beyond
+    # host_lane_count) a beat AFTER the datapath activates -- a 0 -> mask
+    # transition on tx_disabled_channel. A snapshot taken between activation and
+    # that write catches the transient 0 (this bistability made the golden flaky:
+    # the settled value here is host_lane_count=4 -> lanes 5-8 disabled -> 0xF0 =
+    # 240, but a premature capture recorded 0). Wait for the unused-lane disable to
+    # actually apply (non-zero) before snapshotting; if the active app used all 8
+    # host lanes there would be none to disable, so only require this when the
+    # module has unused lanes.
+    n = int(db.hget(f"TRANSCEIVER_INFO|{port}", "host_lane_count") or 8)
+    if n < 8:
+        wait_until(lambda: db.hget(f"TRANSCEIVER_STATUS|{port}", "tx_disabled_channel") not in (None, "", "0"),
+                   timeout=T_DOM,
+                   msg=f"{port} unused-lane TX-disable applied (tx_disabled_channel!=0) before snapshot")
+    # Finally, require the whole STATUS projection to have stopped changing so the
+    # capture is deterministic (belt-and-suspenders over the explicit wait above).
     wait_stable(lambda: golden.project(db, port, ["TRANSCEIVER_STATUS"]),
                 stable_polls=6, interval=POLL, timeout=T_DOM,
                 msg=f"{port} TRANSCEIVER_STATUS settled (tx-disable) before snapshot")
