@@ -106,10 +106,20 @@ def test_xcvrd_applies_optics_si(optics_si_loaded, emu, statedb, monitor):
         f"{port}: xcvrd wrote no page-10h SI controls -- it did not apply optics SI")
 
     # ExplicitControl must be set so the module actually uses the staged SI values.
+    # Poll for it rather than reading once: on a busy bring-up (other ports
+    # re-provisioning concurrently) the DPConfigLane write can land a beat after the
+    # SI-control writes, so a single immediate read can race ahead of it.
     dpc_lo = cmis.SCS0_DPCONFIG_RANGE.start
     dpc_hi = cmis.SCS0_DPCONFIG_RANGE.stop - 1
-    dpc = _page10_writes(monitor, idx, dpc_lo, dpc_hi)
-    assert any(e.data and (e.data[0] & cmis.EXPLICIT_CONTROL_BIT) for e in dpc), (
-        f"{port}: no DPConfigLane write set ExplicitControl=1 "
-        f"(writes={[(e.offset, e.data.hex()) for e in dpc]}) -- the module would not "
+
+    def _explicit_control_writes():
+        dpc = _page10_writes(monitor, idx, dpc_lo, dpc_hi)
+        return dpc if any(e.data and (e.data[0] & cmis.EXPLICIT_CONTROL_BIT) for e in dpc) else None
+
+    dpc = eventually(
+        _explicit_control_writes, timeout=T_DOM,
+        msg=f"{port} xcvrd set ExplicitControl=1 in a DPConfigLane write "
+            f"(page-10h {dpc_lo}-{dpc_hi}) on bring-up")
+    assert dpc, (
+        f"{port}: no DPConfigLane write set ExplicitControl=1 -- the module would not "
         "use the staged SI values")

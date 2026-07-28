@@ -69,3 +69,79 @@ def test_module_firmware_fault_flag_reported(status_flags):
     m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
     wait_until(lambda: _flags(m).get("module_firmware_fault") == "False", timeout=T_DOM,
                msg=f"{m.port} module_firmware_fault cleared after clearing the flag")
+
+
+CHANGE_COUNT = "TRANSCEIVER_STATUS_FLAG_CHANGE_COUNT"
+SET_TIME = "TRANSCEIVER_STATUS_FLAG_SET_TIME"
+CLEAR_TIME = "TRANSCEIVER_STATUS_FLAG_CLEAR_TIME"
+NEVER = "never"
+
+
+def _count(m, table, field):
+    v = m.db.hget(f"{table}|{m.port}", field)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def test_status_flag_change_count_and_times(status_flags):
+    """A STATUS flag transition maintains the change-tracking metadata tables:
+    raising module_firmware_fault bumps CHANGE_COUNT + stamps SET_TIME, clearing it
+    bumps the count again + stamps CLEAR_TIME. The count is cumulative in STATE_DB,
+    so we assert a delta. A daemon that publishes the flag but not the metadata
+    tables fails here."""
+    m = status_flags
+    m.plug()
+    field = "module_firmware_fault"
+
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
+    wait_until(lambda: _flags(m).get(field) == "False", timeout=T_DOM,
+               msg=f"{m.port} {field} cleared baseline")
+    base = _count(m, CHANGE_COUNT, field)
+
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([cmis.MODULE_FW_FAULT_FLAG]))
+    wait_until(lambda: _flags(m).get(field) == "True", timeout=T_DOM,
+               msg=f"{m.port} {field} raised")
+    wait_until(lambda: _count(m, CHANGE_COUNT, field) == base + 1, timeout=T_DOM,
+               msg=f"{m.port} {field} change count {base} -> {base + 1} on raise")
+    assert m.db.hget(f"{SET_TIME}|{m.port}", field) not in (None, NEVER), \
+        f"{m.port} {field} SET_TIME not stamped on raise"
+
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
+    wait_until(lambda: _flags(m).get(field) == "False", timeout=T_DOM,
+               msg=f"{m.port} {field} cleared")
+    wait_until(lambda: _count(m, CHANGE_COUNT, field) == base + 2, timeout=T_DOM,
+               msg=f"{m.port} {field} change count {base + 1} -> {base + 2} on clear")
+    assert m.db.hget(f"{CLEAR_TIME}|{m.port}", field) not in (None, NEVER), \
+        f"{m.port} {field} CLEAR_TIME not stamped on clear"
+
+
+def test_datapath_firmware_fault_flag(status_flags):
+    """Raising DataPathFirmwareErrorFlag (00h:8.2) surfaces as
+    STATUS_FLAG.datapath_firmware_fault, and clears again."""
+    m = status_flags
+    m.plug()
+    wait_until(lambda: _flags(m).get("datapath_firmware_fault") == "False", timeout=T_DOM,
+               msg=f"{m.port} datapath_firmware_fault baseline False")
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([cmis.DP_FW_FAULT_FLAG]))
+    wait_until(lambda: _flags(m).get("datapath_firmware_fault") == "True", timeout=T_DOM,
+               msg=f"{m.port} datapath_firmware_fault set after raising DataPathFirmwareErrorFlag")
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
+    wait_until(lambda: _flags(m).get("datapath_firmware_fault") == "False", timeout=T_DOM,
+               msg=f"{m.port} datapath_firmware_fault cleared")
+
+
+def test_module_state_changed_flag(status_flags):
+    """Raising ModuleStateChangedFlag (00h:8.0) surfaces as
+    STATUS_FLAG.module_state_changed, and clears again."""
+    m = status_flags
+    m.plug()
+    wait_until(lambda: "module_state_changed" in _flags(m), timeout=T_DOM,
+               msg=f"{m.port} STATUS_FLAG published")
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([cmis.MODULE_STATE_CHANGED_FLAG]))
+    wait_until(lambda: _flags(m).get("module_state_changed") == "True", timeout=T_DOM,
+               msg=f"{m.port} module_state_changed set after raising ModuleStateChangedFlag")
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
+    wait_until(lambda: _flags(m).get("module_state_changed") == "False", timeout=T_DOM,
+               msg=f"{m.port} module_state_changed cleared")

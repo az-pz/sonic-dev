@@ -29,6 +29,7 @@ SFF8024_IDENTIFIER = (0, 0, 0, 1)
 # clear-on-read), so a raised flag is a stable stimulus for the DOM-flag scenario.
 MODULE_FLAGS_TEMP_VCC = (0, 0, 9, 1)
 TEMP_HIGH_ALARM_FLAG = 0x01   # 00h:9.0 TempMonHighAlarmFlag
+VCC_HIGH_ALARM_FLAG = 0x10    # 00h:9.4 VccMonHighAlarmFlag
 
 # Module Flags byte 8 (page 0 lower, CMIS v5.2 8.9): module/datapath firmware
 # fault + module state-change latched flags. xcvrd decodes bit0 ->
@@ -36,6 +37,8 @@ TEMP_HIGH_ALARM_FLAG = 0x01   # 00h:9.0 TempMonHighAlarmFlag
 # datapath_firmware_fault in TRANSCEIVER_STATUS_FLAG.
 MODULE_FLAGS_FW_STATE = (0, 0, 8, 1)
 MODULE_FW_FAULT_FLAG = 0x02   # 00h:8.1 ModuleFirmwareErrorFlag
+DP_FW_FAULT_FLAG = 0x04       # 00h:8.2 DataPathFirmwareErrorFlag
+MODULE_STATE_CHANGED_FLAG = 0x01  # 00h:8.0 ModuleStateChangedFlag
 
 # CMIS page 01h Supported Signal Integrity Controls Advertisement (8.4.7). xcvrd
 # only stages a given SI control if the module advertises support for it; the

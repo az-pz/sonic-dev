@@ -5,7 +5,8 @@ emulator's emu_config.yaml defines VendorName=xcvr-emu, VendorPN=EMU-40G-LR4,
 VendorSN=0123456789, VendorOUI=0x010203, QSFP-DD / CMIS 5.2, Power Class 8.
 These are the oracle values for the fields below.
 """
-from lib.waits import T_FAST, T_MULTI
+from lib.waits import T_FAST, T_MULTI, wait_until, T_DOM
+import pytest
 
 
 def test_info_has_expected_identity(module):
@@ -62,3 +63,58 @@ def test_all_present_ports_have_info(emu, statedb, configdb):
     for port in ports:
         assert statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer") == "xcvr-emu", \
             f"{port} has unexpected manufacturer"
+
+
+def test_info_extended_identity(module):
+    """Rich static identity fields decode to the emulator's oracle values -- not
+    just manufacturer/model/serial. A daemon that stubs these fails the parity."""
+    module.wait_info_populated(timeout=T_FAST)
+    info = module.info()
+    assert "MPO" in (info.get("connector") or ""), f"connector={info.get('connector')!r}"
+    assert info.get("cable_length") == "100.0", f"cable_length={info.get('cable_length')!r}"
+    assert info.get("cmis_rev") == "5.2", f"cmis_rev={info.get('cmis_rev')!r}"
+    assert info.get("type_abbrv_name") == "QSFP-DD", f"type_abbrv_name={info.get('type_abbrv_name')!r}"
+    assert info.get("specification_compliance") == "sm_media_interface", \
+        f"specification_compliance={info.get('specification_compliance')!r}"
+    assert info.get("is_replaceable") == "True", f"is_replaceable={info.get('is_replaceable')!r}"
+    assert info.get("vdm_supported") == "False", f"vdm_supported={info.get('vdm_supported')!r}"
+    assert (info.get("vendor_date") or "").startswith("2024-12-14"), \
+        f"vendor_date={info.get('vendor_date')!r}"
+    assert info.get("media_interface_technology"), "media_interface_technology missing"
+
+
+def test_info_application_advertisement(module):
+    """application_advertisement is a real, structured CMIS application list (per
+    entry: host/media interface ids + host/media lane counts), not empty or N/A."""
+    import ast
+    module.wait_info_populated(timeout=T_FAST)
+    adv = module.info().get("application_advertisement")
+    assert adv and adv != "N/A", f"application_advertisement={adv!r}"
+    parsed = ast.literal_eval(adv)
+    assert isinstance(parsed, dict) and parsed, f"unparseable/empty advertisement: {adv!r}"
+    first = next(iter(parsed.values()))
+    assert "host_lane_count" in first and "media_lane_count" in first, \
+        f"advertisement entry missing lane counts: {first!r}"
+
+
+def test_info_apsel_and_lane_count_on_activated_port(emu, statedb, configdb):
+    """On an admin-up (datapath-activated) port, xcvrd writes REAL host/media lane
+    counts + per-host-lane application-select into TRANSCEIVER_INFO (these read N/A
+    on the admin-down baseline; the CMIS manager fills them after DP activation)."""
+    from lib.emu import index_to_port
+    port = None
+    for idx, present in sorted(emu.list().items()):
+        if present and configdb.hget(f"PORT|{index_to_port(idx)}", "admin_status") == "up":
+            port = index_to_port(idx)
+            break
+    if port is None:
+        pytest.skip("no admin-up emulator-backed port")
+
+    wait_until(lambda: statedb.hget(f"TRANSCEIVER_INFO|{port}", "host_lane_count") not in (None, "N/A"),
+               timeout=T_DOM, msg=f"{port} host_lane_count becomes real after datapath activation")
+    n = int(statedb.hget(f"TRANSCEIVER_INFO|{port}", "host_lane_count"))
+    assert n >= 1, f"{port} host_lane_count={n!r}"
+    assert statedb.hget(f"TRANSCEIVER_INFO|{port}", "media_lane_count") not in (None, "N/A"), \
+        f"{port} media_lane_count is N/A on an activated port"
+    assert statedb.hget(f"TRANSCEIVER_INFO|{port}", "active_apsel_hostlane1") not in (None, "N/A"), \
+        f"{port} active_apsel_hostlane1 is N/A on an activated port"

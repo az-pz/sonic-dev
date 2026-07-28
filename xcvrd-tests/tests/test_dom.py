@@ -66,3 +66,30 @@ def test_voltage_reflects_emulator(module):
     wait_until(lambda: _voltage() is not None and abs(_voltage() - target_v) < 0.05,
                timeout=T_DOM,
                msg=f"{module.port} DOM voltage -> {target_v}V after refresh")
+
+
+DOM_PER_LANE_FIELDS = ([f"tx{i}power" for i in range(1, 9)]
+                       + [f"rx{i}power" for i in range(1, 9)]
+                       + [f"tx{i}bias" for i in range(1, 9)])
+
+
+@pytest.mark.slow
+def test_dom_sensor_publishes_per_lane_fields(module):
+    """xcvrd publishes the full per-lane DOM sensor field set (tx/rx power + tx bias
+    for 8 lanes), not just module temperature/voltage.
+
+    On this module the per-lane VALUES read 'N/A' -- its config does not advertise
+    the page-11h media-lane optical-power/bias monitors (01h:160) -- so xcvrd, in
+    parity with the module, emits N/A for them (a page-11h monitor write does NOT
+    propagate). Real per-lane values would need the emulator to advertise + serve
+    those monitors. This gate therefore locks the per-lane field STRUCTURE: a
+    reduced daemon that publishes only temperature/voltage and omits the 24
+    per-lane keys fails here.
+    """
+    module.wait_info_populated(timeout=T_FAST)
+    wait_until(lambda: "temperature" in module.dom(), timeout=T_DOM,
+               msg=f"{module.port} TRANSCEIVER_DOM_SENSOR populated")
+    dom = module.dom()
+    assert "temperature" in dom and "voltage" in dom
+    missing = [f for f in DOM_PER_LANE_FIELDS if f not in dom]
+    assert not missing, f"{module.port} DOM_SENSOR missing per-lane fields: {missing}"
