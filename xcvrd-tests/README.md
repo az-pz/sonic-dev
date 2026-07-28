@@ -124,6 +124,17 @@ No changes to xcvrd. The only bridge addition is a test-only error-injection hoo
   daemon reconciles `host_tx_ready` back to `true`, so the durable signal is
   xcvrd's write, not a persistently-down datapath). Distinct trigger from the
   `admin_status` path in `test_cmis_reconfig.py`. **No emulator change.**
+- `tests/test_warm_reboot.py` — **warm / fast-reboot lifecycle** (T4-C, `slow`): on
+  a normal shutdown xcvrd's `deinit()` deletes `TRANSCEIVER_STATUS`, but during a
+  warm/fast reboot it must LEAVE it in place so the datapath state survives the
+  restart and the data plane is not disrupted (`xcvrd.py`: the tables are deleted
+  only `if not is_warm_fast_reboot`). Sets `FAST_RESTART_ENABLE_TABLE|system.enable`
+  and stops xcvrd on an admin-up activated port (default `Ethernet8`, override
+  `XCVRD_REBOOT_PORT`): with the flag set `TRANSCEIVER_STATUS` is **preserved**
+  (`module_state`/`DP1State` survive), and a control test confirms a normal shutdown
+  **deletes** it. A daemon that always flushes STATUS on shutdown fails. The fixture
+  always clears the flag + restores a healthy live xcvrd on teardown (even on
+  failure). **No emulator change.**
 - `tests/test_daemon_control.py` — **daemon-driven** module power control (T3.2,
   `slow`): distinct from the operator `sfputil` commands above, xcvrd ITSELF takes
   an admin-up port out of low power during CMIS bring-up. Asserts xcvrd's own
