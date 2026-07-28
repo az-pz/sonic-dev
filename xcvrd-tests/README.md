@@ -127,6 +127,21 @@ No changes to xcvrd. The only bridge addition is a test-only error-injection hoo
   stimulus (no emulator image change); the fixture fully restores the no-SI
   baseline on teardown. (The JSON vendor key is a regex because the emulator
   returns a NUL-padded vendor name the SI parser's `.strip()` leaves intact.)
+- `tests/test_cmis_reconfig.py` — **datapath teardown + re-provision on
+  reconfiguration** (T3.4, `slow`): the teardown counterpart to
+  `test_cmis_datapath.py`. Flips a port (default `Ethernet8`, override
+  `XCVRD_RECONFIG_PORT`) admin-down then admin-up in CONFIG_DB and asserts xcvrd's
+  CmisManagerTask drives the whole cycle: on admin-down its own **DataPathDeinit**
+  write (`10h:128`, covering the active host lanes) on the Monitor stream + the
+  module's **DataPathStateLane** report (`11h:128`) taking the active lanes to
+  `DataPathDeactivated`; on admin-up a **DPConfigLane** re-write (`10h:145-152`) +
+  the lanes returning to `DataPathActivated`. Both signals are deterministic and
+  module-side (page 11h is what xcvrd reads back); we deliberately avoid the
+  emulator's `GetInfo.dpsms` objects (they don't follow a raw DPDeinit write) and
+  `TRANSCEIVER_STATUS.DP1State` (non-deterministic refresh on this stimulus). A
+  reduced daemon that ignores `admin_status` fails. Pure CONFIG_DB stimulus (no
+  emulator change); the fixture always restores admin-up + re-activation, and
+  `Ethernet8` is used so the `Ethernet4` `activated_datapath` golden is undisturbed.
 
 Error injection uses a **gated** bridge hook: only when the deploy drops a
 `.test_hooks` marker next to the bridge does `chassis.get_change_event` read a

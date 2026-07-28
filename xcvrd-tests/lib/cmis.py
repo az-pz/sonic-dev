@@ -50,9 +50,38 @@ RX_CDR_SUPPORTED = 0x01
 # DPConfigLane bytes at 145-152 carry ExplicitControl in bit 0 -- 1 means the lane
 # uses the Staged Control Set (i.e. the custom SI values) instead of the
 # application defaults.
+SCS0_PAGE = 0x10
 SCS0_SI_CONTROL_RANGE = range(153, 176)
 SCS0_DPCONFIG_RANGE = range(145, 153)
 EXPLICIT_CONTROL_BIT = 0x01
+
+# DataPathDeinit (10h:128, CMIS v5.2 8.8.1) -- one bit per host lane; setting a
+# lane's bit tears that lane's datapath down. On a reconfiguration event (a port
+# going admin-down, or a forced CMIS re-init) xcvrd's CmisManagerTask writes this
+# register itself to deinit the active lanes before re-provisioning. The reference
+# daemon deinits all eight host lanes (0xff) on admin-down; a correct daemon must
+# at least deinit the lanes that were active.
+DPDEINIT_OFFSET = 128
+
+# DataPathStateLane (11h:128, CMIS v5.2 8.9.3) -- the module's own report of each
+# host lane's datapath state, 4 bits per lane, two lanes per byte (lane 1 = byte
+# 128 bits 3:0, lane 2 = byte 128 bits 7:4, ...). xcvrd reads this back to observe
+# the datapath, and it tracks DataPathDeinit / re-provision writes deterministically
+# (unlike the emulator's GetInfo.dpsms objects, which do not fully follow a raw
+# DPDeinit write). State codes: 1=DataPathDeactivated, 4=DataPathActivated.
+DP_STATE_PAGE = 0x11
+DP_STATE_OFFSET = 128
+DP_STATE_ACTIVATED = 0x4
+DP_STATE_DEACTIVATED = 0x1
+
+
+def decode_dp_lane_states(raw, n_lanes=8):
+    """Decode page-11h DataPathStateLane bytes into a per-host-lane list of 4-bit
+    state codes (host lane 1 first)."""
+    states = []
+    for i in range(n_lanes):
+        states.append((raw[i // 2] >> (4 * (i % 2))) & 0x0F)
+    return states
 
 
 def encode_temperature(celsius):
