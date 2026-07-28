@@ -16,7 +16,7 @@ those would require the emulator to advertise + serve the page 11h lane flags.
 import pytest
 
 from lib import cmis
-from lib.waits import wait_until, T_DOM
+from lib.waits import wait_until, T_DOM, T_FAST
 
 pytestmark = pytest.mark.slow
 
@@ -145,3 +145,62 @@ def test_module_state_changed_flag(status_flags):
     m.emu.write_field(m.index, cmis.MODULE_FLAGS_FW_STATE, bytes([0x00]))
     wait_until(lambda: _flags(m).get("module_state_changed") == "False", timeout=T_DOM,
                msg=f"{m.port} module_state_changed cleared")
+
+
+@pytest.fixture
+def perlane_flags(module):
+    """``module`` set up to expose the per-host-lane Tx flags: advertise Tx/Rx flag
+    support (01h:157/158) and re-plug so xcvrd re-reads the advertisement at
+    insertion (it is cached there, like SI/thresholds). Restores the advertisement
+    + the page-11h flag byte + a clean module on teardown."""
+    snap_adv_tx = module.emu.read_field(module.index, cmis.FLAG_ADV_TX)
+    snap_adv_rx = module.emu.read_field(module.index, cmis.FLAG_ADV_RX)
+    snap_flag = module.emu.read_field(module.index, cmis.LANE_TX_FAULT)
+
+    module.emu.write_field(module.index, cmis.FLAG_ADV_TX, bytes([cmis.FLAG_ADV_ALL_TX]))
+    module.emu.write_field(module.index, cmis.FLAG_ADV_RX, bytes([cmis.FLAG_ADV_RX_LOS_CDR]))
+    module.emu.write_field(module.index, cmis.LANE_TX_FAULT, bytes([0x00]))
+    # Re-plug so the advertisement is re-read at insertion.
+    module.unplug()
+    module.wait_info_cleared(timeout=T_FAST)
+    module.plug()
+    module.wait_info_populated(timeout=T_FAST)
+    yield module
+    try:
+        module.emu.write_field(module.index, cmis.LANE_TX_FAULT, snap_flag)
+        module.emu.write_field(module.index, cmis.FLAG_ADV_TX, snap_adv_tx)
+        module.emu.write_field(module.index, cmis.FLAG_ADV_RX, snap_adv_rx)
+        module.unplug()
+        module.wait_info_cleared(timeout=T_FAST)
+        module.plug()
+        module.wait_info_populated(timeout=T_FAST)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def test_per_lane_tx_fault_flag(perlane_flags):
+    """With Tx-fault support advertised (01h:157.0), raising FailureFlagTx for host
+    lane 1 (page 11h:135 bit0) surfaces as STATUS_FLAG.tx1fault and is isolated to
+    that lane (tx2fault stays False); clearing it drops tx1fault back to False.
+
+    Per-lane flags read 'N/A' until the module advertises support, so this gate
+    proves xcvrd both honours the advertisement and decodes the per-lane page-11h
+    flag register. No emulator change (advertisement + flag are register writes the
+    emulator already serves)."""
+    m = perlane_flags
+    # Advertised now, so the per-lane fields are real booleans (not N/A).
+    wait_until(lambda: _flags(m).get("tx1fault") in ("True", "False"), timeout=T_DOM,
+               msg=f"{m.port} tx1fault becomes a real boolean once Tx-fault support is advertised")
+    wait_until(lambda: _flags(m).get("tx1fault") == "False", timeout=T_DOM,
+               msg=f"{m.port} tx1fault baseline False")
+
+    m.emu.write_field(m.index, cmis.LANE_TX_FAULT, bytes([cmis.LANE_TX_FAULT_BIT0]))
+    wait_until(lambda: _flags(m).get("tx1fault") == "True", timeout=T_DOM,
+               msg=f"{m.port} tx1fault set after raising FailureFlagTx lane 1 (11h:135.0)")
+    assert _flags(m).get("tx2fault") == "False", (
+        f"{m.port}: tx2fault={_flags(m).get('tx2fault')!r} -- a lane-1 fault leaked to lane 2 "
+        "(per-lane flags are not isolated)")
+
+    m.emu.write_field(m.index, cmis.LANE_TX_FAULT, bytes([0x00]))
+    wait_until(lambda: _flags(m).get("tx1fault") == "False", timeout=T_DOM,
+               msg=f"{m.port} tx1fault cleared after clearing FailureFlagTx")

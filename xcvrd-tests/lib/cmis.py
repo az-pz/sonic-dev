@@ -40,6 +40,24 @@ MODULE_FW_FAULT_FLAG = 0x02   # 00h:8.1 ModuleFirmwareErrorFlag
 DP_FW_FAULT_FLAG = 0x04       # 00h:8.2 DataPathFirmwareErrorFlag
 MODULE_STATE_CHANGED_FLAG = 0x01  # 00h:8.0 ModuleStateChangedFlag
 
+# CMIS page 01h Supported Flags Advertisement (8.4.7). The per-host/media-lane
+# Tx/Rx flags (page 11h) are only populated into TRANSCEIVER_STATUS_FLAG if the
+# module advertises support here; the emulator config advertises none, so the
+# per-lane-flag test writes these bits then re-plugs (advertisement is cached at
+# insertion). 157 bit0 FailureFlagTx, bit1 LOSFlagTx, bit2 CDRLOLFlagTx; 158 bit1
+# LOSFlagRx, bit2 CDRLOLFlagRx.
+FLAG_ADV_TX = (0, 1, 157, 1)
+FLAG_ADV_RX = (0, 1, 158, 1)
+FLAG_ADV_ALL_TX = 0x0F        # advertise all four Tx-flag groups
+FLAG_ADV_RX_LOS_CDR = 0x06    # advertise Rx LOS + CDR-LOL
+
+# CMIS page 11h Lane-Specific Tx Flags (Table 8-80). FailureFlagTx (byte 135) is a
+# per-media-lane latched Tx fault flag, one bit per lane (bit0 = lane 1). xcvrd
+# decodes it into TRANSCEIVER_STATUS_FLAG.tx{n}fault when the module advertises
+# FailureFlagTx support (01h:157.0).
+LANE_TX_FAULT = (0, 0x11, 135, 1)
+LANE_TX_FAULT_BIT0 = 0x01
+
 # CMIS page 01h Supported Signal Integrity Controls Advertisement (8.4.7). xcvrd
 # only stages a given SI control if the module advertises support for it; the
 # emulator config advertises none, so the SI-application test writes these bits.
@@ -57,6 +75,15 @@ SCS0_PAGE = 0x10
 SCS0_SI_CONTROL_RANGE = range(153, 176)
 SCS0_DPCONFIG_RANGE = range(145, 153)
 EXPLICIT_CONTROL_BIT = 0x01
+
+# Page-10h control offsets xcvrd writes during the CMIS bring-up procedure, in the
+# order the CmisManagerTask drives them: DataPathDeinit (128) to tear down, then
+# the DPConfigLane app-select bytes (145-152), then the ApplyDPInitLane trigger
+# (143) to provision, and OutputDisableTx (130) to gate the Tx output (disabled
+# during deinit, enabled at DP-TXON). The bring-up-trace test asserts these appear
+# in that causal order on the Monitor stream.
+OUTPUT_DISABLE_TX_OFFSET = 130    # 10h:130 OutputDisableTx (per-lane, bit per lane)
+APPLY_DPINIT_OFFSET = 143         # 10h:143 SCS0 ApplyDPInitLane trigger (per-lane bits)
 
 # DataPathDeinit (10h:128, CMIS v5.2 8.8.1) -- one bit per host lane; setting a
 # lane's bit tears that lane's datapath down. On a reconfiguration event (a port

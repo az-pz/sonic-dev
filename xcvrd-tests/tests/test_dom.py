@@ -93,3 +93,46 @@ def test_dom_sensor_publishes_per_lane_fields(module):
     assert "temperature" in dom and "voltage" in dom
     missing = [f for f in DOM_PER_LANE_FIELDS if f not in dom]
     assert not missing, f"{module.port} DOM_SENSOR missing per-lane fields: {missing}"
+
+
+# Expected decode of the page-02h thresholds cmis.write_dom_thresholds() writes:
+# raw register -> engineering value (temp signed 1/256 C; vcc 100uV -> V). These
+# mirror DOM_THRESHOLD_WRITES and let the test assert the decode math explicitly,
+# independent of any captured golden.
+DOM_THRESHOLD_EXPECTED = {
+    "temphighalarm": 75.0, "templowalarm": -5.0,
+    "temphighwarning": 70.0, "templowwarning": -10.0,
+    "vcchighalarm": 3.6, "vcclowalarm": 3.0,
+    "vcchighwarning": 3.5, "vcclowwarning": 3.1,
+}
+
+
+@pytest.mark.slow
+def test_dom_thresholds_decode_written_values(module):
+    """Writing the page-02h Module Thresholds and re-inserting the module makes
+    xcvrd publish TRANSCEIVER_DOM_THRESHOLD with each register decoded to its
+    engineering value (temp 1/256 C, vcc 100 uV). A standalone decode assertion
+    that complements the steady_state golden without depending on golden capture.
+
+    Thresholds are cached by xcvrd at insertion (not re-read on the DOM poll), so
+    we write then re-plug to force a fresh read."""
+    from lib import cmis
+    module.wait_info_populated(timeout=T_FAST)
+    cmis.write_dom_thresholds(module.emu, module.index)
+    module.unplug()
+    module.wait_info_cleared(timeout=T_FAST)
+    module.plug()
+    module.wait_info_populated(timeout=T_FAST)
+
+    def _thr():
+        return module.db.hgetall(f"TRANSCEIVER_DOM_THRESHOLD|{module.port}")
+
+    sentinel = cmis.DOM_THRESHOLD_SENTINEL[0]
+    wait_until(lambda: _thr().get(sentinel) is not None, timeout=T_DOM,
+               msg=f"{module.port} DOM_THRESHOLD re-read after page-02h write")
+    thr = _thr()
+    for field, expected in DOM_THRESHOLD_EXPECTED.items():
+        got = thr.get(field)
+        assert got is not None, f"{module.port} DOM_THRESHOLD missing {field}"
+        assert abs(float(got) - expected) < 0.05, \
+            f"{module.port} {field}={got!r} decoded, expected ~{expected}"

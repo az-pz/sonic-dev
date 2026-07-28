@@ -20,6 +20,7 @@ import os
 
 import pytest
 
+from lib import cmis
 from lib.emu import port_to_index
 from lib.waits import wait_until, T_FAST, T_DOM
 
@@ -105,3 +106,78 @@ def test_cmis_emulator_module_state_agrees(activated, emu, statedb):
     assert "READY" in info.msm.state, (
         f"{port}: emulator module state machine msm.state={info.msm.state!r} "
         "(expected MODULE_READY) -- xcvrd did not drive the module to high power")
+
+
+def _first_write_ts(monitor, idx, lo, hi):
+    """Earliest Monitor timestamp of a page-10h write touching any offset in
+    [lo, hi] for a module (None if no such write was seen)."""
+    tss = [e.ts for e in monitor.writes(index=idx, page=cmis.SCS0_PAGE)
+           if any(lo <= off <= hi for off in range(e.offset, e.offset + e.length))]
+    return min(tss) if tss else None
+
+
+def test_cmis_bringup_provisioning_write_order(activated, emu, statedb, monitor):
+    """xcvrd drives the CMIS bring-up provisioning writes in the correct causal
+    order: DataPathDeinit (10h:128) to tear down, THEN the DPConfigLane app-select
+    bytes (10h:145-152), THEN the ApplyDPInitLane trigger (10h:143) to provision.
+    Asserted on the Monitor stream by first-occurrence timestamp -- proving xcvrd
+    runs the real CMIS state machine (DP_DEINIT -> AP_CONF -> DP_INIT), not just
+    writes STATE_DB. A daemon that provisions before deinit, or never triggers
+    ApplyDPInit, fails here."""
+    port, idx = activated
+    # Force a fresh bring-up so the whole provisioning sequence lands on the trace.
+    emu.unplug(idx)
+    wait_until(lambda: not statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST, msg=f"{port} removal detected before re-insert")
+    monitor.clear()
+    emu.plug(idx)
+
+    # Wait for the LAST milestone (ApplyDPInit) so the full sequence is captured.
+    wait_until(
+        lambda: _first_write_ts(monitor, idx, cmis.APPLY_DPINIT_OFFSET, cmis.APPLY_DPINIT_OFFSET) is not None,
+        timeout=T_DOM, msg=f"{port} ApplyDPInitLane trigger (10h:143) write during bring-up")
+
+    t_deinit = _first_write_ts(monitor, idx, cmis.DPDEINIT_OFFSET, cmis.DPDEINIT_OFFSET)
+    t_config = _first_write_ts(monitor, idx, cmis.SCS0_DPCONFIG_RANGE.start,
+                               cmis.SCS0_DPCONFIG_RANGE.stop - 1)
+    t_apply = _first_write_ts(monitor, idx, cmis.APPLY_DPINIT_OFFSET, cmis.APPLY_DPINIT_OFFSET)
+
+    assert t_deinit is not None, f"{port}: no DataPathDeinit (10h:128) write during bring-up"
+    assert t_config is not None, f"{port}: no DPConfigLane (10h:145-152) write during bring-up"
+    assert t_deinit <= t_config <= t_apply, (
+        f"{port}: CMIS provisioning writes out of order -- DataPathDeinit@{t_deinit:.3f}, "
+        f"DPConfigLane@{t_config:.3f}, ApplyDPInit@{t_apply:.3f} (expected deinit <= config "
+        "<= apply)")
+
+
+def test_activated_per_lane_status_invariants(activated, statedb):
+    """The per-lane TRANSCEIVER_STATUS fields on an activated port are mutually
+    consistent (a cross-field invariant the golden value-match does not check):
+      * tx_disabled_channel is the bitmask of the per-lane tx{n}disable booleans,
+      * every active host lane (1..host_lane_count) is DataPathActivated and NOT
+        dpdeinit, while unused lanes are dpdeinit.
+    A daemon that publishes inconsistent per-lane status (e.g. a tx_disabled_channel
+    mask that disagrees with the tx{n}disable flags) fails here."""
+    port, _ = activated
+    wait_until(lambda: _status(statedb, port).get("DP1State") == "DataPathActivated",
+               timeout=T_DOM, msg=f"{port} DP1 activated before invariant check")
+    st = _status(statedb, port)
+    n = int(statedb.hget(f"TRANSCEIVER_INFO|{port}", "host_lane_count") or 0)
+    assert n >= 1, f"{port} host_lane_count={n!r}"
+
+    tdc = int(st.get("tx_disabled_channel") or 0)
+    for i in range(1, 9):
+        bit = bool((tdc >> (i - 1)) & 1)
+        flag = st.get(f"tx{i}disable") == "True"
+        assert bit == flag, (
+            f"{port}: tx_disabled_channel bit {i - 1} ({bit}) disagrees with "
+            f"tx{i}disable ({st.get(f'tx{i}disable')!r}) -- per-lane tx-disable state is inconsistent")
+
+    for i in range(1, n + 1):
+        assert st.get(f"DP{i}State") == "DataPathActivated", \
+            f"{port}: active lane {i} DP{i}State={st.get(f'DP{i}State')!r} (expected DataPathActivated)"
+        assert st.get(f"dpdeinit_hostlane{i}") == "False", \
+            f"{port}: active lane {i} dpdeinit_hostlane{i}={st.get(f'dpdeinit_hostlane{i}')!r} (expected False)"
+    for i in range(n + 1, 9):
+        assert st.get(f"dpdeinit_hostlane{i}") == "True", \
+            f"{port}: unused lane {i} dpdeinit_hostlane{i}={st.get(f'dpdeinit_hostlane{i}')!r} (expected True)"
