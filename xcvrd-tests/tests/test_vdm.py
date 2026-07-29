@@ -35,6 +35,15 @@ HALARM_FLAG = "TRANSCEIVER_VDM_HALARM_FLAG"
 HALARM_FLAG_CHANGE_COUNT = "TRANSCEIVER_VDM_HALARM_FLAG_CHANGE_COUNT"
 HALARM_FLAG_SET_TIME = "TRANSCEIVER_VDM_HALARM_FLAG_SET_TIME"
 
+# All four VDM flag types share the same change-tracking machinery. Each has its
+# own flag table + change-count/set-time metadata (db_utils.py:87-124).
+FLAG_TABLES = {
+    "halarm": "TRANSCEIVER_VDM_HALARM_FLAG",
+    "lalarm": "TRANSCEIVER_VDM_LALARM_FLAG",
+    "hwarn": "TRANSCEIVER_VDM_HWARN_FLAG",
+    "lwarn": "TRANSCEIVER_VDM_LWARN_FLAG",
+}
+
 
 def _close(got, expected):
     """VDM values span exact-ish S16/U16 and wide-range F16 (BER / errored frames);
@@ -128,3 +137,33 @@ def test_vdm_high_alarm_flag_and_metadata(vdm_provisioned):
                msg=f"{m.port} VDM halarm change count {base} -> {base + 1} on raise")
     assert m.db.hget(f"{HALARM_FLAG_SET_TIME}|{m.port}", field) not in (None, "never"), \
         f"{m.port} VDM halarm SET_TIME not stamped on raise"
+
+
+@pytest.mark.parametrize("flag_type", ["lalarm", "hwarn", "lwarn"])
+def test_vdm_low_and_warn_flags(vdm_provisioned, flag_type):
+    """The other three VDM flag tables (LALARM / HWARN / LWARN) surface a raised
+    flag and bump their change-count + set-time metadata, exactly like HALARM.
+
+    test_vdm_high_alarm_flag_and_metadata already covers HALARM; this closes the
+    three remaining alarm/warn tables so all four VDM flag types are verified."""
+    m = vdm_provisioned
+    field = "laser_temperature_media1"
+    flag_table = FLAG_TABLES[flag_type]
+    change_count = f"{flag_table}_CHANGE_COUNT"
+    set_time = f"{flag_table}_SET_TIME"
+
+    wait_until(lambda: m.db.hget(f"{flag_table}|{m.port}", field) == "False",
+               timeout=T_DOM, msg=f"{m.port} VDM {flag_type} baseline False")
+
+    def _count():
+        v = m.db.hget(f"{change_count}|{m.port}", field)
+        return int(v) if v and v.isdigit() else 0
+    base = _count()
+
+    vdm.raise_flag(m.emu, m.index, field, flag_type)
+    wait_until(lambda: m.db.hget(f"{flag_table}|{m.port}", field) == "True",
+               timeout=T_DOM, msg=f"{m.port} VDM {flag_type} set after raising the flag")
+    wait_until(lambda: _count() >= base + 1, timeout=T_DOM,
+               msg=f"{m.port} VDM {flag_type} change count {base} -> {base + 1} on raise")
+    assert m.db.hget(f"{set_time}|{m.port}", field) not in (None, "never"), \
+        f"{m.port} VDM {flag_type} SET_TIME not stamped on raise"
