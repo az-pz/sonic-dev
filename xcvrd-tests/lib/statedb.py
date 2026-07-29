@@ -58,7 +58,12 @@ class StateDB:
 
     # --- writes (used only for test setup/teardown, e.g. flush / inject) -----
     def hset(self, key, field, value):
-        return self._run("HSET", key, field, value)
+        v = str(value)
+        if v.startswith("-"):
+            # sonic-db-cli's arg parser treats a leading-'-' value as an unknown
+            # option; the '--' guard forces the value to be parsed as positional.
+            return self._run("HSET", key, field, "--", v)
+        return self._run("HSET", key, field, v)
 
     def hdel(self, key, field):
         return self._run("HDEL", key, field)

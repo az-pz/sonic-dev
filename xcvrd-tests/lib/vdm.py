@@ -137,6 +137,66 @@ def provision(emu, index, samples=VDM_SAMPLES):
     emu.write_field(index, VDM_ADV_FIELD, bytes([adv[0] | VDM_SUPPORTED_BIT]))
 
 
+# --- statistic (min/max/avg) observables (B12) ------------------------------
+# Statistic VDM observables are classified 'S' in the sonic_xcvr codes VDM_TYPE
+# and xcvrd reads them ONLY via its VDM freeze/unfreeze path (dom_mgr freeze
+# block): it freezes VDM, calls get_vdm_real_values_statistic, and merges the
+# result into TRANSCEIVER_VDM_REAL_VALUE alongside the basic observables. That
+# path runs on an admin-up (non-lpmode) module that (a) advertises VDM support,
+# (b) advertises at least one statistic observable (is_vdm_statistic_supported),
+# and (c) reports freeze/unfreeze DONE. The emulator has no freeze logic, so we
+# pre-set the DONE bits as raw memory and provision the statistic values on the
+# same value page the basic observables use (0x24) -- pure harness stimulus.
+VDM_STATUS_OFFSET = 145              # 2Fh:145: UnfreezeDone bit6, FreezeDone bit7
+VDM_FREEZE_DONE = 0x80
+VDM_UNFREEZE_DONE = 0x40
+
+# (type_id, db_field_prefix, fmt, scale, value). Pre-FEC BER min/max/avg on the
+# media input -- the three statistic observables classified 'S' (codes VDM_TYPE
+# 9/11/13); db prefixes from CMIS_VDM_KEY_TO_DB_PREFIX_KEY_MAP. Chosen so
+# min < avg < max, which the parity gate also checks (a real ordering, not just
+# three equal values a stubbed daemon could emit).
+VDM_STAT_SAMPLES = [
+    (9,  "prefec_ber_min_media_input", "F16", 1.0, 1.0e-6),
+    (11, "prefec_ber_max_media_input", "F16", 1.0, 2.0e-5),
+    (13, "prefec_ber_avg_media_input", "F16", 1.0, 5.0e-6),
+]
+EXPECTED_STAT = {f"{prefix}1": val for _, prefix, _, _, val in VDM_STAT_SAMPLES}
+
+
+def provision_statistic(emu, index, samples=VDM_STAT_SAMPLES):
+    """Provision VDM *statistic* (min/max/avg) observables and pre-set the VDM
+    freeze/unfreeze DONE bits so xcvrd's freeze path captures them into
+    TRANSCEIVER_VDM_REAL_VALUE. Re-insert the module afterwards (the VDM
+    advertisement is cached at insertion). Only meaningful on an admin-up
+    (non-lpmode) port -- the freeze path is skipped in low power."""
+    desc = bytearray(PAGE_UPPER)
+    val = bytearray(PAGE_UPPER)
+    for i, (type_id, _prefix, fmt, scale, value) in enumerate(samples):
+        desc[2 * i] = (i << 4) | 0       # threshold-set i, lane 1
+        desc[2 * i + 1] = type_id
+        val[2 * i:2 * i + 2] = _encode(fmt, scale, value)
+    emu.write(index, 0, VDM_DESC_PAGE, PAGE_UPPER, bytes(desc))
+    emu.write(index, 0, VDM_VALUE_PAGE, PAGE_UPPER, bytes(val))
+    emu.write(index, 0, VDM_CTRL_PAGE, VDM_SUPPORTED_PAGE_OFFSET, bytes([0x00]))
+    # pre-set freeze/unfreeze DONE so xcvrd's freeze poll confirms.
+    emu.write(index, 0, VDM_CTRL_PAGE, VDM_STATUS_OFFSET,
+              bytes([VDM_FREEZE_DONE | VDM_UNFREEZE_DONE]))
+    adv = emu.read_field(index, VDM_ADV_FIELD)
+    emu.write_field(index, VDM_ADV_FIELD, bytes([adv[0] | VDM_SUPPORTED_BIT]))
+
+
+def deprovision_statistic(emu, index):
+    """Undo provision_statistic(): clear the VDM advertisement + statistic pages +
+    freeze-done bits. Re-insert afterwards so xcvrd re-reads vdm_supported=False."""
+    adv = emu.read_field(index, VDM_ADV_FIELD)
+    emu.write_field(index, VDM_ADV_FIELD, bytes([adv[0] & ~VDM_SUPPORTED_BIT]))
+    for page in (VDM_DESC_PAGE, VDM_VALUE_PAGE):
+        emu.write(index, 0, page, PAGE_UPPER, bytes(PAGE_UPPER))
+    emu.write(index, 0, VDM_CTRL_PAGE, VDM_STATUS_OFFSET, bytes([0x00]))
+    emu.write(index, 0, VDM_CTRL_PAGE, VDM_SUPPORTED_PAGE_OFFSET, bytes([0x00]))
+
+
 def raise_flag(emu, index, db_field, flag_type="halarm"):
     """Raise a VDM flag (high/low alarm/warn) for one observable on the flag page."""
     i = _field_index(db_field)
