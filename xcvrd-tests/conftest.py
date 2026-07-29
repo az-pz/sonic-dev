@@ -243,6 +243,41 @@ def sfp_control(emu, statedb, test_index):
         pass
 
 
+@pytest.fixture
+def fault_port(emu, statedb, configdb, xcvrd):
+    """A spare admin-up CMIS port with emulator fault injection (lib/faults.py),
+    for the error/retry-path tests (EEPROM read-retry, CMIS FAILED, DOM gating
+    during CMIS init). Skips if the port is missing/admin-down or the deployed
+    emulator lacks fault injection. Teardown ALWAYS clears the fault and re-plugs
+    the module back to a healthy READY state so a stalled/unreadable module can't
+    leak into later tests. Override the port with XCVRD_FAULT_PORT (default
+    Ethernet48, a spare not used by the golden/SFF/PM/progression gates)."""
+    from lib import faults
+    port = os.environ.get("XCVRD_FAULT_PORT", "Ethernet48")
+    idx = port_to_index(port)
+    if idx not in emu.list():
+        pytest.skip(f"emulator has no module {idx} ({port})")
+    if configdb.hget(f"PORT|{port}", "admin_status") != "up":
+        pytest.skip(f"{port} is not admin-up; the CMIS retry/gating paths need an admin-up port")
+    emu.plug(idx)
+    wait_until(lambda: statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+               timeout=T_FAST, msg=f"{port} present before fault test")
+    if not faults.supported(emu, idx):
+        pytest.skip("deployed emulator does not implement fault injection "
+                    "(xcvr-emu feature/fault-injection)")
+    yield port, idx
+    try:
+        faults.clear(emu, idx)
+        emu.unplug(idx)
+        wait_until(lambda: not statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
+                   timeout=T_FAST)
+        emu.plug(idx)
+        wait_until(lambda: statedb.hgetall(f"TRANSCEIVER_STATUS_SW|{port}").get("cmis_state") == "READY",
+                   timeout=T_BASELINE)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _pretest(monitor, xcvrd):
     """Before each test: fail fast if xcvrd died mid-suite (so later read-only
