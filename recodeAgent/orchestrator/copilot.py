@@ -37,9 +37,11 @@ DEFAULT_EFFORT = "high"   # fallback effort (e.g. validator, which mostly runs t
 # A global RECODE_EFFORT env var overrides all of these when set.
 AGENT_EFFORT = {
     "analyzer": "max",
+    "scoper": "max",
     "planner": "max",
     "translator": "max",
     "validator": "high",
+    "parity_verifier": "max",
 }
 
 

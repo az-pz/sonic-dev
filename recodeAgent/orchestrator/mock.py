@@ -41,9 +41,40 @@ def respond(agent_name: str, prompt: str) -> str:
 
     if agent_name == "analyzer":
         (pdir / "analysis.md").write_text(
-            "# (mock) source research\n\n- xcvrd tasks, platform bridge, STATE_DB schema\n",
+            "# (mock) source research\n\n- xcvrd tasks, platform bridge, STATE_DB schema\n"
+            "\n## module inventory\n- xcvrd.py\n- dom/dom_mgr.py\n- cmis/cmis_manager_task.py\n",
             encoding="utf-8")
         return "mock analyzer: wrote analysis.md"
+
+    if agent_name == "scoper":
+        from . import milestones as M
+        if os.environ.get("RECODE_CRASH_AT") == "SCOPE":
+            raise RuntimeError("(mock) simulated crash at SCOPE")
+        if not M.artifact_path().exists():
+            # first pass: write the bootstrap milestone set (M0..M6)
+            M.save(list(M.DEFAULT_MILESTONES))
+            return "mock scoper: wrote milestones.json (bootstrap set)"
+        # re-scope: append one unit-only parity milestone per gap
+        rep = {}
+        prep = pdir / "parity_report.json"
+        if prep.exists():
+            try:
+                rep = json.loads(prep.read_text(encoding="utf-8"))
+            except ValueError:
+                rep = {}
+        gaps = rep.get("gaps") or [{"source_ref": "(mock)", "functionality": "gap"}]
+        ms = M.load()
+        base = len(ms)
+        for i, g in enumerate(gaps):
+            nid = f"M{base + i}"
+            ms.append(M.Milestone(
+                nid, f"(parity) {g.get('functionality', 'gap')}",
+                f"Translate {g.get('source_ref', '?')}",
+                test_modules=[], origin="parity", unit_only=True,
+                source_refs=[g.get("source_ref", "?")],
+            ))
+        M.save(ms)
+        return f"mock scoper: appended {len(ms) - base} parity milestone(s)"
 
     if agent_name == "planner":
         (pdir / "plan.json").write_text(json.dumps({
@@ -79,11 +110,37 @@ def respond(agent_name: str, prompt: str) -> str:
         (pdir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         return f"mock validator: {mid} {'PASS' if passed else 'FAIL'} (attempt {attempts})"
 
+    if agent_name == "parity_verifier":
+        # Crash hook (outer-loop resume testing).
+        if os.environ.get("RECODE_CRASH_AT") == "PARITY":
+            raise RuntimeError("(mock) simulated crash at PARITY")
+        # Report gaps for the first RECODE_MOCK_PARITY_GAPS rounds, then COMPLETE.
+        gaps_budget = int(os.environ.get("RECODE_MOCK_PARITY_GAPS", "0") or 0)
+        cnt_file = pdir / ".mock_parity_attempts"
+        attempts = int(cnt_file.read_text()) if cnt_file.exists() else 0
+        attempts += 1
+        cnt_file.write_text(str(attempts))
+        complete = attempts > gaps_budget
+        report = {
+            "coverage_matrix": [
+                {"module": "xcvrd", "covered": complete,
+                 "missing": [] if complete else [f"mock_fn_{attempts}"]},
+            ],
+            "gaps": [] if complete else [{
+                "source_ref": f"xcvrd.py:mock_fn_{attempts}",
+                "functionality": f"mock gap {attempts}",
+                "suggested_milestone": "unit-only",
+            }],
+            "complete": complete,
+        }
+        (pdir / "parity_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        return f"mock parity: {'COMPLETE' if complete else 'GAPS'} (attempt {attempts})"
+
     return f"mock {agent_name}: ok"
 
 
 def _extract_milestone(prompt: str) -> str:
-    """Pull the milestone id (M0..M9) out of the prompt the action passed."""
+    """Pull the milestone id (M0, M1, ... M12, ...) out of the prompt the action passed."""
     import re
-    m = re.search(r"\bM([0-9])\b", prompt or "")
+    m = re.search(r"\bM(\d+)\b", prompt or "")
     return f"M{m.group(1)}" if m else "M0"

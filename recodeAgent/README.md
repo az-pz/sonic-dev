@@ -22,27 +22,37 @@ LLM — Copilot is the agent runtime.
 
 ```
 Apache Burr  (deterministic state machine + telemetry UI + SQLite resume)
-  analyze ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
-                          ▲                   ▲            │
-                          │ next milestone    │ repair     │ parse results.xml
-                          │ (passed &         │ (failed &  ▼
-                          │  more left)       │  iter<max) verdict
-                          └───────────────────┴────────────┤
-                                       all green ─▶ terminal
+  analyze ─▶ scope ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
+              ▲                     ▲                   ▲            │
+   re-scope   │        next milestone │        repair    │          │ parse results.xml
+   (parity    │        (passed &      │        (failed & │          ▼
+    gaps)     │         more left)    │         iter<max)│      verdict
+              │                       └───────────────────┴──────────┤
+              │                              all milestones green ─▶ parity_verify
+              └──────────────────────── gaps + budget left ──────────┤
+                                        complete (or budget spent) ─▶ terminal
         │ every action = subprocess ▼                 │ validate action ▼
    GitHub Copilot CLI custom agents            tools/validate_on_dut.sh
    (Opus 4.8, high reasoning)                    build Rust (Debian-13 container)
-   analyzer / planner / translator               ▶ inject into pmon (reversible)
-   do ALL real work via their tools              ▶ xcvrd-tests/run.sh  (UNCHANGED)
-   (read/edit/shell/LSP/MCP)                     ▶ parse results.xml ▶ restore py xcvrd
+   analyzer / scoper / planner /                 ▶ inject into pmon (reversible)
+   translator / validator / parity_verifier      ▶ xcvrd-tests/run.sh  (UNCHANGED)
+   do ALL real work via their tools              ▶ parse results.xml ▶ restore py xcvrd
 ```
+
+Two nested loops: the **inner** milestone×repair loop (correctness, gated by the e2e
+oracle) and the **outer** parity loop (completeness). The **Scoper** derives the
+milestone set from the analysis + the `xcvrd-tests` suite; the **Parity Verifier**
+compares the finished Rust against the Python source per module and, if anything is
+untranslated, feeds gaps back to the Scoper as new unit-only milestones. There is **no
+deferral** — the run succeeds only when parity is complete; exhausting the outer budget
+with gaps still open is a hard failure.
 
 **Division of labor**
 
 | Layer | Owner | Responsibility |
 |-------|-------|----------------|
-| Sequencing, milestone loop, repair loop, typed state, resume, UI | **Burr** (this repo) | ~200 lines of deterministic Python |
-| Analysis, planning, translation, repair diagnosis | **Copilot agents** | all the LLM reasoning + code writing |
+| Sequencing, milestone loop, repair loop, parity loop, typed state, resume, UI | **Burr** (this repo) | ~250 lines of deterministic Python |
+| Analysis, scoping, planning, translation, repair diagnosis, parity check | **Copilot agents** | all the LLM reasoning + code writing |
 | Black-box verdict | **`xcvrd-tests/run.sh`** (unchanged) | trusted oracle; `results.xml` is the structured result |
 | HAL + STATE_DB + build/deploy | **environment scaffolding** (this repo) | provided so agents don't fight interop (see §3) |
 
@@ -50,8 +60,8 @@ Apache Burr  (deterministic state machine + telemetry UI + SQLite resume)
 
 ## 2. How we adapt the paper (deliberately)
 
-Faithful to ReCodeAgent's four agents and Algorithm 1 loop, with these adaptations
-for our environment:
+Faithful to ReCodeAgent's agents and Algorithm 1 loop, extended with two agents of
+our own (**Scoper**, **Parity Verifier**) and these adaptations for our environment:
 
 1. **Two validation layers — unit tests (Part B) *and* a fixed black-box oracle.**
    We keep the paper's Part B (test translation): the Translator rewrites xcvrd's
@@ -64,13 +74,37 @@ for our environment:
    generated), so the ultimate oracle cannot be gamed. A milestone passes only when
    **both** layers pass.
 
-2. **Plan = prioritized functionality milestones.** The plan is an ordered list of
-   xcvrd functionality slices M0–M6, each gated by a specific `xcvrd-tests` subset
-   (§5) plus its unit tests. A milestone must go green before the next begins.
+2. **Plan = prioritized functionality milestones, owned by the Scoper.** The milestone
+   set is no longer hand-authored: the **Scoper** agent (after `analyze`, before `plan`)
+   partitions the daemon's functionality into an ordered set of slices and writes it to
+   `pipeline/milestones.json`, mapping **every** `xcvrd-tests` module onto exactly one
+   milestone and ending on a golden/full-suite gate. Each slice is gated by its
+   `xcvrd-tests` subset (§5) plus its unit tests, cumulatively; a milestone must go green
+   before the next begins. The **Parity Verifier** may append more (unit-only) milestones
+   when it finds untranslated source (see §2a).
 
 3. **Immutable input, mutable working copy.** `crate/` (the M1 bootstrap +
    scaffolding) is a read-only input; the Planner copies it to `pipeline/crate/` and
    all translation happens there. `crate/` is never modified.
+
+### 2a. Parity loop (completeness, not just correctness)
+
+Passing every milestone proves the translation is *correct against the tests* — but
+tests can miss behavior. After all milestones are green, the **Parity Verifier** runs a
+per-module comparison of the Python source against the final Rust (`pipeline/crate/`) and
+writes `pipeline/parity_report.json` (`coverage_matrix`, `gaps`, `complete`):
+
+- `complete: true` → the pipeline succeeds (`terminal`, `done=True`).
+- `complete: false` with outer-loop budget remaining → the gaps flow back to the
+  **Scoper**, which **appends** new `origin="parity", unit_only=true` milestones (fresh
+  ids, never renumbering the passed ones). They carry no new e2e test but inherit the
+  full cumulative e2e gate ("pass all previous e2e tests") and are verified by new Rust
+  unit tests. The inner loop then translates/validates them and control returns to parity.
+- budget exhausted (`--max-parity-rounds`) with gaps still open → **hard failure**
+  (`done=False`). There is no deferral: everything must translate.
+
+Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
+offline with mock agents via `tools/check.sh` (8 scenarios, zero tokens).
 
 Everything else — Analyzer, Planner, skeleton-first, name mapping, the
 translate→validate→repair loop with `maxIter` — is the paper's design.
@@ -188,12 +222,14 @@ dev/recodeAgent/
 ├── orchestrator/                 # the small deterministic Burr layer
 │   ├── app.py                    #   ApplicationBuilder: actions + transitions + persister
 │   ├── state.py                  #   typed state helpers
-│   ├── actions.py                #   @action: analyze/plan/select_milestone/translate/validate
+│   ├── actions.py                #   @action: analyze/scope/plan/select_milestone/translate/validate/parity_verify
 │   ├── copilot.py                #   invoke_agent(): subprocess wrapper around `copilot`
-│   └── milestones.py             #   the M0..M6 matrix (§5)
-├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5)
-│   ├── analyzer.agent.md  planner.agent.md  translator.agent.md  validator.agent.md
-│   │                             #   installed to ~/.copilot/agents/ by tools/install_agents.sh
+│   ├── mock.py                   #   offline mock agents (RECODE_MOCK=1): drive the graph w/o Copilot
+│   └── milestones.py             #   Scoper-owned milestone ARTIFACT loader (pipeline/milestones.json; §5)
+├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5 + our scoper/parity)
+│   ├── analyzer.agent.md  scoper.agent.md  planner.agent.md
+│   ├── translator.agent.md  validator.agent.md  parity_verifier.agent.md
+│   │                             #   installed to $COPILOT_HOME/agents by tools/install_agents.sh
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
 │   ├── build_check.sh            # compile-only check (no inject/tests) for planner/translator
@@ -201,7 +237,7 @@ dev/recodeAgent/
 │   ├── install_agents.sh         # install the .agent.md profiles where the CLI discovers them
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
 │   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
-│   ├── check.sh                  # offline orchestrator mock checks (happy/repair/budget/resume)
+│   ├── check.sh                  # offline orchestrator mock checks (both loops: happy/repair/budget/parity/resume)
 │   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
 │       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh
 │       ├── bridge_smoke.sh   env_check.sh   ensure_swsslib.sh   # (ensure_swsslib pulls libswsscommon.so)
@@ -223,36 +259,38 @@ dev/recodeAgent/
 ```
 
 Inter-stage state is passed as **files in `pipeline/`** (each agent ends its run
-by writing a parseable artifact there — `analysis.md`, `plan.json`,
-`report.json`). Copilot CLI 1.0.72 also supports `--output-format json` (JSONL),
-which the orchestrator parses for success/failure detection and logging; the
-file artifacts remain the authoritative state channel.
+by writing a parseable artifact there — `analysis.md`, `milestones.json`,
+`plan.json`, `report.json`, `parity_report.json`). Copilot CLI also supports
+`--output-format json` (JSONL), which the orchestrator parses for success/failure
+detection and logging; the file artifacts remain the authoritative state channel.
 
-### 4a. The four agents (`agents/*.agent.md`)
+### 4a. The six agents (`agents/*.agent.md`)
 
 Each stage is a **GitHub Copilot CLI custom agent** — a Markdown profile with YAML
 frontmatter (`name`, `description`, scoped `tools`) plus a system prompt. The CLI
 discovers custom agents from `~/.copilot/agents/` (user level) or a repo's
 `.github/agents/`; since our profiles must live under `dev/recodeAgent/`, they are
-version-controlled in `agents/` and mirrored to `~/.copilot/agents/` by
+version-controlled in `agents/` and mirrored to `$COPILOT_HOME/agents/` by
 `tools/install_agents.sh` (and automatically by `copilot.py`'s
 `ensure_agents_installed()` before every run — honoring `COPILOT_HOME`).
 
 | Agent | Paper | Reads → Writes | Adaptation for this project |
 |-------|-------|----------------|------------------------------|
-| **analyzer** | §3.2 | `source/xcvrd/` (+ `tests/`) → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design). Bakes in the thick-HAL, swss-common, two-layer-validation, immutable-input, and M0–M6 constraints; designs the mockable HAL/DB seams. Writes no Rust. |
-| **planner** | §3.3 | `analysis.md` → copies `crate/`→`pipeline/crate/`, writes `pipeline/plan.json` + skeleton | Fragment extraction (Part A daemon **+ Part B unit tests**, validated), name mapping, compilable skeleton with mock/test seams, dependency-aware **M0–M6** plan. |
+| **analyzer** | §3.2 | `source/xcvrd/` (+ `tests/`) → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design) + a source-cited **behavior inventory for scoping**. Bakes in the thick-HAL, swss-common, two-layer-validation, and immutable-input constraints; designs the mockable HAL/DB seams. Does **not** define milestones (the Scoper does). Writes no Rust. |
+| **scoper** | *(ours)* | `analysis.md` + `source/xcvrd/` + `../xcvrd-tests/` (+ `parity_report.json` on re-scope) → `pipeline/milestones.json` | Owns the milestone set. First pass **partitions every `xcvrd-tests` module** across dependency-ordered milestones (M0 deploy-smoke … golden/full-suite last), exactly one milestone per module. On parity feedback, **appends** unit-only milestones for untranslated source (fresh ids). Writes no Rust/tests. |
+| **planner** | §3.3 | `analysis.md` + `milestones.json` → copies `crate/`→`pipeline/crate/`, writes `pipeline/plan.json` + skeleton | Fragment extraction (Part A daemon **+ Part B unit tests**, validated), name mapping, compilable skeleton with mock/test seams, dependency-aware per-milestone plan. |
 | **translator** | §3.4 | `plan.json`/`report.json` → edits `pipeline/crate/xcvrd-rs/` | Implements the milestone's daemon logic (Part A) **and** rewrites the matching Python unit tests + adds new Rust unit tests with mocks (Part B); `build_check.sh` + `unit_test.sh`. Never touches `crate/`. |
 | **validator** | §3.5 | runs `unit_test.sh` + `validate_on_dut.sh` → `pipeline/report.json` | **Two layers**: Rust unit tests (mocked, `cargo test`) **and** the fixed e2e `xcvrd-tests` on the DUT. Combined verdict (`passed` iff both), actionable per-failure hints. Never edits daemon/tests/platform. |
+| **parity_verifier** | *(ours)* | `source/xcvrd/` + `pipeline/crate/` + `analysis.md` → `pipeline/parity_report.json` | Runs once all milestones pass. **Per-module** source-vs-Rust completeness check → `{coverage_matrix, gaps, complete}`. Gaps feed back to the Scoper; `complete:true` ends the run. Read-only; edits nothing. |
 
 `tools` are scoped per role (all omit the `agent` alias, so an agent can't
 delegate to another — the Burr graph is the only sequencer). The orchestrator runs
 each with `--model claude-opus-4.8 --allow-all --no-ask-user --output-format json`
-and a **per-agent reasoning effort**: the heavy reasoning stages (analyzer,
-planner, translator) run at `--reasoning-effort max`; the validator (mostly tool
-execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Model/effort are
+and a **per-agent reasoning effort**: the heavy reasoning stages (analyzer, scoper,
+planner, translator, parity_verifier) run at `--reasoning-effort max`; the validator
+(mostly tool execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Model/effort are
 overridable via `RECODE_MODEL` / `RECODE_EFFORT` (a set `RECODE_EFFORT` overrides
-all agents). Verified on CLI 1.0.72: the profiles are discovered, the model +
+all agents). Verified on CLI 1.0.77: all six profiles are discovered, the model +
 `max`/`high` efforts + flags are accepted, and JSONL parsing extracts the agent's
 final message.
 
@@ -262,15 +300,22 @@ final message.
 
 Each milestone is a slice of the daemon. Its gate is **CUMULATIVE**: a milestone
 must pass its own new tests **and every earlier milestone's tests** (regression
-safety — new work can't break earlier functionality). `orchestrator/milestones.py`
-is the single source of truth; `python -m orchestrator.milestones --args M3`
-prints the resolved gate, and `tools/validate_on_dut.sh M3` runs it automatically.
+safety — new work can't break earlier functionality). The milestone set is a
+Scoper-generated **artifact** at `pipeline/milestones.json` (with `DEFAULT_MILESTONES`
+in `orchestrator/milestones.py` as the bootstrap the Scoper starts from and the
+loader's fallback); `python -m orchestrator.milestones --args M3` prints the resolved
+gate for whatever set is loaded, and `tools/validate_on_dut.sh M3` runs it automatically.
+Parity-appended milestones (`origin="parity"`, `unit_only=true`) add no new module to
+the gate but still inherit the full cumulative e2e set.
 
 **Every milestone runs its full cumulative set, including slow tests** (no `-m`
 marker filter). Selection uses a pytest **`-k` module expression** (not file
 paths): `run.sh` always runs `pytest <tests-dir> …`, so a `-k "test_presence or
 test_info_content"` narrows the already-collected dir to exactly the intended
 modules — while slow tests within those modules still run.
+
+The **bootstrap** set (what the Scoper starts from; the real first-pass partition maps
+*every* `xcvrd-tests` module and may differ):
 
 | #  | Milestone (adds) | Cumulative gate (this + all earlier) |
 |----|------------------|--------------------------------------|

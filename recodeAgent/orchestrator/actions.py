@@ -22,6 +22,7 @@ from pathlib import Path
 from burr.core import action
 
 from . import state as S
+from . import milestones
 from .copilot import invoke_agent, transcript_from_events, summary_from_events
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +44,10 @@ def _crate_env() -> dict:
 def _pipeline() -> Path:
     PIPELINE.mkdir(parents=True, exist_ok=True)
     return PIPELINE
+
+
+def _is_mock() -> bool:
+    return os.environ.get("RECODE_MOCK") == "1"
 
 
 def _read_json(name: str) -> dict:
@@ -93,9 +98,11 @@ def analyze(state, __tracer) -> dict:
         f"reference). Produce the three design documents and write them to "
         f"{PIPELINE/'analysis.md'}: (1) source research, (2) Python-dep->Rust-crate "
         "analysis, (3) target design including the PyO3 platform-bridge boundary, the "
-        "STATE_DB schema contract, the M0..M6 milestone mapping, AND the unit-test "
+        "STATE_DB schema contract, AND the unit-test "
         "strategy (how to translate the Python behavioral unit tests + their platform/"
-        "swss mocks into Rust, e.g. trait seams for mockable HAL/DB). Do not write any Rust."
+        "swss mocks into Rust, e.g. trait seams for mockable HAL/DB). Milestone "
+        "planning is a SEPARATE downstream stage (the Scoper) -- do NOT define "
+        "milestones here. Do not write any Rust."
     )
     res = invoke_agent(
         "analyzer", prompt=prompt, cwd=ROOT,
@@ -105,6 +112,113 @@ def analyze(state, __tracer) -> dict:
     return state.update(
         analysis_done=(_pipeline() / "analysis.md").exists(),
         last_agent="analyzer",
+    )
+
+
+def _xcvrd_test_modules() -> list[str]:
+    """The set of xcvrd-tests module stems (test_*.py) — the universe the Scoper's
+    milestone partition must cover. Empty if the suite isn't reachable (e.g. an
+    offline mock run on a box without it)."""
+    tdir = XCVRD_TESTS / "tests"
+    if not tdir.is_dir():
+        return []
+    return sorted(p.stem for p in tdir.glob("test_*.py"))
+
+
+def _scope_coverage(ms: list) -> dict:
+    """Coverage guardrail for the Scoper output: which xcvrd-tests modules are NOT
+    claimed by any milestone, and whether a final golden/full-suite milestone exists."""
+    universe = set(_xcvrd_test_modules())
+    claimed = {mod for m in ms for mod in m.test_modules}
+    return {
+        "universe": sorted(universe),
+        "orphans": sorted(universe - claimed) if universe else [],
+        "has_golden_final": bool(ms) and "test_golden" in ms[-1].test_modules,
+    }
+
+
+@action(
+    reads=["scope_done", "num_milestones", "gaps"],
+    writes=["scope_done", "num_milestones", "last_idx", "milestone_idx",
+            "milestone_passed", "last_agent"],
+)
+def scope(state, __tracer) -> dict:
+    """Scoper Agent: turn analysis.md + the source + the xcvrd-tests suite into the
+    milestone set (pipeline/milestones.json). First pass PARTITIONS every xcvrd-tests
+    module across dependency-ordered milestones, ending on a golden/full-suite
+    milestone. On re-scope (parity feedback) it APPENDS unit-only milestones for the
+    untranslated-source gaps -- new ids, never renumbering the ones already done."""
+    is_rescope = bool(state["scope_done"]) and state["num_milestones"] > 0
+    old_count = state["num_milestones"]
+    modules = _xcvrd_test_modules()
+    if not is_rescope:
+        prompt = (
+            f"Read {PIPELINE/'analysis.md'} and research the Python xcvrd source at "
+            f"{SOURCE}. Partition ALL of the daemon's functionality into a "
+            "dependency-ordered set of translation milestones and write them to "
+            f"{milestones.artifact_path()} (schema: id, title, goal, test_modules, "
+            "marker, origin='scoper', unit_only=false, source_refs, deps).\n"
+            "HARD REQUIREMENTS:\n"
+            f"  * Every xcvrd-tests module must be claimed by exactly one milestone. "
+            f"The full module universe is: {json.dumps(modules)}.\n"
+            "  * Milestones must be dependency-ordered (bootstrap before features); "
+            "M0 is the deploy-smoke skeleton (test_modules=[]).\n"
+            "  * Each milestone is a REASONABLE chunk -- not one giant milestone, not "
+            "dozens of trivial ones. Group tests by the daemon functionality they exercise.\n"
+            "  * The FINAL milestone is golden conformance / full suite (test_modules "
+            "include 'test_golden'; it re-runs everything).\n"
+            "Do NOT invent tests, modify tests, or write Rust -- you only produce the "
+            "milestone plan mapped onto the EXISTING suite."
+        )
+    else:
+        prompt = (
+            f"Re-scope. Read the untranslated-source gaps in "
+            f"{PIPELINE/'parity_report.json'} and the existing milestone set at "
+            f"{milestones.artifact_path()}. For each gap, APPEND one new milestone to "
+            "that file (do NOT modify or renumber existing milestones). New milestones: "
+            "origin='parity', unit_only=true, test_modules=[] (no new e2e test exists for "
+            "untested source -- they inherit the full prior e2e gate and are verified by "
+            "Rust unit tests), with source_refs naming the exact source symbols to cover "
+            f"and a goal describing what to translate. Use fresh ids continuing after "
+            f"the current highest (currently {old_count} milestones)."
+        )
+    res = invoke_agent(
+        "scoper", prompt=prompt, cwd=ROOT,
+        add_dirs=[str(XCVRD_TESTS)], log_dir=_pipeline() / "logs",
+    )
+    _log_agent(__tracer, stage="scope" if not is_rescope else "scope:rescope",
+               prompt=prompt, result=res)
+
+    ms = milestones.load()
+    cov = _scope_coverage(ms)
+    if __tracer is not None:
+        try:
+            __tracer.log_attributes(scope_rescope=is_rescope, num_milestones=len(ms),
+                                    orphan_test_modules=cov["orphans"],
+                                    has_golden_final=cov["has_golden_final"])
+        except Exception:
+            pass
+    # Guardrail: on a REAL run the partition must cover every xcvrd-tests module and
+    # end on a golden/full-suite milestone. Offline mock runs skip the hard assert
+    # (the mock scoper writes the bootstrap set, not a full partition of ~30 modules).
+    if not is_rescope and not _is_mock():
+        if cov["orphans"]:
+            raise RuntimeError(
+                f"scoper left xcvrd-tests modules unclaimed by any milestone: {cov['orphans']}")
+        if cov["universe"] and not cov["has_golden_final"]:
+            raise RuntimeError("scoper's final milestone is not the golden/full-suite gate")
+
+    new_count = len(ms)
+    first_pending = old_count if is_rescope else 0
+    if first_pending >= new_count:               # defensive clamp
+        first_pending = max(0, new_count - 1)
+    return state.update(
+        scope_done=True,
+        num_milestones=new_count,
+        last_idx=new_count - 1,
+        milestone_idx=first_pending,
+        milestone_passed=False,
+        last_agent="scoper",
     )
 
 
@@ -120,8 +234,9 @@ def plan(state, __tracer) -> dict:
         f"tests at {SOURCE_TESTS}), build a one-to-one name mapping, generate the Rust "
         f"skeleton under {PIPELINE_CRATE/'xcvrd-rs'} (compilable stubs + test/mock module "
         "layout on top of the provided platform-bridge + swss-common), and write a "
-        f"dependency-aware milestone plan to {PIPELINE/'plan.json'} aligned to M0..M6 "
-        "(each milestone lists both its daemon steps and its unit-test steps). Verify the "
+        f"dependency-aware translation plan to {PIPELINE/'plan.json'} that, for EACH "
+        f"milestone in the Scoper's set at {milestones.artifact_path()}, lists both its "
+        "daemon steps and its unit-test steps. Verify the "
         "skeleton compiles with `bash tools/build_check.sh`."
     )
     res = invoke_agent(
@@ -190,7 +305,6 @@ def validate(state, __tracer) -> dict:
     """Validator Agent (adapted): run the mocked unit tests AND the e2e xcvrd-tests
     on the DUT for the working copy; write the authoritative combined report.json."""
     m = S.current_milestone(state)
-    from . import milestones
     gate = milestones.cumulative_args(m.id)   # CUMULATIVE: this milestone + all earlier ones
     prompt = (
         f"Validate milestone {m.id} ({m.title}). Run BOTH validation layers on the "
@@ -215,7 +329,10 @@ def validate(state, __tracer) -> dict:
     report = _read_json("report.json")
     passed = bool(report.get("passed"))
     it = state["iter_count"] + 1
-    done = passed and S.is_last_milestone(state)
+    # Success is no longer decided here: passing the LAST milestone routes to the
+    # Parity Verifier (the source-coverage gate), which owns `done`. validate reaches
+    # `terminal` only on inner give-up (budget exhausted) -> done stays False (fail).
+    done = False
     entry = {"milestone": m.id, "iter": it, "passed": passed}
     summary = _log_agent(__tracer, stage=f"validate:{m.id}", prompt=prompt, result=res)
     if __tracer is not None:
@@ -231,4 +348,55 @@ def validate(state, __tracer) -> dict:
         report={} if passed else report,   # clear on pass so next milestone starts fresh
         done=done,
         last_agent="validator",
+    ).append(history=entry)
+
+
+@action(
+    reads=["parity_round", "max_parity_rounds"],
+    writes=["parity_round", "parity_complete", "gaps", "done", "history", "last_agent"],
+)
+def parity_verify(state, __tracer) -> dict:
+    """Parity Verifier Agent: after every milestone passes its tests, comprehensively
+    compare the Python source against the final Rust translation, PER MODULE, to verify
+    nothing was left untranslated. Writes pipeline/parity_report.json
+    {coverage_matrix, gaps, complete}. If complete -> the pipeline is done (success).
+    If gaps remain and there's outer-loop budget -> they feed back to the Scoper as new
+    milestones; if the budget is exhausted with gaps still open, the run FAILS (there is
+    no deferral -- everything must translate)."""
+    prompt = (
+        f"Comprehensively verify translation completeness. Compare the Python xcvrd "
+        f"source at {SOURCE} against the final Rust translation at "
+        f"{PIPELINE_CRATE/'xcvrd-rs'}, working PER MODULE over the module inventory in "
+        f"{PIPELINE/'analysis.md'}. For each source module, determine whether every "
+        "function / behavior / branch has a corresponding Rust implementation. Write "
+        f"{PIPELINE/'parity_report.json'} as {{\"coverage_matrix\":[{{\"module\",\"covered\","
+        "\"missing\":[...]}], \"gaps\":[{\"source_ref\",\"functionality\",\"suggested_milestone\"}], "
+        "\"complete\": true|false}. `complete` is true ONLY when every module is fully "
+        "covered (gaps empty). Do NOT modify any code, tests, or the platform -- you only "
+        "produce the completeness report."
+    )
+    res = invoke_agent(
+        "parity_verifier", prompt=prompt, cwd=ROOT,
+        add_dirs=[str(XCVRD_TESTS)], log_dir=_pipeline() / "logs",
+        extra_env=_crate_env(),
+    )
+    rep = _read_json("parity_report.json")
+    complete = bool(rep.get("complete"))
+    gaps = rep.get("gaps", []) or []
+    rnd = state["parity_round"] + 1
+    _log_agent(__tracer, stage=f"parity_verify:round{rnd}", prompt=prompt, result=res)
+    if __tracer is not None:
+        try:
+            __tracer.log_attributes(parity_round=rnd, parity_complete=complete,
+                                    gap_count=len(gaps), gaps=gaps[:50],
+                                    coverage_matrix=rep.get("coverage_matrix", []))
+        except Exception:
+            pass
+    entry = {"milestone": "PARITY", "iter": rnd, "passed": complete}
+    return state.update(
+        parity_round=rnd,
+        parity_complete=complete,
+        gaps=gaps,
+        done=complete,                # success iff full source coverage
+        last_agent="parity_verifier",
     ).append(history=entry)
