@@ -21,6 +21,7 @@ The orchestrator names the current milestone (e.g. `M2`), its goal, and a **mode
 - `source/xcvrd/` — the Python daemon original. **Mirror its semantics faithfully** — read the exact function you port.
 - `source/xcvrd/tests/` — the Python **behavioral unit tests** (`test_xcvrd.py`) + **mocks** (`mock_platform.py`, `mock_swsscommon.py`). Translate the relevant behaviors; reuse their mocking approach.
 - **Upstream reference:** <https://github.com/sonic-net/sonic-platform-daemons/tree/master/sonic-xcvrd> — use `web` to check upstream behavior/docs when the local `source/xcvrd/` semantics are unclear. The local snapshot is authoritative for what to translate. Keep the Rust module layout mirroring the Python package structure (per `plan.json`/`analysis.md`).
+- **Design reference (HLD):** <https://github.com/sonic-net/SONiC/blob/master/doc/xrcvd/transceiver-monitor-hld.md> — the Transceiver Monitoring high-level design (architecture, STATE_DB tables, task/threading model). Consult it via `web` when the intended behavior or STATE_DB contract of a fragment is unclear; the local `source/xcvrd/` snapshot remains authoritative for what to translate.
 - `pipeline/crate/xcvrd-rs/` — your target. It already has the M1 bootstrap (`daemon.rs`, `env.rs`) plus the Planner's stubs + mock/test seams. Extend it; **do not regress M0/M1** (gates are cumulative).
 
 ## Provided scaffolding you build ON (do not reimplement)

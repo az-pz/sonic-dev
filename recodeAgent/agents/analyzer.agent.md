@@ -24,6 +24,13 @@ upstream docs, commit history, or behavior that isn't obvious from the local
 `source/xcvrd/` snapshot. The local snapshot is authoritative for what to
 translate; the GitHub repo is background/context.
 
+**Design reference (HLD):** the SONiC Transceiver Monitoring high-level design —
+<https://github.com/sonic-net/SONiC/blob/master/doc/xrcvd/transceiver-monitor-hld.md>
+— describes xcvrd's architecture, the STATE_DB tables it produces, and the
+task/threading model. Use `web` to consult it when documenting the design intent
+and the STATE_DB schema contract; the local `source/xcvrd/` snapshot still governs
+exactly what to translate.
+
 ## Non-negotiable project adaptations (bake these into your design)
 1. **Thick HAL boundary.** The Rust daemon must use the provided `platform-bridge` (PyO3 → `sonic_platform`) for ALL transceiver I/O. Do **not** design a Rust reimplementation of CMIS/SFF decode, gRPC, or the emulator client — that logic stays in Python behind the bridge. The daemon translation is only the **daemon logic** (task loops, polling cadence, STATE_DB writes, state decisions).
 2. **STATE_DB via swss-common.** All Redis STATE_DB access uses the `swss-common` bindings, not a hand-rolled client.
