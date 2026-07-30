@@ -1,0 +1,20 @@
+{
+  "GLOBAL_MEDIA_SETTINGS": {
+    "0-127": {
+      "QSFP-DD-sm_media_interface": {
+        "speed:XLAUI": {
+          "preemphasis": {
+            "lane0": "0x16440A",
+            "lane1": "0x16440A",
+            "lane2": "0x16440A",
+            "lane3": "0x16440A",
+            "lane4": "0x16440A",
+            "lane5": "0x16440A",
+            "lane6": "0x16440A",
+            "lane7": "0x16440A"
+          }
+        }
+      }
+    }
+  }
+}
