@@ -22,6 +22,14 @@ LOW_PWR_REQUEST_BIT = 0x10  # 00h:26.4 -- set by set_lpmode(True)
 # Identity fields (page 00h) used by info-content sanity checks.
 SFF8024_IDENTIFIER = (0, 0, 0, 1)
 
+# Flat memory indicator (CMIS v5.2 8.2, 00h:2.7). 1 => the module has flat memory
+# (no upper pages), so xcvrd's CmisManagerTask short-circuits the datapath
+# state machine straight to READY (cmis_manager_task.py:1287-1290). The emulator
+# serves paged modules; setting this bit is pure harness stimulus that makes xcvrd
+# believe the module is flat.
+FLAT_MEM_FIELD = (0, 0, 2, 1)
+FLAT_MEM_BIT = 0x80
+
 # Module Flags, page 00h lower memory (CMIS v5.2 8.9). Byte 9 holds the latched
 # temp/vcc monitor flags: bit0 TempMonHighAlarm, bit1 TempLowAlarm,
 # bit2 TempHighWarn, bit3 TempLowWarn, bit4 VccHighAlarm, ... On real hardware

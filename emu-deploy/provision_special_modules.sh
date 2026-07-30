@@ -6,6 +6,7 @@
 #
 #   idx10 (Ethernet40)  ->  type: sff8636        (SFF-8636 / QSFP28 -> tests/test_sff8636.py)
 #   idx11 (Ethernet44)  ->  MediaInterfaceID 77  (400GBASE-ZR -> coherent C-CMIS -> tests/test_pm.py)
+#   idx13 (Ethernet52)  ->  MemoryModel FLAT     (flat memory -> tests/test_flat_memory.py)
 #
 # The emulator serves any page as raw bytes, so the SFF byte image and the C-CMIS
 # PM / VDM stimulus are provisioned by the tests themselves; only these two config
@@ -35,9 +36,20 @@ base11 = copy.deepcopy(tr[0])
 base11["defaults"]["ApplicationDescriptor"][0]["MediaInterfaceID"] = 77
 tr[11] = base11
 
+# idx13: flat-memory module -> CmisManagerTask short-circuits to READY (00h:2.7).
+base13 = copy.deepcopy(tr[0])
+base13["defaults"]["MemoryModel"] = "FLAT"
+tr[13] = base13
+
+# idx14: normalize back to a plain module (a previous revision provisioned a 2nd
+# application here for a multi-app test that is blocked on emulator DPSM support;
+# reset it so no wedged/FAILED module leaks into the suite).
+tr[14] = copy.deepcopy(tr[0])
+
 yaml.safe_dump(cfg, open(p, "w"))
 print("  idx10 type:", tr[10].get("type"))
 print("  idx11 MediaInterfaceID:", tr[11]["defaults"]["ApplicationDescriptor"][0]["MediaInterfaceID"])
+print("  idx13 MemoryModel:", tr[13]["defaults"].get("MemoryModel"))
 PY
 
 echo "[vlab] restart emulator + xcvrd"
@@ -51,6 +63,7 @@ for i in $(seq 1 24); do
   case "$sff" in *QSFP28*) [ -n "$coh" ] && break;; esac
 done
 echo "[vlab] done. Ethernet40=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_INFO|Ethernet40' type) | Ethernet44 coherent marker=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_INFO|Ethernet44' supported_max_laser_freq)"
+echo "[vlab] Ethernet52 (flat) cmis_state=$(sonic-db-cli STATE_DB HGET 'TRANSCEIVER_STATUS_SW|Ethernet52' cmis_state)"
 echo "===SPECIAL_MODULES_DONE==="
 VLABEOF
 
