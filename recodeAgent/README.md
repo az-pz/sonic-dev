@@ -18,6 +18,34 @@ LLM — Copilot is the agent runtime.
 
 ---
 
+## 0. Quickstart — install agents & run the app
+
+From **Git Bash** in `dev/recodeAgent/` (Python ≥ 3.11):
+
+```bash
+# 1. Install the orchestrator (Apache Burr) — once
+pip install -e .                    # add '.[ui]' for the Burr telemetry UI
+
+# 2. Install the six Copilot custom-agent profiles into $COPILOT_HOME/agents
+bash tools/install_agents.sh        # copilot.py also auto-installs before each run
+
+# 3a. Offline dry-run — mock agents, no Copilot/DUT, ~30s (proves the graph wiring)
+export PYTHON=python
+python -m orchestrator.app --app-id demo --mock
+
+# 3b. Real run — drives the actual LLM agents (needs `copilot login` + AI credits)
+python -m orchestrator.app --app-id run1
+```
+
+`--app-id` is the resume key: re-running the **same** id continues from the last
+persisted node (crash-resume); use a fresh id to start over. Useful flags:
+`--max-iter N` (per-milestone repair budget, default 5), `--max-parity-rounds N`
+(outer parity budget, default 3), `--mock` (offline), `--db PATH` (state file).
+Installed as a console script too: `recode --app-id run1`. Watch it live with the
+Burr UI: `burr` → open the printed URL → project `recodeagent-xcvrd` (see §7).
+
+---
+
 ## 1. Architecture
 
 ```
@@ -507,8 +535,8 @@ orchestrator against Copilot (authenticate first with `copilot login`, or set
 
 ```bash
 cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/install_agents.sh                     # -> ~/.copilot/agents/*.agent.md
-python -m orchestrator.app --app-id run1          # analyze ▶ plan ▶ (translate ▶ validate)*
+bash tools/install_agents.sh                     # -> $COPILOT_HOME/agents/*.agent.md
+python -m orchestrator.app --app-id run1          # analyze ▶ scope ▶ plan ▶ (translate ▶ validate)* ▶ parity_verify
 ```
 
 `copilot.py` also auto-installs the profiles before each call. To exercise a single
@@ -520,8 +548,8 @@ copilot -p "Analyze source/xcvrd and write pipeline/analysis.md" \
   --allow-all --no-ask-user --add-dir ../xcvrd-tests
 ```
 
-Smoke-verified on CLI 1.0.72: all four agents are discovered, `claude-opus-4.8` +
-`--allow-all` + `--reasoning-effort high` are accepted, and the JSONL result is
+Smoke-verified on CLI 1.0.77: all six agents are discovered, `claude-opus-4.8` +
+`--allow-all` + `--reasoning-effort max`/`high` are accepted, and the JSONL result is
 parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
 `xcvrd-tests` and always restores the Python xcvrd.
 
