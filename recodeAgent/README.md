@@ -24,7 +24,8 @@ From **Git Bash** in `dev/recodeAgent/` (Python ≥ 3.11):
 
 ```bash
 # 1. Install the orchestrator (Apache Burr) — once
-pip install -e .                    # add '.[ui]' for the Burr telemetry UI
+pip install -e .                    # add '.[tracking]' for Burr telemetry, '.[ui]' for the UI
+                                    # (without [tracking] the run still works; the tracker just auto-disables)
 
 # 2. Install the six Copilot custom-agent profiles into $COPILOT_HOME/agents
 bash tools/install_agents.sh        # copilot.py also auto-installs before each run

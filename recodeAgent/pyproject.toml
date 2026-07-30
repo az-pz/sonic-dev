@@ -8,7 +8,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Burr's telemetry UI. Heavy (pyarrow); install separately where wheels exist.
+# Burr's telemetry tracker (pydantic) — enables .with_tracker + the `burr` UI's
+# data. Lightweight; without it the pipeline still runs (tracker auto-disabled).
+tracking = ["apache-burr[tracking]"]
+# Burr's full telemetry UI server. Heavy (pyarrow); install separately where wheels exist.
 ui = ["apache-burr[start]"]
 
 [project.scripts]

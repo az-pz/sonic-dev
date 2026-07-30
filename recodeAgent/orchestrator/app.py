@@ -42,13 +42,28 @@ DEFAULT_DB = str(ROOT / "pipeline" / "burr.db")
 PROJECT = "recodeagent-xcvrd"
 
 
+def _tracker_enabled() -> bool:
+    """The Burr telemetry tracker needs the optional 'tracking' extra (pydantic).
+    Enable it when available; otherwise run without telemetry rather than crash.
+    Force off with RECODE_NO_TRACKER=1."""
+    if os.environ.get("RECODE_NO_TRACKER") == "1":
+        return False
+    try:
+        import burr.tracking.client  # noqa: F401  (triggers the extra's import chain)
+        return True
+    except Exception as e:  # ImportError from require_plugin, or anything else
+        print("[recode] telemetry tracker disabled (install 'apache-burr[tracking]' "
+              f"to enable the Burr UI): {type(e).__name__}: {e}")
+        return False
+
+
 def build_application(app_id: str, max_iter: int = 5, max_parity_rounds: int = 3,
                      db_path: str = DEFAULT_DB):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     persister = SQLLitePersister.from_values(db_path=db_path, table_name="recode_state")
     persister.initialize()
 
-    return (
+    builder = (
         ApplicationBuilder()
         .with_actions(
             analyze=actions.analyze,
@@ -88,9 +103,10 @@ def build_application(app_id: str, max_iter: int = 5, max_parity_rounds: int = 3
         )
         .with_state_persister(persister)
         .with_identifiers(app_id=app_id)
-        .with_tracker("local", project=PROJECT)   # Burr telemetry UI
-        .build()
     )
+    if _tracker_enabled():
+        builder = builder.with_tracker("local", project=PROJECT)   # Burr telemetry UI
+    return builder.build()
 
 
 def main() -> int:
