@@ -70,17 +70,16 @@ if [ "${#ARGS[@]}" -gt 0 ]; then
 fi
 
 SD="${RECODE_SSH_HOST:-sonic-dev}"
+source "$HERE/lib_remote.sh"
 
-echo "[validate] shipping crate ($CRATE_DIR) + dut scripts to $SD"
-ssh "$SD" "mkdir -p ~/recode/dut ~/recode/crate"
-# Ship crate SOURCE (build happens on the DUT side; keep sonic-dev's target/ cache).
-tar -C "$CRATE_DIR" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
-scp -q "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build" "$SD:/home/sonic/recode/dut/"
+echo "[validate] staging crate ($CRATE_DIR) + dut scripts -> $(r_where)"
+r_put_dir "$CRATE_DIR" "~/recode/crate"
+r_put_files "/home/sonic/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
 
 echo "[validate] running build+inject+test+restore on the DUT"
-ssh "$SD" "bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
+r_run "bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
 
 echo "[validate] fetching report.json -> pipeline/"
 mkdir -p "$RECODE_DIR/pipeline"
-scp -q "$SD:/home/sonic/recode/report.json" "$RECODE_DIR/pipeline/report.json"
+r_get "/home/sonic/recode/report.json" "$RECODE_DIR/pipeline/report.json"
 cat "$RECODE_DIR/pipeline/report.json"

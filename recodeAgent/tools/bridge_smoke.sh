@@ -11,12 +11,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECODE_DIR="$(cd "$HERE/.." && pwd)"          # dev/recodeAgent
 SD="${RECODE_SSH_HOST:-sonic-dev}"
+source "$HERE/lib_remote.sh"
 
-echo "[bridge] shipping crate + dut script to $SD"
-ssh "$SD" "mkdir -p ~/recode/dut ~/recode/crate"
-# Ship crate SOURCE only; the container builds it and keeps sonic-dev's target/ cache.
-tar -C "$RECODE_DIR/crate" --exclude target -cf - . | ssh "$SD" "tar -C ~/recode/crate -xf -"
-scp -q "$HERE/dut/bridge_smoke.sh" "$SD:/home/sonic/recode/dut/bridge_smoke.sh"
+echo "[bridge] staging crate + dut script -> $(r_where)"
+r_put_dir "$RECODE_DIR/crate" "~/recode/crate"
+r_put_files "/home/sonic/recode/dut/" "$HERE/dut/bridge_smoke.sh"
 
 echo "[bridge] building + running smoke on the DUT"
-ssh "$SD" "bash ~/recode/dut/bridge_smoke.sh"
+r_run "bash ~/recode/dut/bridge_smoke.sh"

@@ -239,9 +239,23 @@ swss-common links libswsscommon), then `docker cp`s the binary into pmon and swa
 it in via supervisor — **reversible**, restoring the Python xcvrd after every run
 (same inject/restore pattern as `xcvrd-tests/tools/inject_dummy_xcvrd.sh`).
 
----
+**Where the orchestrator runs (local vs. on sonic-dev).** The host-side wrappers
+(`validate_on_dut.sh`, `build_check.sh`, `unit_test.sh`, `bridge_smoke.sh`,
+`env_check.sh`) stage the crate + `dut/*.sh` and invoke them through a small
+transport shim, `tools/lib_remote.sh` (`r_run` / `r_put_dir` / `r_put_files` /
+`r_get`), selected by **`RECODE_RUN_MODE`**:
 
-## 4. Directory layout
+- **`remote`** (default) — ssh/scp to `RECODE_SSH_HOST` (default `sonic-dev`).
+  This is the from-your-laptop path; behavior is unchanged.
+- **`local`** — no ssh; operate directly on the box's filesystem, for when the
+  whole pipeline (Burr + Copilot) runs **on sonic-dev itself**. Auto-selected when
+  `RECODE_SSH_HOST` is `localhost`/`127.0.0.1`, or set it explicitly:
+  `RECODE_RUN_MODE=local python -m orchestrator.app --app-id run1`.
+
+Only the *outer* hop (you → sonic-dev) changes; the *inner* DUT chain in
+`tools/dut/*.sh` (sonic-dev → `mgmt` → `admin@10.250.0.101` → `pmon`) is identical
+in both modes. Running on sonic-dev additionally needs the Copilot CLI + Python 3.11+
+installed and authenticated there (see §0).
 
 ```
 dev/recodeAgent/
@@ -263,6 +277,7 @@ dev/recodeAgent/
 │   ├── build_check.sh            # compile-only check (no inject/tests) for planner/translator
 │   ├── unit_test.sh              # cargo test (Part-B unit tests, mocked) in the trixie container
 │   ├── install_agents.sh         # install the .agent.md profiles where the CLI discovers them
+│   ├── lib_remote.sh             # transport shim: RECODE_RUN_MODE=remote (ssh sonic-dev) | local (on sonic-dev)
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
 │   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
 │   ├── check.sh                  # offline orchestrator mock checks (both loops: happy/repair/budget/parity/resume)
