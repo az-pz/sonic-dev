@@ -312,16 +312,24 @@ def validate(state, __tracer) -> dict:
     on the DUT for the working copy; write the authoritative combined report.json."""
     m = S.current_milestone(state)
     gate = milestones.cumulative_args(m.id)   # CUMULATIVE: this milestone + all earlier ones
+    # Build the exact explicit harness invocation, passing -k with the cumulative
+    # test selection (M0 has no e2e tests -> deploy-smoke, no -k).
+    if gate:
+        gate_expr = gate[1] if len(gate) >= 2 else ""
+        e2e_cmd = f'bash tools/validate_on_dut.sh {m.id} -k "{gate_expr}"'
+    else:
+        e2e_cmd = f"bash tools/validate_on_dut.sh {m.id}"
     prompt = (
         f"Validate milestone {m.id} ({m.title}). Run BOTH validation layers on the "
         f"working copy {PIPELINE_CRATE}:\n"
         f"1. Unit tests (Part B, mocked, fast): `bash tools/unit_test.sh` -- builds + "
         "runs the crate's Rust unit tests (cargo test) in the container; no DUT needed.\n"
-        f"2. E2E black-box oracle (authoritative): `bash tools/validate_on_dut.sh {m.id}` "
-        "-- resolves the CUMULATIVE gate itself (this milestone's tests PLUS every earlier "
-        f"milestone's = {json.dumps(gate) or '(deploy-smoke)'}), builds the Rust crate for "
-        "pmon, injects it (reversibly), runs xcvrd-tests/run.sh, restores the Python xcvrd, "
-        "and parses results.xml into pipeline/report.json.\n"
+        f"2. E2E black-box oracle (authoritative): run `{e2e_cmd}` -- pass the CUMULATIVE "
+        "gate EXPLICITLY as a pytest -k selection (this milestone's tests PLUS every "
+        "earlier milestone's; resolve it yourself with `python -m orchestrator.milestones "
+        f"--args {m.id}`). It builds the Rust crate for pmon, injects it (reversibly), runs "
+        "exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
+        "results.xml into pipeline/report.json.\n"
         f"Then write the authoritative verdict to {PIPELINE/'report.json'} as "
         '{"milestone","passed","tests","failures"}, where `passed` requires BOTH the unit '
         "tests AND the e2e suite to pass, and `failures` gives actionable, structured repair "
