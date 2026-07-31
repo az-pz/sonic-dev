@@ -276,8 +276,14 @@ def translate(state, __tracer) -> dict:
     prompt = (
         f"Milestone {m.id} ({m.title}). Goal: {m.goal}\n"
         f"Mode: {mode}. "
-        + (f"Fix exactly these validation failures (unit and/or e2e): "
+        + (f"The Validator reported these failures (unit and/or e2e): "
            f"{json.dumps(report.get('failures', []))}. "
+           "Do NOT patch blindly: first investigate WHY each fails and what the "
+           "feedback is telling you, re-read the failing tests to see what behaviour "
+           "and STATE_DB fields they require, and decide whether each is a bug in "
+           "translated code OR functionality that was never translated (add it by "
+           "porting the Python logic). Also confirm ALL functionality the milestone's "
+           "tests need is translated, then fix the root cause faithfully. "
            if mode == "REPAIR" else "")
         + f"Work ONLY in the working copy {PIPELINE_CRATE/'xcvrd-rs'} (never the "
           f"immutable {CRATE}). Implement this milestone's daemon logic (Part A) on "
