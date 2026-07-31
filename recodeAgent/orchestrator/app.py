@@ -4,22 +4,24 @@ correctness) and the parity coverage loop (outer, completeness).
 
     analyze -> scope -> plan -> select_milestone -> translate -> validate
                  ^                      ^                            |
-                 |        (passed & more milestones) ---------------+
-                 |                      |                           | repair (failed & budget)
+                 |    (concluded: passed OR gave up) & more --------+
+                 |                      |                           | repair (failed & budget left)
                  |                      +--------- validate <-------+
                  |                                    |
-                 |            (all milestones passed) v
+                 |      (last milestone concluded)    v
                  |                              parity_verify
                  |   (gaps & rounds<budget)  /        |        \  (complete)
                  +--------------------------+         |         +--> terminal (success)
                                             (gaps & budget exhausted) --> terminal (FAIL)
 
 Scope owns the milestone set (pipeline/milestones.json); parity_verify owns "done"
-(success only when source coverage is complete). No deferral: budget-exhausted-with-gaps
-is a hard failure.
+(success only when source coverage is complete). Inner give-up (a milestone whose
+repair budget is exhausted) does NOT fail the run -- the milestone is SKIPPED and the
+loop advances; its untranslated behaviour is caught by parity_verify, which re-scopes.
+No deferral at the OUTER level: parity-budget-exhausted-with-gaps is a hard failure.
 
 Run:
-    python -m orchestrator.app --app-id recode-001 --max-iter 5 --max-parity-rounds 3
+    python -m orchestrator.app --app-id recode-001 --max-iter 10 --max-parity-rounds 3
     RECODE_MOCK=1 python -m orchestrator.app --app-id smoke   # offline graph/resume test
 Resume (same app-id): re-run the same command; SQLite persister continues.
 UI:  burr   (then open the printed URL; project "recodeagent-xcvrd")
@@ -57,7 +59,7 @@ def _tracker_enabled() -> bool:
         return False
 
 
-def build_application(app_id: str, max_iter: int = 5, max_parity_rounds: int = 3,
+def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 3,
                      db_path: str = DEFAULT_DB):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     persister = SQLLitePersister.from_values(db_path=db_path, table_name="recode_state")
@@ -73,7 +75,7 @@ def build_application(app_id: str, max_iter: int = 5, max_parity_rounds: int = 3
             translate=actions.translate,
             validate=actions.validate,
             parity_verify=actions.parity_verify,
-            terminal=burr.core.Result("done", "history", "milestone_idx",
+            terminal=burr.core.Result("done", "history", "milestone_idx", "skipped",
                                       "parity_round", "parity_complete", "gaps", "report"),
         )
         .with_transitions(
@@ -84,12 +86,12 @@ def build_application(app_id: str, max_iter: int = 5, max_parity_rounds: int = 3
             ("translate", "validate"),
             # inner loop: repair the current milestone while it fails and there's budget
             ("validate", "translate", expr("not milestone_passed and iter_count < max_iter")),
-            # advance to the next milestone once this one passes
-            ("validate", "select_milestone", expr("milestone_passed and milestone_idx < last_idx")),
-            # all milestones passed -> run the parity (source-coverage) gate
-            ("validate", "parity_verify", expr("milestone_passed and milestone_idx >= last_idx")),
-            # otherwise: inner give-up (budget exhausted) -> terminal (fail)
-            ("validate", "terminal", default),
+            # milestone concluded (passed OR budget exhausted) and more remain -> next milestone.
+            # A give-up here SKIPS the stuck milestone instead of failing the run; the
+            # untranslated behaviour is caught later by the Parity Verifier.
+            ("validate", "select_milestone", expr("milestone_idx < last_idx")),
+            # concluded on the LAST milestone -> run the parity (source-coverage) gate
+            ("validate", "parity_verify", default),
             # outer loop: gaps found + budget left -> re-scope new milestones
             ("parity_verify", "scope", expr("not parity_complete and parity_round < max_parity_rounds")),
             # complete (success) OR gaps + budget exhausted (fail) -> terminal
@@ -113,7 +115,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="ReCodeAgent xcvrd Python->Rust pipeline (Burr).")
     ap.add_argument("--app-id", default=None,
                     help="run id; reuse the same id to resume a crashed run.")
-    ap.add_argument("--max-iter", type=int, default=5, help="repair budget per milestone.")
+    ap.add_argument("--max-iter", type=int, default=10, help="repair budget per milestone (default 10).")
     ap.add_argument("--max-parity-rounds", type=int, default=3,
                     help="outer-loop budget: max parity re-scope rounds before failing.")
     ap.add_argument("--db", default=DEFAULT_DB, help="SQLite persistence path.")
@@ -131,11 +133,17 @@ def main() -> int:
     print(f"[recode] loaded state at startup: milestone_idx={app.state['milestone_idx']} "
           f"history_len={len(app.state['history'])}  (idx>0 or history => resumed, not restarted)")
     last_action, result, final_state = app.run(halt_after=["terminal"])
+    skipped = final_state["skipped"]
     print(f"[recode] finished at {last_action}: done={final_state['done']} "
           f"milestone_idx={final_state['milestone_idx']} "
-          f"parity_round={final_state['parity_round']} parity_complete={final_state['parity_complete']}")
+          f"parity_round={final_state['parity_round']} parity_complete={final_state['parity_complete']} "
+          f"skipped={skipped or '[]'}")
     for h in final_state["history"]:
-        print(f"    {h['milestone']}  iter={h['iter']}  passed={h['passed']}")
+        flag = "  GAVE-UP/SKIPPED" if h.get("gave_up") else ""
+        print(f"    {h['milestone']}  iter={h['iter']}  passed={h['passed']}{flag}")
+    if skipped:
+        print(f"[recode] WARNING: {len(skipped)} milestone(s) skipped after exhausting the repair "
+              f"budget: {skipped}. The Parity Verifier should surface their untranslated behaviour.")
     return 0 if final_state["done"] else 1
 
 

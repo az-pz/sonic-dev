@@ -40,7 +40,7 @@ python -m orchestrator.app --app-id run1
 
 `--app-id` is the resume key: re-running the **same** id continues from the last
 persisted node (crash-resume); use a fresh id to start over. Useful flags:
-`--max-iter N` (per-milestone repair budget, default 5), `--max-parity-rounds N`
+`--max-iter N` (per-milestone repair budget, default 10), `--max-parity-rounds N`
 (outer parity budget, default 3), `--mock` (offline), `--db PATH` (state file).
 Installed as a console script too: `recode --app-id run1`. Watch it live with the
 Burr UI: `burr` → open the printed URL → project `recodeagent-xcvrd` (see §7).
@@ -130,7 +130,16 @@ writes `pipeline/parity_report.json` (`coverage_matrix`, `gaps`, `complete`):
   full cumulative e2e gate ("pass all previous e2e tests") and are verified by new Rust
   unit tests. The inner loop then translates/validates them and control returns to parity.
 - budget exhausted (`--max-parity-rounds`) with gaps still open → **hard failure**
-  (`done=False`). There is no deferral: everything must translate.
+  (`done=False`). There is no deferral at the outer level: everything must translate.
+
+**Inner give-up (skip, don't fail).** Within a milestone, the translate→validate repair
+loop runs up to `--max-iter` times (default **10**). If a milestone still can't be made
+green, the run does **not** stop: the milestone is **skipped** (recorded in `skipped[]`
+and flagged `gave_up` in history) and the loop advances to the next one. The skipped
+milestone's untranslated behaviour then shows up as a **gap in the Parity Verifier**,
+which re-scopes a unit-only milestone to retry it — so nothing is silently dropped, but
+one stubborn milestone no longer blocks the whole pipeline. (A run that finishes with a
+non-empty `skipped[]` prints a warning.)
 
 Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
 offline with mock agents via `tools/check.sh` (8 scenarios, zero tokens).
@@ -461,14 +470,17 @@ From **Git Bash**, in `dev/recodeAgent/`:
 bash tools/check.sh
 ```
 
-Runs four scenarios against the mock agent and prints a summary. Expected:
+Runs eight scenarios against the mock agents and prints a summary. Key ones:
 
 | # | Scenario | Look for |
 |---|----------|----------|
-| 1 | Happy path | `done=True milestone_idx=6`, M0..M6 all `passed=True` |
+| 1 | Happy path | `done=True milestone_idx=6 skipped=[]`, M0..M6 all `passed=True`, parity complete |
 | 2 | Repair loop | `M1 iter=1 passed=False` then `M1 iter=2 passed=True` |
-| 3 | Budget exhaustion (`--max-iter 3`) | `done=False milestone_idx=2` (gave up on M2) |
-| 4 | Crash-resume | process 2 prints `loaded state ... milestone_idx=3` = **resumed, not restarted** |
+| 3 | Inner give-up **skips** (`--max-iter 3`) | `M2 … GAVE-UP/SKIPPED`, run continues M3..M6→parity, `skipped=['M2']` |
+| 4 | Crash-resume (inner) | process 2 prints `loaded state ... milestone_idx=3` = **resumed, not restarted** |
+| 5 | Parity feedback loop | parity `passed=False`, Scoper appends `M7` (origin parity), then `done=True parity_round=2` |
+| 6 | Outer budget exhaustion | `done=False parity_complete=False` (parity never completes) |
+| 7,8 | Crash-resume at scope / parity | process 2 resumes at that node, `done=True` |
 
 Run a single scenario manually:
 
@@ -629,17 +641,25 @@ inject/backup markers — use the read-only status command (changes nothing):
 ### The state machine (what the Burr graph encodes)
 
 ```
-        analyze ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
-                               ▲                                 │
-   (milestone_passed &         │                                 │
-    milestone_idx < last_idx)  └──────────────── select_milestone┤ pass -> advance
-                                                                  │
-             translate ◀──────────────────────────────────────── ┤ (not passed &
-                 (repair the same milestone)                      │  iter < max_iter)
-                                                                  │
-                                              terminal ◀───────── ┘ default
-                                       (last milestone passed, or budget exhausted)
+  analyze ─▶ scope ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
+               ▲                    ▲                              │
+   re-scope    │        concluded & │  (not passed & iter<max_iter)│ repair
+   (parity     │        more left   │            translate ◀───────┤
+    gaps)      │        ───────────▶ select_milestone              │
+               │        (passed OR gave-up: advance; give-up SKIPS │
+               │         the milestone and records it in skipped[])│
+               │                                                   │
+               │              last milestone concluded ─▶ parity_verify
+               │   (gaps & rounds<budget)  ╱        │        ╲ (complete)
+               └──────────────────────────╯         │         ╲─▶ terminal (done=True)
+                                           (gaps & budget spent) ─▶ terminal (done=False)
 ```
+
+Inner loop = per-milestone repair (`translate ⇄ validate`, up to `--max-iter`, default 10).
+A milestone "concludes" when it passes **or** exhausts its repair budget; on give-up it is
+**skipped** (not a run failure) and the loop advances. Outer loop = parity coverage: the
+Parity Verifier re-scopes gaps (including anything a skipped milestone left untranslated)
+until complete, or fails hard once `--max-parity-rounds` is spent with gaps open.
 
 ### Burr telemetry UI (local, live)
 

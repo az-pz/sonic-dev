@@ -28,8 +28,8 @@ echo; echo "===== 2) REPAIR LOOP - M1 fails once, then passes ====="
 reset_run; export RECODE_MOCK_FAIL="M1:1" RECODE_MOCK_PARITY_GAPS=0
 "$PY" -m orchestrator.app --app-id chk-repair --mock
 
-echo; echo "===== 3) INNER BUDGET EXHAUSTION - M2 always fails (max-iter 3) -> give up ====="
-reset_run; export RECODE_MOCK_FAIL="M2:99"
+echo; echo "===== 3) INNER GIVE-UP SKIPS - M2 always fails (max-iter 3) -> skip M2, continue ====="
+reset_run; export RECODE_MOCK_FAIL="M2:99" RECODE_MOCK_PARITY_GAPS=0
 "$PY" -m orchestrator.app --app-id chk-giveup --mock --max-iter 3
 
 echo; echo "===== 4) CRASH-RESUME (inner) - crash at M3, resume SAME app-id ====="
@@ -70,7 +70,8 @@ reset_run
 echo
 echo "All orchestrator checks ran. Verify above:"
 echo "  1 done=True parity_complete=True   2 M1 iter1=False then iter2=True, done=True"
-echo "  3 done=False (inner give-up)        4 proc-2 'milestone_idx=3' => resumed"
+echo "  3 M2 GAVE-UP/SKIPPED (3 iters, passed=False), run CONTINUES M3..M6->parity, skipped=[M2]"
+echo "  4 proc-2 'milestone_idx=3' => resumed"
 echo "  5 ids include appended M7 (origin parity), done=True parity_round=2"
 echo "  6 done=False parity_complete=False (outer give-up, no deferral)"
 echo "  7 proc-2 resumes at scope, done=True   8 proc-2 resumes at parity, done=True"

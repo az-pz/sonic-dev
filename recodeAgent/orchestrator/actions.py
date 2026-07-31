@@ -140,7 +140,7 @@ def _scope_coverage(ms: list) -> dict:
 @action(
     reads=["scope_done", "num_milestones", "gaps"],
     writes=["scope_done", "num_milestones", "last_idx", "milestone_idx",
-            "milestone_passed", "last_agent"],
+            "milestone_passed", "milestone_concluded", "last_agent"],
 )
 def scope(state, __tracer) -> dict:
     """Scoper Agent: turn analysis.md + the source + the xcvrd-tests suite into the
@@ -218,6 +218,7 @@ def scope(state, __tracer) -> dict:
         last_idx=new_count - 1,
         milestone_idx=first_pending,
         milestone_passed=False,
+        milestone_concluded=False,   # fresh milestone set: don't let select_milestone advance past the first pending one
         last_agent="scoper",
     )
 
@@ -252,19 +253,25 @@ def plan(state, __tracer) -> dict:
 
 
 @action(
-    reads=["milestone_idx", "milestone_passed"],
-    writes=["milestone_idx", "iter_count", "milestone_passed"],
+    reads=["milestone_idx", "milestone_concluded"],
+    writes=["milestone_idx", "iter_count", "milestone_passed", "milestone_concluded"],
 )
 def select_milestone(state) -> dict:
-    """Loop head: initialise (from plan) or advance (after a pass).
+    """Loop head: initialise (from plan/scope) or advance (after a milestone concludes).
 
-    On re-entry after a pass, advance to the next milestone; always reset the
-    per-milestone repair counter and the passed flag.
+    A milestone "concludes" when validate either passes it OR exhausts the repair
+    budget (give-up). In both cases we advance to the next milestone -- a stuck
+    milestone is skipped rather than failing the whole run; its untranslated
+    functionality is caught later by the Parity Verifier. On the first entry
+    (from plan, or after a re-scope) `milestone_concluded` is False, so we start
+    the current milestone without advancing. Always reset the per-milestone repair
+    counter, the passed flag, and the concluded flag.
     """
     idx = state["milestone_idx"]
-    if state["milestone_passed"]:          # re-entered because the last one passed
+    if state["milestone_concluded"]:       # re-entered after this milestone passed or was given up
         idx += 1
-    return state.update(milestone_idx=idx, iter_count=0, milestone_passed=False)
+    return state.update(milestone_idx=idx, iter_count=0,
+                        milestone_passed=False, milestone_concluded=False)
 
 
 @action(reads=["milestone_idx", "iter_count", "report"], writes=["last_agent"])
@@ -304,8 +311,9 @@ def translate(state, __tracer) -> dict:
 
 
 @action(
-    reads=["milestone_idx", "iter_count"],
-    writes=["milestone_passed", "iter_count", "report", "history", "done", "last_agent"],
+    reads=["milestone_idx", "iter_count", "max_iter"],
+    writes=["milestone_passed", "milestone_concluded", "iter_count", "report",
+            "history", "skipped", "done", "last_agent"],
 )
 def validate(state, __tracer) -> dict:
     """Validator Agent (adapted): run the mocked unit tests AND the e2e xcvrd-tests
@@ -343,26 +351,35 @@ def validate(state, __tracer) -> dict:
     report = _read_json("report.json")
     passed = bool(report.get("passed"))
     it = state["iter_count"] + 1
-    # Success is no longer decided here: passing the LAST milestone routes to the
-    # Parity Verifier (the source-coverage gate), which owns `done`. validate reaches
-    # `terminal` only on inner give-up (budget exhausted) -> done stays False (fail).
+    # A milestone "concludes" when it passes OR the repair budget is exhausted.
+    # On give-up we do NOT fail the run: select_milestone advances to the next
+    # milestone (the stuck one is skipped and recorded; its untranslated behaviour
+    # is caught later by the Parity Verifier). Success is decided by parity, not here.
+    gave_up = (not passed) and (it >= state["max_iter"])
+    concluded = passed or gave_up
     done = False
-    entry = {"milestone": m.id, "iter": it, "passed": passed}
+    entry = {"milestone": m.id, "iter": it, "passed": passed,
+             "gave_up": gave_up}
     summary = _log_agent(__tracer, stage=f"validate:{m.id}", prompt=prompt, result=res)
     if __tracer is not None:
         try:
             __tracer.log_attributes(milestone=m.id, milestone_passed=passed,
+                                    gave_up=gave_up,
                                     report_tests=report.get("tests", {}),
                                     report_failures=report.get("failures", []))
         except Exception:
             pass
-    return state.update(
+    new = state.update(
         milestone_passed=passed,
+        milestone_concluded=concluded,
         iter_count=it,
         report={} if passed else report,   # clear on pass so next milestone starts fresh
         done=done,
         last_agent="validator",
     ).append(history=entry)
+    if gave_up:
+        new = new.append(skipped=m.id)     # record the un-fixable milestone for the final verdict
+    return new
 
 
 @action(
