@@ -94,23 +94,44 @@ def respond(agent_name: str, prompt: str) -> str:
         mid = _extract_milestone(prompt)
         if os.environ.get("RECODE_CRASH_AT") == mid:
             raise RuntimeError(f"(mock) simulated crash at {mid}")
+        # Is this a "retry deferred tests" milestone? (origin=retry in milestones.json)
+        retry_refs: list[str] = []
+        is_retry = False
+        try:
+            from . import milestones as M
+            mobj = M.by_id(mid)
+            is_retry = (mobj.origin == "retry")
+            retry_refs = list(mobj.source_refs)
+        except Exception:
+            pass
         # Decide pass/fail from RECODE_MOCK_FAIL + a per-milestone attempt counter.
+        # RECODE_MOCK_RETRY_FAIL=1 forces retry milestones to always fail (permanent skip).
         budget = _fail_budget().get(mid, 0)
+        if is_retry and os.environ.get("RECODE_MOCK_RETRY_FAIL") == "1":
+            budget = 10 ** 9
         cnt_file = pdir / f".mock_attempts_{mid}"
         attempts = int(cnt_file.read_text()) if cnt_file.exists() else 0
         attempts += 1
         cnt_file.write_text(str(attempts))
         passed = attempts > budget
+        # On a retry milestone, the failing tests are the re-enabled ones (source_refs)
+        # -- mirroring the validator reporting the actual deferred tests, not a synthetic id.
+        if passed:
+            failures = []
+        elif is_retry and retry_refs:
+            failures = [{"layer": "e2e", "test": t,
+                         "symptom": f"(mock) retry {mid} attempt {attempts} still failing",
+                         "repair_hint": "mock"} for t in retry_refs]
+        else:
+            failures = [{"layer": "e2e",
+                         "test": f"tests/test_mock_{mid}.py::test_mock_{mid}_behavior",
+                         "symptom": f"(mock) {mid} attempt {attempts} <= budget {budget}",
+                         "repair_hint": "mock"}]
         report = {
             "milestone": mid,
             "passed": passed,
             "tests": {"total": 3, "passed": 3 if passed else 1, "failed": 0 if passed else 2},
-            "failures": [] if passed else [
-                {"layer": "e2e",
-                 "test": f"tests/test_mock_{mid}.py::test_mock_{mid}_behavior",
-                 "symptom": f"(mock) {mid} attempt {attempts} <= budget {budget}",
-                 "repair_hint": "mock"},
-            ],
+            "failures": failures,
         }
         (pdir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         return f"mock validator: {mid} {'PASS' if passed else 'FAIL'} (attempt {attempts})"

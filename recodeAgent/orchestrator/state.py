@@ -23,6 +23,7 @@ State keys
   max_parity_rounds: int   outer-loop budget: max parity re-scope rounds before failing
   parity_complete  : bool  did the last parity pass find full source coverage?
   gaps             : list  untranslated-source gaps from the last parity report
+  retry_pending    : bool  parity appended a retry milestone for deferred skips -> re-run the loop
   done             : bool  whole pipeline finished SUCCESSFULLY (parity complete)
 """
 from __future__ import annotations
@@ -51,6 +52,7 @@ def initial_state(max_iter: int = 10, max_parity_rounds: int = 3) -> dict:
         "max_parity_rounds": max_parity_rounds,
         "parity_complete": False,
         "gaps": [],
+        "retry_pending": False,
         "done": False,
         "last_agent": "",
     }

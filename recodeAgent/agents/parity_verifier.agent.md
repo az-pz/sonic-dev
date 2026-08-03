@@ -19,6 +19,7 @@ You run in `dev/recodeAgent/`. Key locations:
 - `pipeline/crate/xcvrd-rs/` — the **final Rust translation** (the working copy; never the immutable `crate/`). This is what you check for coverage.
 - `pipeline/analysis.md` — the Analyzer's **module inventory** and source→Rust structural mapping. Use its inventory as the list of modules to iterate, and its mapping to know which Rust module should implement which Python module.
 - `pipeline/milestones.json` — the milestone set so far (to understand what was intended to be covered and to avoid re-flagging already-appended parity milestones that are still in flight).
+- `pipeline/skips.json` — e2e tests that earlier milestones **gave up on** (`tests_to_skip`) and which have already had their one retry (`retried`). The source these tests exercise is almost always an untranslated gap — **fold it into your coverage assessment and gaps** so it isn't lost. (The orchestrator handles the retry mechanics deterministically: after you report, it gives any not-yet-retried skip ONE dedicated retry milestone that re-enables it; if it still fails it is skipped permanently. You don't manage skips.json — just make sure the missing behaviour behind a skipped test shows up as a gap when its source is genuinely untranslated.)
 - `../xcvrd-tests/` (granted via --add-dir) — reference only, to understand observable behavior. **Never modify it.**
 
 ## Method: per-module coverage

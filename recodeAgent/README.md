@@ -135,14 +135,26 @@ writes `pipeline/parity_report.json` (`coverage_matrix`, `gaps`, `complete`):
 **Inner give-up (skip, don't fail).** Within a milestone, the translate→validate repair
 loop runs up to `--max-iter` times (default **10**). If a milestone still can't be made
 green, the run does **not** stop: the milestone is **skipped** (recorded in `skipped[]`
-and flagged `gave_up` in history) and the loop advances to the next one. The skipped
-milestone's untranslated behaviour then shows up as a **gap in the Parity Verifier**,
-which re-scopes a unit-only milestone to retry it — so nothing is silently dropped, but
-one stubborn milestone no longer blocks the whole pipeline. (A run that finishes with a
-non-empty `skipped[]` prints a warning.)
+and flagged `gave_up` in history), its still-failing **e2e tests are recorded in
+`pipeline/skips.json`** (`tests_to_skip`) and deselected from every later milestone's
+cumulative gate (so they can't drag each one back to `max_iter`), and the loop advances.
+
+**Deferred-test retry (one shot, then permanent).** When the Parity Verifier runs, it
+also **revisits `pipeline/skips.json`**. For any skipped test that hasn't yet had a
+retry, it appends **one dedicated retry milestone** (`origin="retry"`) that **re-enables**
+those tests (removes them from `tests_to_skip`) and sends the loop back for a fresh
+translate/validate attempt. Outcomes:
+- retry **passes** → the tests are un-deferred (stay out of `tests_to_skip`); the fix stuck.
+- retry **gives up** → the tests go back into `tests_to_skip` and, since they're now in
+  `skips.json`'s `retried` list, they are **skipped permanently** (never retried again).
+  The run surfaces them as `PERMANENTLY SKIPPED` and may terminate.
+
+So a stubborn test gets exactly one focused second chance, then stops wasting budget.
+Its untranslated source still shows up as a **parity gap** (→ re-scope) until coverage
+is complete or the outer budget is spent.
 
 Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
-offline with mock agents via `tools/check.sh` (8 scenarios, zero tokens).
+offline with mock agents via `tools/check.sh` (9 scenarios, zero tokens).
 
 Everything else — Analyzer, Planner, skeleton-first, name mapping, the
 translate→validate→repair loop with `maxIter` — is the paper's design.

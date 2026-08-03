@@ -64,28 +64,79 @@ def _read_json(name: str) -> dict:
 # When a milestone exhausts its repair budget (give-up), the e2e tests it could
 # not make pass are recorded here so EVERY subsequent milestone's cumulative gate
 # deselects them -- otherwise the same failures would drag each later milestone
-# back to max_iter. They are "fix later" (surfaced by the Parity Verifier), not
-# silently dropped. Format: {"tests_to_skip": ["test_file.py::test_func", ...]}.
+# back to max_iter. They are "fix later": the Parity Verifier gives them ONE
+# dedicated retry milestone (re-enabled), and if they still fail they are skipped
+# forever. Format:
+#   {"tests_to_skip": ["test_file.py::test_func", ...],   # currently deselected
+#    "retried":      ["test_file.py::test_func", ...]}     # already got their one retry
 SKIPS_FILE = "skips.json"
 
 
-def _load_skips() -> list[str]:
+def _load_skips_full() -> dict:
     data = _read_json(SKIPS_FILE)
-    ids = data.get("tests_to_skip", []) if isinstance(data, dict) else []
-    return [s for s in ids if isinstance(s, str) and s]
+    if not isinstance(data, dict):
+        data = {}
+    def _clean(key):
+        return [s for s in data.get(key, []) if isinstance(s, str) and s]
+    return {"tests_to_skip": _clean("tests_to_skip"), "retried": _clean("retried")}
+
+
+def _write_skips(data: dict) -> None:
+    (_pipeline() / SKIPS_FILE).write_text(
+        json.dumps({"tests_to_skip": data.get("tests_to_skip", []),
+                    "retried": data.get("retried", [])}, indent=2),
+        encoding="utf-8")
+
+
+def _load_skips() -> list[str]:
+    """The actively-deselected tests (tests_to_skip)."""
+    return _load_skips_full()["tests_to_skip"]
 
 
 def _add_skips(test_ids: list[str]) -> list[str]:
-    """Merge new node-ids into pipeline/skips.json (dedup, order-preserving)."""
-    cur = _load_skips()
+    """Merge new node-ids into tests_to_skip (dedup, order-preserving)."""
+    data = _load_skips_full()
+    cur = data["tests_to_skip"]
     seen = set(cur)
     for t in test_ids:
         if t and t not in seen:
             cur.append(t)
             seen.add(t)
-    (_pipeline() / SKIPS_FILE).write_text(
-        json.dumps({"tests_to_skip": cur}, indent=2), encoding="utf-8")
+    data["tests_to_skip"] = cur
+    _write_skips(data)
     return cur
+
+
+def _eligible_for_retry() -> list[str]:
+    """Skipped tests that have NOT yet been given their one retry milestone."""
+    data = _load_skips_full()
+    retried = set(data["retried"])
+    return [t for t in data["tests_to_skip"] if t not in retried]
+
+
+def _begin_retry(test_ids: list[str]) -> None:
+    """Start a retry for these tests: mark them retried (permanent record, so they
+    never get a second retry) and REMOVE them from tests_to_skip so the retry
+    milestone's cumulative gate re-enables them (they run instead of being
+    deselected). If they fail again, the give-up path re-adds them to tests_to_skip
+    -- now permanently, since they're already in `retried`."""
+    data = _load_skips_full()
+    ids = [t for t in test_ids if t]
+    retried = data["retried"]
+    for t in ids:
+        if t not in retried:
+            retried.append(t)
+    keep = set(ids)
+    data["tests_to_skip"] = [t for t in data["tests_to_skip"] if t not in keep]
+    data["retried"] = retried
+    _write_skips(data)
+
+
+def _permanent_skips() -> list[str]:
+    """Tests that were retried and STILL fail -> skipped forever."""
+    data = _load_skips_full()
+    retried = set(data["retried"])
+    return [t for t in data["tests_to_skip"] if t in retried]
 
 
 def _skip_funcs(skips: list[str]) -> list[str]:
@@ -448,23 +499,32 @@ def validate(state, __tracer) -> dict:
 
 
 @action(
-    reads=["parity_round", "max_parity_rounds"],
-    writes=["parity_round", "parity_complete", "gaps", "done", "history", "last_agent"],
+    reads=["parity_round", "max_parity_rounds", "num_milestones"],
+    writes=["parity_round", "parity_complete", "gaps", "done", "history", "last_agent",
+            "retry_pending", "num_milestones", "last_idx", "milestone_idx",
+            "milestone_passed", "milestone_concluded", "iter_count"],
 )
 def parity_verify(state, __tracer) -> dict:
-    """Parity Verifier Agent: after every milestone passes its tests, comprehensively
-    compare the Python source against the final Rust translation, PER MODULE, to verify
-    nothing was left untranslated. Writes pipeline/parity_report.json
-    {coverage_matrix, gaps, complete}. If complete -> the pipeline is done (success).
-    If gaps remain and there's outer-loop budget -> they feed back to the Scoper as new
-    milestones; if the budget is exhausted with gaps still open, the run FAILS (there is
-    no deferral -- everything must translate)."""
+    """Parity Verifier Agent: after every milestone concludes, comprehensively compare
+    the Python source against the final Rust translation, PER MODULE, to verify nothing
+    was left untranslated. Writes pipeline/parity_report.json {coverage_matrix, gaps,
+    complete}.
+
+    It ALSO revisits pipeline/skips.json (tests earlier milestones gave up on): if any
+    skipped test has not yet had its retry, it appends ONE dedicated retry milestone that
+    RE-ENABLES those tests (removes them from tests_to_skip) and routes back into the
+    milestone loop for a fresh translate/validate attempt. If that retry still can't make
+    them pass, they are marked permanently skipped (never retried again) and the run may
+    terminate. Otherwise: gaps + budget -> re-scope; complete -> done."""
     prompt = (
         f"Comprehensively verify translation completeness. Compare the Python xcvrd "
         f"source at {SOURCE} against the final Rust translation at "
         f"{PIPELINE_CRATE/'xcvrd-rs'}, working PER MODULE over the module inventory in "
         f"{PIPELINE/'analysis.md'}. For each source module, determine whether every "
-        "function / behavior / branch has a corresponding Rust implementation. Write "
+        "function / behavior / branch has a corresponding Rust implementation. Also "
+        f"consider {PIPELINE/'skips.json'} (e2e tests earlier milestones deferred): the "
+        "source those tests exercise is very likely an untranslated gap -- reflect it in "
+        "the report. Write "
         f"{PIPELINE/'parity_report.json'} as {{\"coverage_matrix\":[{{\"module\",\"covered\","
         "\"missing\":[...]}], \"gaps\":[{\"source_ref\",\"functionality\",\"suggested_milestone\"}], "
         "\"complete\": true|false}. `complete` is true ONLY when every module is fully "
@@ -480,19 +540,61 @@ def parity_verify(state, __tracer) -> dict:
     complete = bool(rep.get("complete"))
     gaps = rep.get("gaps", []) or []
     rnd = state["parity_round"] + 1
+
+    # Revisit deferred tests: give un-retried skips ONE dedicated retry milestone.
+    eligible = _eligible_for_retry()
+    have_budget = state["parity_round"] < state["max_parity_rounds"]
+    retry_pending = bool(eligible) and have_budget
+
+    upd = dict(
+        parity_round=rnd,
+        parity_complete=complete,
+        gaps=gaps,
+        last_agent="parity_verifier",
+        retry_pending=retry_pending,
+    )
+    entry = {"milestone": "PARITY", "iter": rnd, "passed": complete}
+
+    if retry_pending:
+        # Append ONE retry milestone that re-enables the eligible skipped tests and
+        # send the loop back to it. _begin_retry marks them retried (their one shot)
+        # and un-defers them so the retry actually runs them.
+        ms = milestones.load()
+        base = len(ms)
+        nid = f"M{base}"
+        ms.append(milestones.Milestone(
+            nid, "Retry deferred tests",
+            "Fix and re-enable the previously-skipped e2e tests so they pass: "
+            f"{json.dumps(eligible)}. Implement the daemon functionality they exercise; "
+            "they have been re-enabled in the cumulative gate for this milestone. If they "
+            "still cannot pass, they will be skipped permanently.",
+            test_modules=[], origin="retry", unit_only=False,
+            source_refs=list(eligible), deps=[ms[-1].id] if ms else [],
+        ))
+        milestones.save(ms)
+        _begin_retry(eligible)
+        upd.update(
+            num_milestones=base + 1,
+            last_idx=base,          # the new retry milestone is last
+            milestone_idx=base,     # run it next
+            milestone_passed=False,
+            milestone_concluded=False,
+            iter_count=0,
+            done=False,             # not done: we're re-entering the loop
+        )
+        entry["retry_for"] = eligible
+    else:
+        upd["done"] = complete      # success iff full source coverage
+
     _log_agent(__tracer, stage=f"parity_verify:round{rnd}", prompt=prompt, result=res)
     if __tracer is not None:
         try:
             __tracer.log_attributes(parity_round=rnd, parity_complete=complete,
                                     gap_count=len(gaps), gaps=gaps[:50],
+                                    retry_pending=retry_pending,
+                                    retry_tests=eligible if retry_pending else [],
+                                    permanent_skips=_permanent_skips(),
                                     coverage_matrix=rep.get("coverage_matrix", []))
         except Exception:
             pass
-    entry = {"milestone": "PARITY", "iter": rnd, "passed": complete}
-    return state.update(
-        parity_round=rnd,
-        parity_complete=complete,
-        gaps=gaps,
-        done=complete,                # success iff full source coverage
-        last_agent="parity_verifier",
-    ).append(history=entry)
+    return state.update(**upd).append(history=entry)

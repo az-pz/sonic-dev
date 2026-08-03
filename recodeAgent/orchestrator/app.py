@@ -10,14 +10,17 @@ correctness) and the parity coverage loop (outer, completeness).
                  |                                    |
                  |      (last milestone concluded)    v
                  |                              parity_verify
-                 |   (gaps & rounds<budget)  /        |        \  (complete)
-                 +--------------------------+         |         +--> terminal (success)
-                                            (gaps & budget exhausted) --> terminal (FAIL)
+                 |   (gaps & rounds<budget)  /   |    |    \  (complete & no retry)
+                 +--------------------------+    |    |     +--> terminal (success)
+                        (retry_pending) select_milestone   (gaps & budget spent) --> terminal (FAIL)
 
 Scope owns the milestone set (pipeline/milestones.json); parity_verify owns "done"
 (success only when source coverage is complete). Inner give-up (a milestone whose
-repair budget is exhausted) does NOT fail the run -- the milestone is SKIPPED and the
-loop advances; its untranslated behaviour is caught by parity_verify, which re-scopes.
+repair budget is exhausted) does NOT fail the run -- the milestone is SKIPPED, its
+still-failing e2e tests are recorded in pipeline/skips.json and deselected from later
+milestones, and the loop advances. parity_verify then revisits skips.json: any test
+not yet retried gets ONE dedicated retry milestone (re-enabled); if it still fails it
+is skipped permanently. Untranslated behaviour surfaces as parity gaps -> re-scope.
 No deferral at the OUTER level: parity-budget-exhausted-with-gaps is a hard failure.
 
 Run:
@@ -92,6 +95,8 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
             ("validate", "select_milestone", expr("milestone_idx < last_idx")),
             # concluded on the LAST milestone -> run the parity (source-coverage) gate
             ("validate", "parity_verify", default),
+            # parity revisited skips.json and appended a retry milestone -> run it
+            ("parity_verify", "select_milestone", expr("retry_pending")),
             # outer loop: gaps found + budget left -> re-scope new milestones
             ("parity_verify", "scope", expr("not parity_complete and parity_round < max_parity_rounds")),
             # complete (success) OR gaps + budget exhausted (fail) -> terminal
@@ -140,10 +145,15 @@ def main() -> int:
           f"skipped={skipped or '[]'}")
     for h in final_state["history"]:
         flag = "  GAVE-UP/SKIPPED" if h.get("gave_up") else ""
+        if h.get("retry_for"):
+            flag += f"  [retry for {h['retry_for']}]"
         print(f"    {h['milestone']}  iter={h['iter']}  passed={h['passed']}{flag}")
     if skipped:
         print(f"[recode] WARNING: {len(skipped)} milestone(s) skipped after exhausting the repair "
-              f"budget: {skipped}. The Parity Verifier should surface their untranslated behaviour.")
+              f"budget: {skipped}. The Parity Verifier gave deferred tests one retry milestone.")
+    perm = actions._permanent_skips()
+    if perm:
+        print(f"[recode] PERMANENTLY SKIPPED (failed even after a retry milestone): {perm}")
     return 0 if final_state["done"] else 1
 
 
