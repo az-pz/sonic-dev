@@ -1,0 +1,4 @@
+# Normalize line endings so shell scripts always check out with LF, even on
+# Windows clones. CRLF in a bash script breaks execution on Linux (the DUT /
+# sonic-dev testbed), e.g. "set: invalid option" / "$'\r': command not found".
+*.sh text eol=lf
