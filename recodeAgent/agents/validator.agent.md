@@ -24,9 +24,20 @@ python -m orchestrator.milestones --args <MILESTONE>
 
 which prints the cumulative pytest args (e.g. two lines: `-k` and `test_presence or test_info_content or test_dom or test_interaction_trace or test_status_error`). Then call the harness in the form **`validate_on_dut.sh <MILESTONE> -k "<expr>"`** (see below). For **M0** the command prints nothing — it's the deploy-smoke gate, so run `validate_on_dut.sh M0` with no `-k`.
 
+## Deferred / known-failing tests: `pipeline/skips.json`
+Before running the e2e layer, read **`pipeline/skips.json`** (it may not exist — then there's nothing to skip). Its shape is:
+
+```json
+{ "tests_to_skip": ["test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture", "..."] }
+```
+
+These are e2e tests an earlier milestone **gave up on** (exhausted its repair budget); they are known-failing and deferred to be fixed later, so they must **not** gate this milestone. **Exclude each one** by appending `and not <func>` (the name after `::`) to your `-k` expression, e.g.
+`-k "(test_presence or test_dom or test_link_change_flags) and not test_link_change_triggers_fast_flag_recapture"`.
+Do **not** re-add or force-run a skipped test, and do **not** report it as a failure. (The orchestrator's prompt already gives you the exact `-k` string with these exclusions baked in — use it as-is.)
+
 ## Your task
 1. **Unit layer:** run `bash tools/unit_test.sh`. Read the `cargo test` output: record total/passed/failed and each failing test's name + assertion.
-2. **E2E layer:** resolve the cumulative selection with `python -m orchestrator.milestones --args <MILESTONE>`, then run **`bash tools/validate_on_dut.sh <MILESTONE> -k "<cumulative test expr>"`** (for M0, just `bash tools/validate_on_dut.sh M0`). It builds `pipeline/crate` for pmon, **reversibly** injects the Rust binary into `pmon` (the Python xcvrd is always restored afterward), runs exactly that `-k` subset of `xcvrd-tests/run.sh` against the live emulator, parses `results.xml`, writes `pipeline/report.json`, and restores the Python xcvrd. It streams the full pytest output — read it. A build failure counts as a validation failure (the Translator must fix compilation).
+2. **E2E layer:** resolve the cumulative selection with `python -m orchestrator.milestones --args <MILESTONE>`, subtract the `pipeline/skips.json` entries (append `and not <func>` per skip), then run **`bash tools/validate_on_dut.sh <MILESTONE> -k "<cumulative-minus-skips expr>"`** (for M0, just `bash tools/validate_on_dut.sh M0`). It builds `pipeline/crate` for pmon, **reversibly** injects the Rust binary into `pmon` (the Python xcvrd is always restored afterward), runs exactly that `-k` subset of `xcvrd-tests/run.sh` against the live emulator, parses `results.xml`, writes `pipeline/report.json`, and restores the Python xcvrd. It streams the full pytest output — read it. A build failure counts as a validation failure (the Translator must fix compilation).
 3. **Combine + augment.** Rewrite `pipeline/report.json` to a single verdict covering BOTH layers:
    ```json
    {
@@ -38,11 +49,15 @@ which prints the cumulative pytest args (e.g. two lines: `-k` and `test_presence
        {"layer": "unit", "test": "dom::tests::dom_sensor_publishes",
         "symptom": "expected TRANSCEIVER_DOM_SENSOR temperature, got none",
         "likely_cause": "dom poll not writing the sensor table",
-        "repair_hint": "implement src/dom.rs publish path; mirror dom/dom_mgr.py"}
+        "repair_hint": "implement src/dom.rs publish path; mirror dom/dom_mgr.py"},
+       {"layer": "e2e", "test": "test_dom.py::test_dom_sensor_values",
+        "symptom": "TRANSCEIVER_DOM_SENSOR|Ethernet100 temperature missing",
+        "likely_cause": "DOM poll cadence not publishing sensor row",
+        "repair_hint": "dom/dom_mgr.py DomInfoUpdateTask -> src/dom.rs"}
      ]
    }
    ```
-   `passed` is `true` **only if unit AND e2e both fully pass** (`failures: []`). For each failing unit or e2e test, give an actionable entry: the layer, test id, the assertion/stack essence, the **likely STATE_DB table/field or daemon behaviour at fault**, and a **repair hint** naming the probable source fragment/Rust module (cross-reference `pipeline/analysis.md` / `pipeline/plan.json` and `source/xcvrd/`).
+   `passed` is `true` **only if unit AND e2e both fully pass** (`failures: []`). For each failing unit or e2e test, give an actionable entry: the layer, test id, the assertion/stack essence, the **likely STATE_DB table/field or daemon behaviour at fault**, and a **repair hint** naming the probable source fragment/Rust module (cross-reference `pipeline/analysis.md` / `pipeline/plan.json` and `source/xcvrd/`). For an **e2e** failure, `"test"` MUST be the pytest node id `test_file.py::test_func` — the orchestrator records these into `pipeline/skips.json` if the milestone later gives up, so they can be deselected by subsequent milestones.
 4. **Verify the testbed is healthy** after the e2e run: the harness restores the Python xcvrd; confirm the final status shows `xcvrd RUNNING`. If the DUT was left dirty (ENOSPC, truncated binary, xcvrd not RUNNING), say so prominently.
 
 ## Environment notes

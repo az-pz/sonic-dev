@@ -16,7 +16,8 @@ PY="${PYTHON:-python}"
 reset_run() {
   rm -f "$HERE/pipeline/burr.db" "$HERE"/pipeline/.mock_attempts_* \
         "$HERE/pipeline/.mock_parity_attempts" \
-        "$HERE/pipeline/milestones.json" "$HERE/pipeline/parity_report.json" 2>/dev/null
+        "$HERE/pipeline/milestones.json" "$HERE/pipeline/parity_report.json" \
+        "$HERE/pipeline/skips.json" 2>/dev/null
   unset RECODE_MOCK_FAIL RECODE_CRASH_AT RECODE_MOCK_PARITY_GAPS 2>/dev/null || true
 }
 
@@ -31,6 +32,15 @@ reset_run; export RECODE_MOCK_FAIL="M1:1" RECODE_MOCK_PARITY_GAPS=0
 echo; echo "===== 3) INNER GIVE-UP SKIPS - M2 always fails (max-iter 3) -> skip M2, continue ====="
 reset_run; export RECODE_MOCK_FAIL="M2:99" RECODE_MOCK_PARITY_GAPS=0
 "$PY" -m orchestrator.app --app-id chk-giveup --mock --max-iter 3
+echo "  skips.json after give-up (expect M2's e2e test recorded):"
+"$PY" - <<'PY'
+import json, os
+p = os.path.join(os.environ["RECODE_PIPELINE_DIR"], "skips.json")
+try:
+    print("    ", json.load(open(p)).get("tests_to_skip"))
+except FileNotFoundError:
+    print("     MISSING skips.json (FAIL)")
+PY
 
 echo; echo "===== 4) CRASH-RESUME (inner) - crash at M3, resume SAME app-id ====="
 reset_run; export RECODE_MOCK_PARITY_GAPS=0
@@ -70,7 +80,7 @@ reset_run
 echo
 echo "All orchestrator checks ran. Verify above:"
 echo "  1 done=True parity_complete=True   2 M1 iter1=False then iter2=True, done=True"
-echo "  3 M2 GAVE-UP/SKIPPED (3 iters, passed=False), run CONTINUES M3..M6->parity, skipped=[M2]"
+echo "  3 M2 GAVE-UP/SKIPPED (3 iters, passed=False), run CONTINUES M3..M6->parity, skipped=[M2], skips.json has M2's e2e test"
 echo "  4 proc-2 'milestone_idx=3' => resumed"
 echo "  5 ids include appended M7 (origin parity), done=True parity_round=2"
 echo "  6 done=False parity_complete=False (outer give-up, no deferral)"

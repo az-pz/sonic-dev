@@ -60,6 +60,44 @@ def _read_json(name: str) -> dict:
         return {}
 
 
+# --- skips.json: known-failing e2e tests deferred for later -------------------
+# When a milestone exhausts its repair budget (give-up), the e2e tests it could
+# not make pass are recorded here so EVERY subsequent milestone's cumulative gate
+# deselects them -- otherwise the same failures would drag each later milestone
+# back to max_iter. They are "fix later" (surfaced by the Parity Verifier), not
+# silently dropped. Format: {"tests_to_skip": ["test_file.py::test_func", ...]}.
+SKIPS_FILE = "skips.json"
+
+
+def _load_skips() -> list[str]:
+    data = _read_json(SKIPS_FILE)
+    ids = data.get("tests_to_skip", []) if isinstance(data, dict) else []
+    return [s for s in ids if isinstance(s, str) and s]
+
+
+def _add_skips(test_ids: list[str]) -> list[str]:
+    """Merge new node-ids into pipeline/skips.json (dedup, order-preserving)."""
+    cur = _load_skips()
+    seen = set(cur)
+    for t in test_ids:
+        if t and t not in seen:
+            cur.append(t)
+            seen.add(t)
+    (_pipeline() / SKIPS_FILE).write_text(
+        json.dumps({"tests_to_skip": cur}, indent=2), encoding="utf-8")
+    return cur
+
+
+def _skip_funcs(skips: list[str]) -> list[str]:
+    """The pytest -k function-name for each skip node-id (part after '::')."""
+    out: list[str] = []
+    for s in skips:
+        fn = s.split("::")[-1].strip()
+        if fn and fn not in out:
+            out.append(fn)
+    return out
+
+
 def _log_agent(tracer, *, stage: str, prompt: str, result) -> dict:
     """Surface a Copilot invocation in the Burr UI: log the chat transcript, a
     change summary, and run stats as attributes on the current action (visible in
@@ -320,13 +358,26 @@ def validate(state, __tracer) -> dict:
     on the DUT for the working copy; write the authoritative combined report.json."""
     m = S.current_milestone(state)
     gate = milestones.cumulative_args(m.id)   # CUMULATIVE: this milestone + all earlier ones
+    # Deselect any tests recorded in pipeline/skips.json (known-failing e2e tests a
+    # previous milestone gave up on) so they don't drag this milestone back to max_iter.
+    skips = _load_skips()
+    skip_funcs = _skip_funcs(skips)
     # Build the exact explicit harness invocation, passing -k with the cumulative
-    # test selection (M0 has no e2e tests -> deploy-smoke, no -k).
+    # selection AND `and not <func>` exclusions for skipped tests (M0 has no e2e
+    # tests -> deploy-smoke, no -k).
     if gate:
         gate_expr = gate[1] if len(gate) >= 2 else ""
+        if skip_funcs:
+            gate_expr = "(" + gate_expr + ") " + "".join(f"and not {fn} " for fn in skip_funcs)
+            gate_expr = gate_expr.strip()
         e2e_cmd = f'bash tools/validate_on_dut.sh {m.id} -k "{gate_expr}"'
     else:
         e2e_cmd = f"bash tools/validate_on_dut.sh {m.id}"
+    skip_note = (
+        f" NOTE: {len(skips)} test(s) are in {PIPELINE/'skips.json'} (known-failing, deferred "
+        "by earlier milestones); the -k above already deselects them via `and not <func>` -- do "
+        "NOT re-add or force-run them, and do NOT count them as failures.\n"
+        if skips else "")
     prompt = (
         f"Validate milestone {m.id} ({m.title}). Run BOTH validation layers on the "
         f"working copy {PIPELINE_CRATE}:\n"
@@ -335,13 +386,17 @@ def validate(state, __tracer) -> dict:
         f"2. E2E black-box oracle (authoritative): run `{e2e_cmd}` -- pass the CUMULATIVE "
         "gate EXPLICITLY as a pytest -k selection (this milestone's tests PLUS every "
         "earlier milestone's; resolve it yourself with `python -m orchestrator.milestones "
-        f"--args {m.id}`). It builds the Rust crate for pmon, injects it (reversibly), runs "
-        "exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
+        f"--args {m.id}`, then read {PIPELINE/'skips.json'} and append `and not <func>` for "
+        "each of its tests_to_skip). It builds the Rust crate for pmon, injects it (reversibly), "
+        "runs exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
         "results.xml into pipeline/report.json.\n"
+        + skip_note +
         f"Then write the authoritative verdict to {PIPELINE/'report.json'} as "
         '{"milestone","passed","tests","failures"}, where `passed` requires BOTH the unit '
-        "tests AND the e2e suite to pass, and `failures` gives actionable, structured repair "
-        "guidance for each failing unit or e2e test. Never edit the daemon, tests, or platform."
+        "tests AND the e2e suite to pass. Each failure needs actionable, structured repair "
+        'guidance; for an e2e failure set "layer":"e2e" and "test" to the pytest node id '
+        '"test_file.py::test_func" (so it can be recorded for skipping). Never edit the daemon, '
+        "tests, or platform."
     )
     res = invoke_agent(
         "validator", prompt=prompt, cwd=ROOT,
@@ -360,11 +415,21 @@ def validate(state, __tracer) -> dict:
     done = False
     entry = {"milestone": m.id, "iter": it, "passed": passed,
              "gave_up": gave_up}
+    # On give-up, record the still-failing e2e tests into pipeline/skips.json so every
+    # later milestone's cumulative gate deselects them (see _add_skips docstring).
+    newly_skipped: list[str] = []
+    if gave_up:
+        for f in report.get("failures", []):
+            if isinstance(f, dict) and f.get("layer") == "e2e" and f.get("test"):
+                newly_skipped.append(f["test"])
+        if newly_skipped:
+            _add_skips(newly_skipped)
     summary = _log_agent(__tracer, stage=f"validate:{m.id}", prompt=prompt, result=res)
     if __tracer is not None:
         try:
             __tracer.log_attributes(milestone=m.id, milestone_passed=passed,
-                                    gave_up=gave_up,
+                                    gave_up=gave_up, deselected_tests=skips,
+                                    newly_skipped_tests=newly_skipped,
                                     report_tests=report.get("tests", {}),
                                     report_failures=report.get("failures", []))
         except Exception:

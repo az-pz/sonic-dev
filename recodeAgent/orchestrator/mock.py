@@ -105,7 +105,12 @@ def respond(agent_name: str, prompt: str) -> str:
             "milestone": mid,
             "passed": passed,
             "tests": {"total": 3, "passed": 3 if passed else 1, "failed": 0 if passed else 2},
-            "failures": [] if passed else [f"(mock) {mid} attempt {attempts} <= budget {budget}"],
+            "failures": [] if passed else [
+                {"layer": "e2e",
+                 "test": f"tests/test_mock_{mid}.py::test_mock_{mid}_behavior",
+                 "symptom": f"(mock) {mid} attempt {attempts} <= budget {budget}",
+                 "repair_hint": "mock"},
+            ],
         }
         (pdir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         return f"mock validator: {mid} {'PASS' if passed else 'FAIL'} (attempt {attempts})"
