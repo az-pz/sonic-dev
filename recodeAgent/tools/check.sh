@@ -89,6 +89,23 @@ export RECODE_CRASH_AT="PARITY"; "$PY" -m orchestrator.app --app-id chk-rparity 
 echo "  (process 1 crashed in parity; starting process 2 to resume...)"
 unset RECODE_CRASH_AT; "$PY" -m orchestrator.app --app-id chk-rparity --mock
 
+echo; echo "===== 9) EXISTING PIPELINE START - skip analyze/scope/plan, begin at M3 ====="
+reset_run; export RECODE_MOCK_PARITY_GAPS=0
+START_DIR="$HERE/pipeline_start_check"
+rm -rf "$START_DIR"
+mkdir -p "$START_DIR"
+# Seed realistic artifacts with a normal mock run, then reuse them with a fresh DB/id.
+RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
+  --pipeline-dir "$START_DIR" --app-id chk-start-seed \
+  --db "$START_DIR/seed.db" --mock >/dev/null
+mkdir -p "$START_DIR/crate/xcvrd-rs"
+rm -f "$START_DIR"/.mock_* "$START_DIR/report.json" "$START_DIR/parity_report.json"
+RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
+  --pipeline-dir "$START_DIR" --start-milestone M3 \
+  --app-id chk-start-m3 --db "$START_DIR/start.db" --mock
+rm -rf "$START_DIR"
+export RECODE_PIPELINE_DIR="$HERE/pipeline"
+
 reset_run
 echo
 echo "All orchestrator checks ran. Verify above:"
@@ -99,4 +116,5 @@ echo "  4 proc-2 'milestone_idx=3' => resumed"
 echo "  5 ids include appended M7 (origin parity), done=True parity_round=2"
 echo "  6 done=False parity_complete=False (outer give-up, no deferral)"
 echo "  7 proc-2 resumes at scope, done=True   8 proc-2 resumes at parity, done=True"
+echo "  9 starts at M3 (history begins M3; no M0/M1/M2, analyze/scope/plan skipped)"
 echo "Artifacts: pipeline/{milestones,report,parity_report,skips}.json ; traces: ~/.burr/recodeagent-xcvrd"

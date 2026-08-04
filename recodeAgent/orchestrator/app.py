@@ -40,11 +40,71 @@ import burr.core
 from burr.core import ApplicationBuilder, default, expr
 from burr.core.persistence import SQLLitePersister
 
-from . import actions, state as S
+from . import actions, milestones, state as S
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = str(ROOT / "pipeline" / "burr.db")
 PROJECT = "recodeagent-xcvrd"
+
+
+def _configure_pipeline_dir(path: str | os.PathLike) -> Path:
+    """Point every file-based stage at an existing pipeline directory.
+
+    actions.py resolves its pipeline constants at import time, so a CLI-provided
+    path must update both the environment (used dynamically by milestones/mock)
+    and those two constants.
+    """
+    p = Path(path).expanduser().resolve()
+    if not p.is_dir():
+        raise ValueError(f"pipeline directory does not exist: {p}")
+    os.environ["RECODE_PIPELINE_DIR"] = str(p)
+    actions.PIPELINE = p
+    actions.PIPELINE_CRATE = p / "crate"
+    return p
+
+
+def _state_from_existing_pipeline(
+    pipeline_dir: Path,
+    milestone_id: str,
+    max_iter: int,
+    max_parity_rounds: int,
+) -> dict:
+    """Bootstrap a NEW Burr run from existing pipeline artifacts at Mx."""
+    required = [
+        pipeline_dir / "analysis.md",
+        pipeline_dir / "milestones.json",
+        pipeline_dir / "plan.json",
+        pipeline_dir / "crate" / "xcvrd-rs",
+    ]
+    missing = [str(p) for p in required if not p.exists()]
+    if missing:
+        raise ValueError(
+            "cannot start from an existing pipeline; missing required artifact(s): "
+            + ", ".join(missing)
+        )
+
+    ms = milestones.load()
+    try:
+        idx = milestones.index_of(milestone_id, ms)
+    except KeyError as e:
+        ids = ", ".join(m.id for m in ms)
+        raise ValueError(
+            f"milestone {milestone_id!r} is not in {pipeline_dir / 'milestones.json'} "
+            f"(available: {ids})"
+        ) from e
+
+    state = S.initial_state(
+        max_iter=max_iter, max_parity_rounds=max_parity_rounds)
+    state.update({
+        "milestone_idx": idx,
+        "num_milestones": len(ms),
+        "last_idx": len(ms) - 1,
+        "analysis_done": True,
+        "scope_done": True,
+        "plan_done": True,
+        "last_agent": "pipeline-bootstrap",
+    })
+    return state
 
 
 def _tracker_enabled() -> bool:
@@ -63,7 +123,8 @@ def _tracker_enabled() -> bool:
 
 
 def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 3,
-                     db_path: str = DEFAULT_DB):
+                     db_path: str = DEFAULT_DB, bootstrap_state: dict | None = None,
+                     default_entrypoint: str = "analyze"):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     persister = SQLLitePersister.from_values(db_path=db_path, table_name="recode_state")
     persister.initialize()
@@ -105,8 +166,9 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
         .initialize_from(
             persister,
             resume_at_next_action=True,      # crash-resume: pick up where we left off
-            default_state=S.initial_state(max_iter=max_iter, max_parity_rounds=max_parity_rounds),
-            default_entrypoint="analyze",
+            default_state=bootstrap_state or S.initial_state(
+                max_iter=max_iter, max_parity_rounds=max_parity_rounds),
+            default_entrypoint=default_entrypoint,
         )
         .with_state_persister(persister)
         .with_identifiers(app_id=app_id)
@@ -123,7 +185,16 @@ def main() -> int:
     ap.add_argument("--max-iter", type=int, default=10, help="repair budget per milestone (default 10).")
     ap.add_argument("--max-parity-rounds", type=int, default=3,
                     help="outer-loop budget: max parity re-scope rounds before failing.")
-    ap.add_argument("--db", default=DEFAULT_DB, help="SQLite persistence path.")
+    ap.add_argument(
+        "--pipeline-dir", default=None,
+        help="pipeline artifact directory (default: RECODE_PIPELINE_DIR or ./pipeline).")
+    ap.add_argument(
+        "--start-milestone", default=None, metavar="Mx",
+        help="start a NEW app-id from an existing pipeline folder at this milestone; "
+             "requires analysis.md, milestones.json, plan.json, and crate/xcvrd-rs.")
+    ap.add_argument(
+        "--db", default=None,
+        help="SQLite persistence path (default: <pipeline-dir>/burr.db).")
     ap.add_argument("--mock", action="store_true", help="offline: mock agents (no Copilot).")
     args = ap.parse_args()
 
@@ -131,10 +202,41 @@ def main() -> int:
         os.environ["RECODE_MOCK"] = "1"
     app_id = args.app_id or f"recode-{uuid.uuid4().hex[:8]}"
 
-    app = build_application(app_id, max_iter=args.max_iter,
-                            max_parity_rounds=args.max_parity_rounds, db_path=args.db)
+    try:
+        pipeline_dir = _configure_pipeline_dir(
+            args.pipeline_dir
+            or os.environ.get("RECODE_PIPELINE_DIR")
+            or (ROOT / "pipeline"))
+    except ValueError as e:
+        ap.error(str(e))
+    db_path = args.db or str(pipeline_dir / "burr.db")
+    bootstrap_state = None
+    entrypoint = "analyze"
+    if args.start_milestone:
+        try:
+            bootstrap_state = _state_from_existing_pipeline(
+                pipeline_dir, args.start_milestone,
+                max_iter=args.max_iter,
+                max_parity_rounds=args.max_parity_rounds)
+        except ValueError as e:
+            ap.error(str(e))
+        entrypoint = "select_milestone"
 
-    print(f"[recode] app_id={app_id}  mock={os.environ.get('RECODE_MOCK')=='1'}  db={args.db}")
+    app = build_application(app_id, max_iter=args.max_iter,
+                            max_parity_rounds=args.max_parity_rounds,
+                            db_path=db_path,
+                            bootstrap_state=bootstrap_state,
+                            default_entrypoint=entrypoint)
+
+    print(f"[recode] app_id={app_id}  mock={os.environ.get('RECODE_MOCK')=='1'}  "
+          f"pipeline={pipeline_dir}  db={db_path}")
+    if args.start_milestone:
+        if app.state["last_agent"] == "pipeline-bootstrap":
+            print(f"[recode] starting from existing artifacts at {args.start_milestone}; "
+                  "analyze/scope/plan are skipped")
+        else:
+            print(f"[recode] persisted state exists for app_id={app_id}; resuming it "
+                  f"(--start-milestone {args.start_milestone} only initializes a NEW app-id)")
     print(f"[recode] loaded state at startup: milestone_idx={app.state['milestone_idx']} "
           f"history_len={len(app.state['history'])}  (idx>0 or history => resumed, not restarted)")
     last_action, result, final_state = app.run(halt_after=["terminal"])
