@@ -1,0 +1,3 @@
+{"type":"session.mcp_server_status_changed","data":{"serverName":"github-mcp-server","status":"pending"},"ephemeral":true,"id":"cf437fa3-7ee9-43e4-91ed-cb83c8cc4760","timestamp":"2026-08-04T20:10:38.595Z","parentId":"1f0c6ba2-6f28-46d1-9ff9-e9a755c74875"}
+{"type":"session.mcp_server_status_changed","data":{"serverName":"github-mcp-server","status":"connected"},"ephemeral":true,"id":"edd7de28-909d-48e3-91ed-c67409c93b9f","timestamp":"2026-08-04T20:10:39.183Z","parentId":"1f0c6ba2-6f28-46d1-9ff9-e9a755c74875"}
+{"type":"mcp.tools.list_changed","data":{"serverName":"github-mcp-server"},"ephemeral":true,"id":"017c916a-ad4a-4260-a78e-bc6c0afacd00","timestamp":"2026-08-04T20:10:39.191Z","parentId":"1f0c6ba2-6f28-46d1-9ff9-e9a755c74875"}

@@ -1,0 +1,592 @@
+{
+  "schema": "recodeAgent/plan.v1",
+  "component": "xcvrd",
+  "working_copy": "pipeline/crate",
+  "source_root": "source/xcvrd",
+  "tests_root": "source/xcvrd/tests",
+  "notes": "Planner output: fragment extraction (Part A daemon + Part B unit tests), one-to-one name mapping, compilable Rust stub skeleton (todo!()/no-op behind TODOs + #[ignore] test stubs), and a bottom-up dependency-aware M0-M12 plan. M0/M1 are already implemented by the immutable bootstrap (daemon.rs/env.rs) and are marked done. Stubs only -- the Translator fills bodies milestone by milestone. Build + cargo test verified green via tools/build_check.sh + tools/unit_test.sh (RECODE_CRATE_DIR=pipeline/crate).",
+
+  "name_mapping": {
+    "modules": {
+      "xcvrd.py": "xcvrd (src/xcvrd/mod.rs)",
+      "xcvrd.py:SfpStateUpdateTask": "xcvrd::sfp_state_update (src/xcvrd/sfp_state_update.rs)",
+      "cmis/__init__.py": "cmis (src/cmis/mod.rs)",
+      "cmis/cmis_manager_task.py": "cmis::cmis_manager_task (src/cmis/cmis_manager_task.rs)",
+      "dom/__init__.py": "dom (src/dom/mod.rs)",
+      "dom/dom_mgr.py": "dom::dom_mgr (src/dom/dom_mgr.rs)",
+      "dom/utilities/__init__.py": "dom::utilities (src/dom/utilities/mod.rs)",
+      "dom/utilities/db/utils.py": "dom::utilities::db (src/dom/utilities/db.rs)",
+      "dom/utilities/dom_sensor/*.py": "dom::utilities::dom_sensor (src/dom/utilities/dom_sensor.rs)",
+      "dom/utilities/status/*.py": "dom::utilities::status (src/dom/utilities/status.rs)",
+      "dom/utilities/vdm/*.py": "dom::utilities::vdm (src/dom/utilities/vdm.rs)",
+      "sff_mgr.py": "sff_mgr (src/sff_mgr.rs)",
+      "xcvrd_utilities/__init__.py": "xcvrd_utilities (src/xcvrd_utilities/mod.rs)",
+      "xcvrd_utilities/common.py": "xcvrd_utilities::common (src/xcvrd_utilities/common.rs)",
+      "xcvrd_utilities/utils.py": "xcvrd_utilities::utils (src/xcvrd_utilities/utils.rs)",
+      "xcvrd_utilities/sfp_status_helper.py": "xcvrd_utilities::sfp_status_helper (src/xcvrd_utilities/sfp_status_helper.rs)",
+      "xcvrd_utilities/xcvr_table_helper.py": "xcvrd_utilities::xcvr_table_helper (src/xcvrd_utilities/xcvr_table_helper.rs)",
+      "xcvrd_utilities/port_event_helper.py": "xcvrd_utilities::port_event_helper (src/xcvrd_utilities/port_event_helper.rs)",
+      "xcvrd_utilities/media_settings_parser.py": "xcvrd_utilities::media_settings_parser (src/xcvrd_utilities/media_settings_parser.rs)",
+      "xcvrd_utilities/optics_si_parser.py": "xcvrd_utilities::optics_si_parser (src/xcvrd_utilities/optics_si_parser.rs)",
+      "tests/mock_platform.py": "mock (src/mock.rs)",
+      "tests/mock_swsscommon.py": "mock (src/mock.rs)",
+      "tests/test_xcvrd.py": "per-module #[cfg(test)] mod tests (mirrored across the tree)",
+      "(bootstrap) daemon_base + xcvrd.main": "daemon (src/daemon.rs) + main (src/main.rs)",
+      "(seam) sonic_platform HAL boundary": "hal (src/hal.rs) [trait Hal/SfpHandle over platform-bridge]",
+      "(seam) swsscommon Table/DBConnector": "db (src/db.rs) [trait DbTable over swss-common]"
+    },
+    "types": {
+      "DaemonXcvrd": "DaemonXcvrd",
+      "SfpStateUpdateTask": "SfpStateUpdateTask",
+      "CmisManagerTask": "CmisManagerTask",
+      "DomInfoUpdateTask": "DomInfoUpdateTask",
+      "DomThermalInfoUpdateTask": "DomThermalInfoUpdateTask",
+      "DomInfoUpdateBase": "DomInfoUpdateBase",
+      "SffManagerTask": "SffManagerTask",
+      "SffLoggerForPortUpdateEvent": "SffLoggerForPortUpdateEvent",
+      "DBUtils": "DbUtils",
+      "DOMUtils": "DomUtils",
+      "DOMDBUtils": "DomDbUtils",
+      "StatusUtils": "StatusUtils",
+      "StatusDBUtils": "StatusDbUtils",
+      "VDMUtils": "VdmUtils",
+      "VDMDBUtils": "VdmDbUtils",
+      "XCVRDUtils": "XcvrdUtils",
+      "XcvrTableHelper": "XcvrTableHelper",
+      "PortMapping": "PortMapping",
+      "PortChangeEvent": "PortChangeEvent",
+      "PortChangeObserver": "PortChangeObserver",
+      "CMIS_STATE_* (string consts)": "CmisState (enum + CMIS_STATE_* &str consts)",
+      "tests/mock_swsscommon.py:Table": "MockDbTable",
+      "tests/mock_platform.py:MockChassis": "MockHal",
+      "tests/mock_platform.py:MockChassis.get_sfp() + _wrapper_get_sfp_type patch": "MockSfp"
+    },
+    "functions": {
+      "xcvrd.py:main": "daemon::main / xcvrd::DaemonXcvrd::run",
+      "xcvrd.py:post_port_sfp_info_to_db": "xcvrd::post_port_sfp_info_to_db",
+      "xcvrd.py:remove_stale_transceiver_info": "xcvrd::DaemonXcvrd::remove_stale_transceiver_info",
+      "SfpStateUpdateTask._mapping_event_from_change_event": "SfpStateUpdateTask::mapping_event_from_change_event",
+      "SfpStateUpdateTask._post_port_sfp_info_and_dom_thr_to_db_once": "SfpStateUpdateTask::post_port_sfp_info_and_dom_thr_to_db_once",
+      "SfpStateUpdateTask._init_port_sfp_status_sw_tbl": "SfpStateUpdateTask::init_port_sfp_status_sw_tbl",
+      "SfpStateUpdateTask.retry_eeprom_reading": "SfpStateUpdateTask::retry_eeprom_reading",
+      "SfpStateUpdateTask.task_worker": "SfpStateUpdateTask::task_worker",
+      "port_event_helper.py:get_port_mapping": "xcvrd_utilities::port_event_helper::get_port_mapping",
+      "cmis_manager_task.py:process_cmis_state_machine": "CmisManagerTask::process_cmis_state_machine",
+      "cmis_manager_task.py:process_single_lport": "CmisManagerTask::process_single_lport",
+      "cmis_manager_task.py:get_cmis_host_lanes_mask": "CmisManagerTask::get_cmis_host_lanes_mask",
+      "cmis_manager_task.py:get_cmis_media_lanes_mask": "CmisManagerTask::get_cmis_media_lanes_mask",
+      "cmis_manager_task.py:get_desired_app_map": "CmisManagerTask::get_desired_app_map",
+      "cmis_manager_task.py:is_cmis_application_update_required": "CmisManagerTask::is_cmis_application_update_required",
+      "cmis_manager_task.py:is_decommission_required": "CmisManagerTask::is_decommission_required",
+      "cmis_manager_task.py:configure_tx_output_power": "CmisManagerTask::configure_tx_output_power",
+      "cmis_manager_task.py:configure_laser_frequency": "CmisManagerTask::configure_laser_frequency",
+      "cmis_manager_task.py:post_port_active_apsel_to_db": "CmisManagerTask::post_port_active_apsel_to_db",
+      "cmis_manager_task.py:update_port_transceiver_status_table_sw_cmis_state": "CmisManagerTask::update_port_transceiver_status_table_sw_cmis_state",
+      "common.py:get_cmis_application": "xcvrd_utilities::common::get_cmis_application",
+      "common.py:del_port_sfp_dom_info_from_db": "xcvrd_utilities::common::del_port_sfp_dom_info_from_db",
+      "common.py:is_fast_reboot_enabled": "xcvrd_utilities::common::is_fast_reboot_enabled",
+      "common.py:is_syncd_warm_restore_complete": "xcvrd_utilities::common::is_syncd_warm_restore_complete",
+      "common.py:_wrapper_get_presence": "xcvrd_utilities::common::wrapper_get_presence",
+      "dom/utilities/db/utils.py:post_diagnostic_values_to_db": "dom::utilities::db::DbUtils::post_diagnostic_values_to_db",
+      "dom/utilities/db/utils.py:_update_flag_metadata_tables": "dom::utilities::db::DbUtils::update_flag_metadata_tables",
+      "dom/utilities/db/utils.py:get_current_time": "dom::utilities::db::DbUtils::get_current_time",
+      "dom_mgr.py:is_port_dom_monitoring_disabled": "dom::dom_mgr::DomInfoUpdateTask::is_port_dom_monitoring_disabled",
+      "dom_mgr.py:is_port_in_cmis_initialization_process": "dom::dom_mgr::DomInfoUpdateTask::is_port_in_cmis_initialization_process",
+      "dom_mgr.py:update_port_db_diagnostics_on_link_change": "dom::dom_mgr::DomInfoUpdateTask::update_port_db_diagnostics_on_link_change",
+      "dom_mgr.py:post_port_pm_info_to_db": "dom::dom_mgr::DomInfoUpdateTask::post_port_pm_info_to_db",
+      "dom_mgr.py:post_port_sfp_firmware_info_to_db": "dom::dom_mgr::DomInfoUpdateTask::post_port_sfp_firmware_info_to_db",
+      "sff_mgr.py:get_active_lanes_for_lport": "SffManagerTask::get_active_lanes_for_lport",
+      "sff_mgr.py:enable_high_power_class": "SffManagerTask::enable_high_power_class",
+      "utils.py:is_transceiver_flat_memory": "XcvrdUtils::is_transceiver_flat_memory",
+      "utils.py:is_transceiver_lpmode_on": "XcvrdUtils::is_transceiver_lpmode_on",
+      "sfp_status_helper.py:detect_port_in_error_status": "xcvrd_utilities::sfp_status_helper::detect_port_in_error_status",
+      "sfp_status_helper.py:fetch_generic_error_description": "xcvrd_utilities::sfp_status_helper::fetch_generic_error_description",
+      "media_settings_parser.py:notify_media_setting": "xcvrd_utilities::media_settings_parser::notify_media_setting",
+      "optics_si_parser.py:fetch_optics_si_setting": "xcvrd_utilities::optics_si_parser::fetch_optics_si_setting"
+    }
+  },
+
+  "fragments": {
+    "part_a": [
+      {"unit": "xcvrd.py:main", "verified": true, "milestone": "M0"},
+      {"unit": "xcvrd.py:DaemonXcvrd", "verified": true, "milestone": "M0"},
+      {"unit": "xcvrd.py:DaemonXcvrd.init", "verified": true, "milestone": "M0"},
+      {"unit": "xcvrd.py:DaemonXcvrd.run", "verified": true, "milestone": "M0"},
+      {"unit": "xcvrd.py:DaemonXcvrd.deinit", "verified": true, "milestone": "M0/M11"},
+      {"unit": "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper", "verified": true, "milestone": "M0"},
+      {"unit": "xcvrd.py:post_port_sfp_info_to_db", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:remove_stale_transceiver_info", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask.task_worker", "verified": true, "milestone": "M1/M4"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask._mapping_event_from_change_event", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask._post_port_sfp_info_and_dom_thr_to_db_once", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask._init_port_sfp_status_sw_tbl", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask.retry_eeprom_reading", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask.on_add_logical_port", "verified": true, "milestone": "M11"},
+      {"unit": "xcvrd.py:SfpStateUpdateTask.on_remove_logical_port", "verified": true, "milestone": "M11"},
+      {"unit": "xcvrd_utilities/port_event_helper.py:get_port_mapping", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd_utilities/port_event_helper.py:PortMapping", "verified": true, "milestone": "M1/M11"},
+      {"unit": "xcvrd_utilities/port_event_helper.py:PortChangeEvent", "verified": true, "milestone": "M1"},
+      {"unit": "xcvrd_utilities/port_event_helper.py:PortChangeObserver", "verified": true, "milestone": "M4"},
+      {"unit": "dom/dom_mgr.py:DomInfoUpdateTask", "verified": true, "milestone": "M2"},
+      {"unit": "dom/dom_mgr.py:DomInfoUpdateTask.task_worker", "verified": true, "milestone": "M2/M3"},
+      {"unit": "dom/dom_mgr.py:DomThermalInfoUpdateTask", "verified": true, "milestone": "M2"},
+      {"unit": "dom/dom_mgr.py:is_port_dom_monitoring_disabled", "verified": true, "milestone": "M2"},
+      {"unit": "dom/utilities/dom_sensor/utils.py:DOMUtils", "verified": true, "milestone": "M2"},
+      {"unit": "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils", "verified": true, "milestone": "M2"},
+      {"unit": "dom/utilities/db/utils.py:DBUtils.post_diagnostic_values_to_db", "verified": true, "milestone": "M2"},
+      {"unit": "dom/utilities/db/utils.py:DBUtils.get_current_time", "verified": true, "milestone": "M3"},
+      {"unit": "dom/utilities/status/utils.py:StatusUtils", "verified": true, "milestone": "M3"},
+      {"unit": "dom/utilities/status/db_utils.py:StatusDBUtils", "verified": true, "milestone": "M3"},
+      {"unit": "xcvrd_utilities/sfp_status_helper.py:detect_port_in_error_status", "verified": true, "milestone": "M4"},
+      {"unit": "xcvrd_utilities/sfp_status_helper.py:fetch_generic_error_description", "verified": true, "milestone": "M4"},
+      {"unit": "dom/utilities/db/utils.py:DBUtils._update_flag_metadata_tables", "verified": true, "milestone": "M4"},
+      {"unit": "dom/dom_mgr.py:update_port_db_diagnostics_on_link_change", "verified": true, "milestone": "M4"},
+      {"unit": "dom/dom_mgr.py:on_port_update_event", "verified": true, "milestone": "M4"},
+      {"unit": "dom/utilities/vdm/utils.py:VDMUtils", "verified": true, "milestone": "M5"},
+      {"unit": "dom/utilities/vdm/db_utils.py:VDMDBUtils", "verified": true, "milestone": "M5"},
+      {"unit": "dom/dom_mgr.py:post_port_pm_info_to_db", "verified": true, "milestone": "M5"},
+      {"unit": "dom/dom_mgr.py:post_port_sfp_firmware_info_to_db", "verified": true, "milestone": "M5"},
+      {"unit": "cmis/cmis_manager_task.py:CmisManagerTask", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:process_cmis_state_machine", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:get_cmis_host_lanes_mask", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:get_cmis_media_lanes_mask", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:get_desired_app_map", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:post_port_active_apsel_to_db", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:update_port_transceiver_status_table_sw_cmis_state", "verified": true, "milestone": "M6"},
+      {"unit": "xcvrd_utilities/common.py:get_cmis_application", "verified": true, "milestone": "M6"},
+      {"unit": "dom/dom_mgr.py:is_port_in_cmis_initialization_process", "verified": true, "milestone": "M6"},
+      {"unit": "cmis/cmis_manager_task.py:process_single_lport", "verified": true, "milestone": "M7"},
+      {"unit": "cmis/cmis_manager_task.py:is_cmis_application_update_required", "verified": true, "milestone": "M7"},
+      {"unit": "cmis/cmis_manager_task.py:is_decommission_required", "verified": true, "milestone": "M7"},
+      {"unit": "xcvrd_utilities/common.py:is_fast_reboot_enabled", "verified": true, "milestone": "M7"},
+      {"unit": "xcvrd_utilities/utils.py:XCVRDUtils", "verified": true, "milestone": "M8"},
+      {"unit": "xcvrd_utilities/utils.py:is_transceiver_lpmode_on", "verified": true, "milestone": "M8"},
+      {"unit": "xcvrd_utilities/utils.py:is_transceiver_flat_memory", "verified": true, "milestone": "M8/M10"},
+      {"unit": "cmis/cmis_manager_task.py:configure_tx_output_power", "verified": true, "milestone": "M8"},
+      {"unit": "cmis/cmis_manager_task.py:configure_laser_frequency", "verified": true, "milestone": "M8"},
+      {"unit": "xcvrd_utilities/media_settings_parser.py:notify_media_setting", "verified": true, "milestone": "M9"},
+      {"unit": "xcvrd_utilities/optics_si_parser.py:fetch_optics_si_setting", "verified": true, "milestone": "M9"},
+      {"unit": "sff_mgr.py:SffManagerTask", "verified": true, "milestone": "M10"},
+      {"unit": "sff_mgr.py:get_active_lanes_for_lport", "verified": true, "milestone": "M10"},
+      {"unit": "sff_mgr.py:enable_high_power_class", "verified": true, "milestone": "M10"},
+      {"unit": "xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db", "verified": true, "milestone": "M11"},
+      {"unit": "xcvrd_utilities/common.py:is_syncd_warm_restore_complete", "verified": true, "milestone": "M11"}
+    ],
+    "part_b": [
+      {"unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_run", "verified": true, "kind": "needs-new-test", "milestone": "M0"},
+      {"unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_init_deinit_cold", "verified": true, "kind": "translate-directly", "milestone": "M0/M11"},
+      {"unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_signal_handler", "verified": true, "kind": "needs-new-test", "milestone": "M0"},
+      {"unit": "tests/mock_swsscommon.py:Table", "verified": true, "kind": "translate-directly", "milestone": "M0"},
+      {"unit": "tests/mock_platform.py:MockChassis", "verified": true, "kind": "needs-new-test", "milestone": "M0"},
+
+      {"unit": "tests/test_xcvrd.py:test_post_port_sfp_info_to_db", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_sfp_info_to_db_with_sfp_not_present", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_sfp_info_and_dom_thr_to_db_once", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_init_port_sfp_status_sw_tbl", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_init_port_sfp_status_sw_tbl_no_physical_port_found", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_SfpStateUpdateTask_retry_eeprom_reading", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_SfpStateUpdateTask_mapping_event_from_change_event", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_SfpStateUpdateTask_task_worker", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_SfpStateUpdateTask_task_run_stop", "verified": true, "kind": "needs-new-test", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_remove_stale_transceiver_info", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_get_port_mapping", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_sfp_insert_events", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_sfp_remove_events", "verified": true, "kind": "translate-directly", "milestone": "M1/M11"},
+      {"unit": "tests/test_xcvrd.py:test_beautify_info_dict", "verified": true, "kind": "translate-directly", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_wrapper_get_presence", "verified": true, "kind": "needs-new-test", "milestone": "M1"},
+      {"unit": "tests/test_xcvrd.py:test_wrapper_get_transceiver_info", "verified": true, "kind": "needs-new-test", "milestone": "M1"},
+
+      {"unit": "tests/test_xcvrd.py:test_post_port_dom_sensor_info_to_db", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_get_transceiver_dom_sensor_real_value", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_dom_thresholds_to_db", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_get_transceiver_dom_thresholds", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_dom_temperature_info_to_db", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_beautify_dom_info_dict", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_DomInfoUpdateTask_task_worker", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_DomInfoUpdateTask_get_dom_polling_from_config_db", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+      {"unit": "tests/test_xcvrd.py:test_DomThermalInfoUpdateTask_task_worker", "verified": true, "kind": "translate-directly", "milestone": "M2"},
+
+      {"unit": "tests/test_xcvrd.py:test_post_port_transceiver_hw_status_to_db", "verified": true, "kind": "translate-directly", "milestone": "M3"},
+      {"unit": "tests/test_xcvrd.py:test_get_transceiver_status", "verified": true, "kind": "translate-directly", "milestone": "M3"},
+
+      {"unit": "tests/test_xcvrd.py:test_detect_port_in_error_status", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_is_error_sfp_status", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_update_flag_metadata_tables", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_dom_flags_to_db", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_get_transceiver_dom_flags", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_transceiver_hw_status_flags_to_db", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_get_transceiver_status_flags", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_update_port_db_diagnostics_on_link_change", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+      {"unit": "tests/test_xcvrd.py:test_handle_port_update_event", "verified": true, "kind": "translate-directly", "milestone": "M4"},
+
+      {"unit": "tests/test_xcvrd.py:test_post_port_vdm_real_values_from_dict_to_db", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_get_vdm_real_values_basic", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_get_vdm_real_values_statistic", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_vdm_thresholds_to_db", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_get_vdm_thresholds", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_get_vdm_flags", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_is_vdm_statistic_supported", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_pm_info_to_db", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_post_port_sfp_firmware_info_to_db", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+      {"unit": "tests/test_xcvrd.py:test_vdm_action_and_confirm", "verified": true, "kind": "translate-directly", "milestone": "M5"},
+
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_task_worker", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_cmis_host_lanes_mask", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_desired_app_map", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_desired_app_map_no_matching_app", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_host_lane_count", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_post_port_active_apsel_to_db", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_get_cmis_state_from_state_db", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+      {"unit": "tests/test_xcvrd.py:test_DomInfoUpdateTask_is_port_in_cmis_initialization_process", "verified": true, "kind": "translate-directly", "milestone": "M6"},
+
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_is_cmis_application_update_required", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_is_decommission_required", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_task_worker_fastboot", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_task_worker_host_tx_ready_false_to_true", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_task_worker_decommission", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_test_is_timer_expired", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask", "verified": true, "kind": "translate-directly", "milestone": "M7"},
+
+      {"unit": "tests/test_xcvrd.py:test_is_transceiver_lpmode_on", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+      {"unit": "tests/test_xcvrd.py:test_is_transceiver_flat_memory", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+      {"unit": "tests/test_xcvrd.py:test_xcvrd_utils_get_transceiver_presence", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_configured_freq", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_get_configured_tx_power_from_db", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+      {"unit": "tests/test_xcvrd.py:test_CmisManagerTask_validate_frequency_and_grid", "verified": true, "kind": "translate-directly", "milestone": "M8"},
+
+      {"unit": "tests/test_xcvrd.py:test_notify_media_setting", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:test_notify_media_setting_with_comma", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:test_get_media_settings_value", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:test_get_media_settings_key", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:test_is_npu_si_settings_update_required", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:test_fetch_optics_si_setting", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+      {"unit": "tests/test_xcvrd.py:TestOpticSiParser", "verified": true, "kind": "translate-directly", "milestone": "M9"},
+
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_task_worker", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_get_active_lanes_for_lport", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_get_active_lanes_for_lport_with_invalid_input", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_enable_high_power_class", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_get_admin_status", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_SffManagerTask_get_host_tx_status", "verified": true, "kind": "translate-directly", "milestone": "M10"},
+      {"unit": "tests/test_xcvrd.py:test_wrapper_is_flat_memory", "verified": true, "kind": "needs-new-test", "milestone": "M10"},
+
+      {"unit": "tests/test_xcvrd.py:test_del_port_sfp_dom_info_from_db", "verified": true, "kind": "translate-directly", "milestone": "M11"},
+      {"unit": "tests/test_xcvrd.py:test_SfpStateUpdateTask_on_add_logical_port", "verified": true, "kind": "translate-directly", "milestone": "M11"},
+      {"unit": "tests/test_xcvrd.py:test_sfp_removal_from_dict", "verified": true, "kind": "translate-directly", "milestone": "M11"},
+      {"unit": "tests/test_xcvrd.py:test_is_syncd_warm_restore_complete_valid_cases", "verified": true, "kind": "translate-directly", "milestone": "M11"},
+      {"unit": "tests/test_xcvrd.py:test_DaemonXcvrd_init_deinit_fastboot_enabled", "verified": true, "kind": "translate-directly", "milestone": "M11"},
+      {"unit": "tests/test_xcvrd.py:test_handle_port_config_change", "verified": true, "kind": "translate-directly", "milestone": "M11"}
+    ],
+    "validation": {
+      "method": "grep/def-scan against source/xcvrd (Part A) and source/xcvrd/tests/test_xcvrd.py (Part B); every listed symbol was located in-tree before inclusion.",
+      "part_a_count": 64,
+      "part_b_count": 93,
+      "part_b_total_in_suite": 183,
+      "part_b_selection": "milestone-relevant behavioral cases (the full 183-case suite is exercised cumulatively at M12/test_golden).",
+      "excluded_scaffolding": [
+        "platform-bridge (PyO3 sonic_platform HAL) -- provided, wrapped by src/hal.rs",
+        "swss-common (STATE_DB/Redis client) -- provided, wrapped by src/db.rs",
+        "CMIS/SFF EEPROM decode (sonic_platform_base xcvr api) -- behind the HAL seam",
+        "tests/*.json + t0-sample-port-config.ini fixtures -- copied as data, not translated"
+      ]
+    }
+  },
+
+  "skeleton": {
+    "root": "pipeline/crate/xcvrd-rs",
+    "layout_mirrors": "source/xcvrd package (directory->module, file->submodule)",
+    "modules": [
+      "src/lib.rs",
+      "src/main.rs",
+      "src/daemon.rs",
+      "src/env.rs",
+      "src/error.rs",
+      "src/hal.rs",
+      "src/db.rs",
+      "src/mock.rs",
+      "src/xcvrd/mod.rs",
+      "src/xcvrd/sfp_state_update.rs",
+      "src/cmis/mod.rs",
+      "src/cmis/cmis_manager_task.rs",
+      "src/dom/mod.rs",
+      "src/dom/dom_mgr.rs",
+      "src/dom/utilities/mod.rs",
+      "src/dom/utilities/db.rs",
+      "src/dom/utilities/dom_sensor.rs",
+      "src/dom/utilities/status.rs",
+      "src/dom/utilities/vdm.rs",
+      "src/sff_mgr.rs",
+      "src/xcvrd_utilities/mod.rs",
+      "src/xcvrd_utilities/common.rs",
+      "src/xcvrd_utilities/utils.rs",
+      "src/xcvrd_utilities/sfp_status_helper.rs",
+      "src/xcvrd_utilities/xcvr_table_helper.rs",
+      "src/xcvrd_utilities/port_event_helper.rs",
+      "src/xcvrd_utilities/media_settings_parser.rs",
+      "src/xcvrd_utilities/optics_si_parser.rs"
+    ],
+    "seams": {
+      "hal": "src/hal.rs -- trait Hal + trait SfpHandle over platform-bridge (Rust analogue of _wrapper_* platform shims)",
+      "db": "src/db.rs -- trait DbTable over swss-common (Rust analogue of swsscommon.Table)",
+      "mock": "src/mock.rs -- MockHal/MockSfp/MockDbTable test doubles (Rust analogue of tests/mock_platform.py + tests/mock_swsscommon.py)"
+    },
+    "bootstrap_preserved": "src/daemon.rs + src/main.rs + src/env.rs kept verbatim from the immutable M1 bootstrap (self-contained; keeps M0/M1 behaviour + the clean-baseline fixture green while the rest is stubbed).",
+    "stub_policy": "Every business-logic fn is `todo!()`/no-op behind a `TODO(Translator, Mx)`; per-module `#[cfg(test)] mod tests` carry `#[ignore]` stubs tagged to their milestone. Real (non-stub) code is limited to constants/data tables, trivial pure data-mappings (CmisState as_str/from_db_str, value_to_py_str, strip_unit, VDM table-name formatters, xcvrd::pybool/stringify) and the infra seams, so non-ignored tests exercise only settled helpers.",
+    "compiles": true,
+    "unit_tests_run": true,
+    "verification": {
+      "build_check": "bash tools/build_check.sh (RECODE_CRATE_DIR=pipeline/crate) -> [build] OK",
+      "unit_test": "bash tools/unit_test.sh (RECODE_CRATE_DIR=pipeline/crate) -> test result: ok. 14 passed; 0 failed; 37 ignored",
+      "non_ignored_tests_passing": [
+        "dom::utilities::db::tests::value_to_py_str_matches_python",
+        "hal::tests (8 sanitizer cases)",
+        "mock::tests (3 mock double cases)",
+        "xcvrd::tests::pybool_and_stringify_match_python_str",
+        "xcvrd_utilities::xcvr_table_helper::tests::vdm_threshold_and_flag_table_names"
+      ]
+    }
+  },
+
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Skeleton (deploy smoke)",
+      "goal": "Rust crate compiles; the binary is injected into pmon and stays RUNNING under supervisor. Stand up DaemonXcvrd boot (init/run/deinit), the platform + STATE_DB seams, and the worker-thread scaffold without any table producers yet. Deploy-smoke gate only (harness special-cases M0 to check supervisor RUNNING).",
+      "status": "done-in-bootstrap",
+      "deps": [],
+      "e2e_tests": [],
+      "steps_part_a": [
+        "DONE (bootstrap): src/daemon.rs + src/main.rs + src/env.rs implement DaemonXcvrd boot (init/run/deinit) self-contained over platform-bridge + swss-common.",
+        "DONE (skeleton): src/hal.rs + src/db.rs expose the trait Hal/SfpHandle + trait DbTable seams; src/xcvrd_utilities/xcvr_table_helper.rs carries the TRANSCEIVER_* table-name constants + XcvrTableHelper registry (constants real, registry wiring stubbed).",
+        "Translator: migrate the bootstrap boot path into xcvrd::DaemonXcvrd::{init,run,deinit} + spawn the (initially empty) worker-thread set, touching src/xcvrd/mod.rs."
+      ],
+      "steps_part_b": [
+        "DONE (skeleton): src/mock.rs provides MockHal/MockSfp/MockDbTable doubles (Rust analogue of tests/mock_platform.py + tests/mock_swsscommon.py:Table); mock::tests already green.",
+        "Translator: new Rust boot smoke test for DaemonXcvrd::{init,deinit} over MockHal/MockDbTable (from tests/test_xcvrd.py:test_DaemonXcvrd_init_deinit_cold, kind=translate-directly).",
+        "Translator: needs-new-test for run/shutdown lifecycle (test_DaemonXcvrd_run / test_DaemonXcvrd_signal_handler map to Rust thread + signal idioms, not Python threading.Thread)."
+      ]
+    },
+    {
+      "id": "M1",
+      "title": "Presence, identity & liveness",
+      "goal": "On discovery/insertion read identity via the HAL and publish TRANSCEIVER_INFO (full CMIS dict vs. fixed SFF field list) + TRANSCEIVER_STATUS_SW.status=1/error=N/A; seed boot cmis_state=READY; on removal clear TRANSCEIVER_INFO and restore on re-plug. Retry a failed EEPROM identity read (60s cadence) and purge stale TRANSCEIVER_INFO at cold-start.",
+      "status": "done-in-bootstrap",
+      "deps": ["M0"],
+      "e2e_tests": ["test_presence", "test_info_content", "test_health", "test_read_retry", "test_stale_info"],
+      "steps_part_a": [
+        "xcvrd::post_port_sfp_info_to_db -- build the TRANSCEIVER_INFO field list (two shapes: CMIS dict vs fixed SFF list); return the PHYSICAL_PORT_NOT_EXIST/SFP_EEPROM_NOT_READY sentinels (src/xcvrd/mod.rs).",
+        "xcvrd_utilities::port_event_helper::get_port_mapping + PortMapping/PortChangeEvent -- build logical<->physical map from CONFIG_DB PORT (src/xcvrd_utilities/port_event_helper.rs).",
+        "SfpStateUpdateTask::{new,mapping_event_from_change_event,post_port_sfp_info_and_dom_thr_to_db_once,init_port_sfp_status_sw_tbl,retry_eeprom_reading,task_worker} -- the presence/identity state machine (src/xcvrd/sfp_state_update.rs).",
+        "xcvrd::DaemonXcvrd::remove_stale_transceiver_info -- purge INFO rows for absent ports at cold start (src/xcvrd/mod.rs).",
+        "xcvrd_utilities::common::{update_port_transceiver_status_table_sw,wrapper_get_presence} -- STATUS_SW status/error projection (src/xcvrd_utilities/common.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_post_port_sfp_info_to_db + _with_sfp_not_present -> xcvrd::tests (INFO builder + sentinel) over MockHal/MockDbTable.",
+        "translate-directly: test_init_port_sfp_status_sw_tbl(+_no_physical_port_found), test_post_port_sfp_info_and_dom_thr_to_db_once, test_beautify_info_dict -> xcvrd::sfp_state_update::tests.",
+        "translate-directly: test_SfpStateUpdateTask_{retry_eeprom_reading,mapping_event_from_change_event,task_worker}, test_sfp_insert_events/test_sfp_remove_events -> xcvrd::sfp_state_update::tests.",
+        "translate-directly: test_get_port_mapping, test_remove_stale_transceiver_info -> port_event_helper::tests / xcvrd::tests.",
+        "needs-new-test: test_wrapper_get_presence / test_wrapper_get_transceiver_info -> Rust HAL-seam tests over MockSfp (the _wrapper_* shim is provided scaffolding); test_SfpStateUpdateTask_task_run_stop -> Rust thread-stop test."
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "DOM sensors, thresholds & polling",
+      "goal": "Run the DomInfoUpdateTask periodic loop: publish TRANSCEIVER_DOM_SENSOR (temperature, voltage, 24 per-lane tx/rx power + tx bias keys, unit-stripped) with last_update_time, seed boot TRANSCEIVER_DOM_THRESHOLD, and (fast loop) TRANSCEIVER_DOM_TEMPERATURE. Honor CONFIG_DB dom_polling=disabled.",
+      "status": "pending",
+      "deps": ["M1"],
+      "e2e_tests": ["test_dom", "test_dom_polling", "test_interaction_trace"],
+      "steps_part_a": [
+        "dom::utilities::db::DbUtils::post_diagnostic_values_to_db -- the generic get->beautify->set poster engine (src/dom/utilities/db.rs).",
+        "dom::utilities::dom_sensor::{DomUtils,DomDbUtils} -- DOM sensor read + unit-strip + 24 per-lane key expansion (src/dom/utilities/dom_sensor.rs).",
+        "dom::dom_mgr::DomInfoUpdateTask::{new,task_worker,is_port_dom_monitoring_disabled} + DomThermalInfoUpdateTask::task_worker -- periodic loop + dom_polling gate + fast temperature loop (src/dom/dom_mgr.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_post_port_dom_sensor_info_to_db, test_get_transceiver_dom_sensor_real_value, test_beautify_dom_info_dict -> dom::utilities::dom_sensor::tests.",
+        "translate-directly: test_post_port_dom_thresholds_to_db, test_get_transceiver_dom_thresholds, test_post_port_dom_temperature_info_to_db -> dom::utilities::dom_sensor::tests / dom::dom_mgr::tests.",
+        "translate-directly: test_DomInfoUpdateTask_task_worker, test_DomInfoUpdateTask_get_dom_polling_from_config_db, test_DomThermalInfoUpdateTask_task_worker -> dom::dom_mgr::tests (over MockHal/MockDbTable)."
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Rich transceiver status",
+      "goal": "Publish the rich TRANSCEIVER_STATUS table from get_transceiver_status(): module_state, module_fault_cause, DP[1-8]State, config_state_hostlane[1-8], dpinit_pending/dpdeinit, per-lane tx/rx OutputStatus, txNdisable, tx_disabled_channel, each row carrying a well-formed last_update_time.",
+      "status": "pending",
+      "deps": ["M2"],
+      "e2e_tests": ["test_transceiver_status", "test_last_update_time"],
+      "steps_part_a": [
+        "dom::utilities::status::{StatusUtils,StatusDbUtils} -- read get_transceiver_status() + shape the rich TRANSCEIVER_STATUS row (src/dom/utilities/status.rs).",
+        "dom::utilities::db::DbUtils::get_current_time -- the last_update_time stamp formatter (src/dom/utilities/db.rs).",
+        "dom::dom_mgr::DomInfoUpdateTask::task_worker -- wire the status poster into the periodic loop (src/dom/dom_mgr.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_post_port_transceiver_hw_status_to_db -> dom::utilities::status::tests (over MockHal/MockDbTable).",
+        "translate-directly: test_get_transceiver_status -> dom::utilities::status::tests.",
+        "new Rust test: last_update_time well-formedness assertion on the status row (from test_last_update_time e2e contract)."
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "SFP errors & flag metadata",
+      "goal": "Decode injected hardware error bitmaps to descriptions and write TRANSCEIVER_STATUS_SW.error (blocking removes DOM rows/keeps INFO; non-blocking keeps DOM; recovery clears + repopulates). Run the flag-metadata engine for TRANSCEIVER_DOM_FLAG / TRANSCEIVER_STATUS_FLAG + each _CHANGE_COUNT/_SET_TIME/_CLEAR_TIME sibling; re-capture off-cadence on a link-change flap.",
+      "status": "pending",
+      "deps": ["M3"],
+      "e2e_tests": ["test_status_error", "test_status_flag", "test_dom_flag_meta", "test_link_change_flags"],
+      "steps_part_a": [
+        "xcvrd_utilities::sfp_status_helper::{detect_port_in_error_status,fetch_generic_error_description} -- error-bit decode + STATUS_SW.error write (src/xcvrd_utilities/sfp_status_helper.rs; masks/bit->desc table already real).",
+        "xcvrd::SfpStateUpdateTask::task_worker -- the error-branch (code != 1/0) of the change-event machine: blocking vs non-blocking DOM handling (src/xcvrd/sfp_state_update.rs).",
+        "dom::utilities::db::DbUtils::update_flag_metadata_tables -- change-count bump + set/clear-time stamping (never on init) for the latched-flag tables (src/dom/utilities/db.rs).",
+        "dom::dom_mgr::{update_port_db_diagnostics_on_link_change,on_port_update_event} -- off-cadence flag re-capture on link-change (src/dom/dom_mgr.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_detect_port_in_error_status, test_is_error_sfp_status -> sfp_status_helper::tests.",
+        "translate-directly: test_update_flag_metadata_tables -> dom::utilities::db::tests (change-count/set/clear-time semantics).",
+        "translate-directly: test_post_port_dom_flags_to_db, test_get_transceiver_dom_flags, test_post_port_transceiver_hw_status_flags_to_db, test_get_transceiver_status_flags -> dom::utilities::{dom_sensor,status}::tests.",
+        "translate-directly: test_update_port_db_diagnostics_on_link_change, test_handle_port_update_event -> dom::dom_mgr::tests / port_event_helper::tests."
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "VDM, PM & firmware diagnostics",
+      "goal": "Add the remaining DomInfoUpdateTask posters: VDM freeze->capture->unfreeze into TRANSCEIVER_VDM_REAL_VALUE (basic + statistic min/max/avg), the four TRANSCEIVER_VDM_{HALARM,LALARM,HWARN,LWARN}_THRESHOLD tables + per-type VDM flag tables (with flag metadata); TRANSCEIVER_PM for coherent modules (skipped on flat-memory); TRANSCEIVER_FIRMWARE_INFO.",
+      "status": "pending",
+      "deps": ["M4"],
+      "e2e_tests": ["test_vdm", "test_vdm_statistic", "test_pm", "test_firmware_info"],
+      "steps_part_a": [
+        "dom::utilities::vdm::{VdmUtils,VdmDbUtils} -- freeze/capture/unfreeze sequence + basic & statistic real values + 4 threshold tables + per-type flag tables (src/dom/utilities/vdm.rs; VDM_THRESHOLD_TYPES + table-name formatters already real).",
+        "dom::dom_mgr::DomInfoUpdateTask::post_port_pm_info_to_db -- TRANSCEIVER_PM (coherent-only; flat-memory skip) (src/dom/dom_mgr.rs).",
+        "dom::dom_mgr::DomInfoUpdateTask::post_port_sfp_firmware_info_to_db -- TRANSCEIVER_FIRMWARE_INFO active/inactive (src/dom/dom_mgr.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_post_port_vdm_real_values_from_dict_to_db, test_get_vdm_real_values_basic/statistic, test_is_vdm_statistic_supported, test_vdm_action_and_confirm -> dom::utilities::vdm::tests.",
+        "translate-directly: test_post_port_vdm_thresholds_to_db, test_get_vdm_thresholds, test_get_vdm_flags -> dom::utilities::vdm::tests.",
+        "translate-directly: test_post_port_pm_info_to_db, test_post_port_sfp_firmware_info_to_db -> dom::dom_mgr::tests."
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "CMIS datapath bring-up (core)",
+      "goal": "Run the CmisManagerTask state machine (INSERTED -> DP_PRE_INIT_CHECK -> DP_DEINIT -> AP_CONFIGURED -> DP_INIT -> DP_TXON -> READY): drive an admin-up CMIS port out of low power to ModuleReady with every datapath DataPathActivated, select the app by host-lane-count+speed, compute host/media lane masks, publish intermediate cmis_state + active_apsel_hostlaneN, and gate DOM while non-terminal.",
+      "status": "pending",
+      "deps": ["M5"],
+      "e2e_tests": ["test_cmis_datapath", "test_cmis_state_progression", "test_app_select", "test_daemon_control", "test_dom_gating"],
+      "steps_part_a": [
+        "xcvrd_utilities::common::get_cmis_application -- pick the app id from the module advertisement by host-lane-count + speed (src/xcvrd_utilities/common.rs).",
+        "cmis::cmis_manager_task::CmisManagerTask::{get_desired_app_map,get_host_lane_count,get_cmis_host_lanes_mask,get_cmis_media_lanes_mask} -- app select + lane masks (src/cmis/cmis_manager_task.rs).",
+        "cmis::cmis_manager_task::CmisManagerTask::{process_cmis_state_machine,post_port_active_apsel_to_db,update_port_transceiver_status_table_sw_cmis_state,task_worker} -- per-state handlers + STATE_DB projection (src/cmis/cmis_manager_task.rs).",
+        "dom::dom_mgr::DomInfoUpdateTask::is_port_in_cmis_initialization_process -- gate DOM publication while cmis_state non-terminal (src/dom/dom_mgr.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_CmisManagerTask_task_worker (INSERTED->READY progression) -> cmis::cmis_manager_task::tests over MockHal/MockDbTable.",
+        "translate-directly: test_CmisManagerTask_get_cmis_host_lanes_mask, test_CmisManagerTask_get_desired_app_map(+_no_matching_app), test_CmisManagerTask_get_host_lane_count -> cmis::cmis_manager_task::tests.",
+        "translate-directly: test_CmisManagerTask_post_port_active_apsel_to_db, test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state, test_get_cmis_state_from_state_db -> cmis::cmis_manager_task::tests / common::tests.",
+        "translate-directly: test_DomInfoUpdateTask_is_port_in_cmis_initialization_process -> dom::dom_mgr::tests (DOM gating)."
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "CMIS bring-up edge cases & fast-reboot",
+      "goal": "Handle CMIS edges: per-state timers with a retry cap driving cmis_state=FAILED; datapath teardown + re-provision on reconfiguration; forced Tx-disable when preconditions are lost (host_tx_ready != true OR admin_status != up); reacting to host_tx_ready transitions; fast-reboot datapath-skip preserving an already-active datapath.",
+      "status": "pending",
+      "deps": ["M6"],
+      "e2e_tests": ["test_cmis_reconfig", "test_cmis_failed", "test_cmis_forced_tx", "test_host_tx_ready", "test_fast_reboot_dp_skip"],
+      "steps_part_a": [
+        "cmis::cmis_manager_task::CmisManagerTask::process_single_lport -- precondition checks (host_tx_ready/admin_status) + per-state timer/retry-cap -> FAILED + forced Tx-disable (src/cmis/cmis_manager_task.rs; CMIS_MAX_RETRIES/CMIS_DEF_EXPIRED already real).",
+        "cmis::cmis_manager_task::CmisManagerTask::{is_cmis_application_update_required,is_decommission_required} -- reconfig/decommission gates (src/cmis/cmis_manager_task.rs).",
+        "xcvrd_utilities::common::is_fast_reboot_enabled -- FAST_RESTART_ENABLE_TABLE gate; wire the datapath-skip into the state machine (src/xcvrd_utilities/common.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_CmisManagerTask_is_cmis_application_update_required, test_CmisManagerTask_is_decommission_required -> cmis::cmis_manager_task::tests.",
+        "translate-directly: test_CmisManagerTask_task_worker_fastboot, test_CmisManagerTask_task_worker_host_tx_ready_false_to_true, test_CmisManagerTask_task_worker_decommission -> cmis::cmis_manager_task::tests.",
+        "translate-directly: test_CmisManagerTask_test_is_timer_expired, test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask -> cmis::cmis_manager_task::tests (retry-cap -> FAILED + forced Tx-disable)."
+      ]
+    },
+    {
+      "id": "M8",
+      "title": "Module power control & coherent tuning",
+      "goal": "Operator-driven module control-plane: sfputil lpmode/reset through XcvrdUtils get_lpmode/set_lpmode/reset with the expected write trace + module-state transitions; gate the VDM-statistic freeze (TRANSCEIVER_PM refresh) while an activated coherent module is in low power; and coherent/ZR laser tuning configure_tx_output_power / configure_laser_frequency with grid validation.",
+      "status": "pending",
+      "deps": ["M7"],
+      "e2e_tests": ["test_lpmode_reset", "test_dom_lpmode", "test_coherent_tuning"],
+      "steps_part_a": [
+        "xcvrd_utilities::utils::XcvrdUtils::{is_transceiver_lpmode_on,is_transceiver_flat_memory,get_lpmode,set_lpmode,reset} -- module power/reset control over the HAL seam (src/xcvrd_utilities/utils.rs).",
+        "dom::utilities::vdm::VdmUtils -- gate the freeze/statistic refresh while an activated coherent module is in low power (src/dom/utilities/vdm.rs).",
+        "cmis::cmis_manager_task::CmisManagerTask::{configure_tx_output_power,configure_laser_frequency} -- coherent/ZR tuning writes + frequency/grid validation (src/cmis/cmis_manager_task.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_is_transceiver_lpmode_on, test_is_transceiver_flat_memory, test_xcvrd_utils_get_transceiver_presence -> xcvrd_utilities::utils::tests.",
+        "translate-directly: test_CmisManagerTask_get_configured_freq, test_CmisManagerTask_get_configured_tx_power_from_db, test_CmisManagerTask_validate_frequency_and_grid -> cmis::cmis_manager_task::tests.",
+        "new Rust test: lpmode/reset write-trace assertion over MockSfp (from test_lpmode_reset / test_dom_lpmode e2e contract)."
+      ]
+    },
+    {
+      "id": "M9",
+      "title": "Media & optics SI settings",
+      "goal": "Parse media_settings.json and drive notify_media_setting, managing the STATE_DB PORT_TABLE.NPU_SI_SETTINGS_SYNC_STATUS lifecycle (seed/reset around the notify); and apply per-vendor optics Signal-Integrity settings from optics_si_settings.json during CMIS bring-up.",
+      "status": "pending",
+      "deps": ["M8"],
+      "e2e_tests": ["test_media_settings", "test_optics_si"],
+      "steps_part_a": [
+        "xcvrd_utilities::media_settings_parser::{notify_media_setting,get_media_settings_value,get_media_settings_key} -- media_settings.json parse + NPU_SI_SETTINGS_SYNC_STATUS lifecycle (src/xcvrd_utilities/media_settings_parser.rs).",
+        "xcvrd_utilities::optics_si_parser::fetch_optics_si_setting -- per-vendor optics SI lookup applied during CMIS bring-up (src/xcvrd_utilities/optics_si_parser.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_notify_media_setting(+_with_comma variants), test_get_media_settings_value, test_get_media_settings_key, test_is_npu_si_settings_update_required -> media_settings_parser::tests (load tests/media_settings*.json as fixtures).",
+        "translate-directly: test_fetch_optics_si_setting + TestOpticSiParser class -> optics_si_parser::tests (load tests/optics_si_settings.json)."
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "SFF-8636 / flat-memory path",
+      "goal": "Support the non-CMIS module: SFF-8636 identity routing (Sff8636Api), DOM, and the optional SffManagerTask deterministic link bring-up (tx_disable per host_tx_ready/admin_status, lpmode-disable, high-power-class enable); and short-circuit the CMIS state machine straight to READY for flat-memory modules.",
+      "status": "pending",
+      "deps": ["M9"],
+      "e2e_tests": ["test_sff8636", "test_sff_control", "test_flat_memory"],
+      "steps_part_a": [
+        "sff_mgr::SffManagerTask::{new,get_active_lanes_for_lport,enable_high_power_class,task_worker} -- optional deterministic SFF link bring-up (src/sff_mgr.rs; enabled via --enable_sff_mgr).",
+        "xcvrd_utilities::utils::XcvrdUtils::is_transceiver_flat_memory -- flat-memory detection over the HAL seam (src/xcvrd_utilities/utils.rs).",
+        "cmis::cmis_manager_task::CmisManagerTask -- short-circuit the state machine straight to READY for flat-memory modules (src/cmis/cmis_manager_task.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_SffManagerTask_task_worker, test_SffManagerTask_get_active_lanes_for_lport(+_with_invalid_input), test_SffManagerTask_enable_high_power_class, test_SffManagerTask_get_admin_status, test_SffManagerTask_get_host_tx_status -> sff_mgr::tests over MockHal/MockDbTable.",
+        "needs-new-test: test_wrapper_is_flat_memory -> Rust HAL-seam test over MockSfp (flat-memory CMIS short-circuit to READY)."
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "Multiport concurrency & table lifecycle",
+      "goal": "Prove per-module isolation with all tasks running concurrently across many ports/subports (natsort breakout ordering, no cross-talk); and the full table-lifecycle contract: physical unplug + CONFIG_DB PORT_DEL delete the port's rows across the whole TRANSCEIVER_* set, a re-add repopulates them + reseeds NPU_SI_SETTINGS_SYNC_STATUS; warm/fast-reboot shutdown preserves TRANSCEIVER_STATUS/STATUS_SW (normal deinit deletes them).",
+      "status": "pending",
+      "deps": ["M10"],
+      "e2e_tests": ["test_multiport", "test_removal_tables", "test_logical_port", "test_warm_reboot"],
+      "steps_part_a": [
+        "xcvrd_utilities::port_event_helper::PortMapping -- natsort breakout ordering + multi-port isolation across the concurrent task set (src/xcvrd_utilities/port_event_helper.rs).",
+        "xcvrd_utilities::common::del_port_sfp_dom_info_from_db -- delete a port's rows across the whole TRANSCEIVER_* table set (src/xcvrd_utilities/common.rs).",
+        "xcvrd::SfpStateUpdateTask::{on_add_logical_port,on_remove_logical_port} -- CONFIG_DB logical-port add/PORT_DEL lifecycle + NPU_SI reseed (src/xcvrd/sfp_state_update.rs).",
+        "xcvrd::DaemonXcvrd::deinit + xcvrd_utilities::common::is_syncd_warm_restore_complete -- warm/fast-reboot preserve vs normal-deinit delete of STATUS/STATUS_SW (src/xcvrd/mod.rs, src/xcvrd_utilities/common.rs)."
+      ],
+      "steps_part_b": [
+        "translate-directly: test_del_port_sfp_dom_info_from_db, test_sfp_removal_from_dict -> common::tests / xcvrd::sfp_state_update::tests (whole-table-set delete).",
+        "translate-directly: test_SfpStateUpdateTask_on_add_logical_port, test_handle_port_config_change -> xcvrd::sfp_state_update::tests / port_event_helper::tests (logical-port lifecycle).",
+        "translate-directly: test_is_syncd_warm_restore_complete_valid_cases, test_DaemonXcvrd_init_deinit_fastboot_enabled -> common::tests / xcvrd::tests (warm/fast-reboot table preservation)."
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "Golden conformance (full suite)",
+      "goal": "Reproduce the reference STATE_DB projection exactly (golden per-scenario captures) and pass the ENTIRE xcvrd-tests suite cumulatively, including all slow tests, with no marker filter. Terminal full-suite conformance gate.",
+      "status": "pending",
+      "deps": ["M11"],
+      "e2e_tests": ["test_golden"],
+      "steps_part_a": [
+        "Integration pass across the whole tree (src/xcvrd/*, src/cmis/*, src/dom/*, src/sff_mgr.rs, src/xcvrd_utilities/*): remove any remaining todo!()/no-op, reconcile every STATE_DB field against the reference projection, and confirm all worker threads run concurrently under DaemonXcvrd.",
+        "No new modules -- close out residual TODOs so the golden per-scenario captures match byte-for-byte (str()-fidelity via xcvrd::stringify / dom::utilities::db::value_to_py_str)."
+      ],
+      "steps_part_b": [
+        "Un-ignore the full per-module #[cfg(test)] mod tests set (all 183 behavioral cases translated across M1-M11) and run cumulatively -- `bash tools/unit_test.sh` must be fully green with zero #[ignore].",
+        "needs-new-test: any Python cases still marked needs-new-test (test_wrapper_*, task_run_stop/with_exception, signal_handler, update_loggers) land as their Rust-idiom equivalents so the seam + lifecycle behaviour is fully covered."
+      ]
+    }
+  ]
+}

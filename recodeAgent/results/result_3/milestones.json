@@ -1,0 +1,319 @@
+{
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Skeleton (deploy smoke)",
+      "goal": "Rust crate compiles; the binary is injected into pmon and stays RUNNING under supervisor. Deploy-smoke gate only: the suite's clean-baseline fixture requires TRANSCEIVER_INFO repopulation, so no pytest passes on a bare skeleton -- the harness special-cases M0 to check supervisor RUNNING. Stand up DaemonXcvrd boot (init/run/deinit), the platform + STATE_DB seams, and the worker-thread scaffold without any table producers yet.",
+      "test_modules": [],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:main",
+        "xcvrd.py:DaemonXcvrd.run",
+        "xcvrd.py:DaemonXcvrd.init",
+        "xcvrd.py:DaemonXcvrd.deinit",
+        "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper"
+      ],
+      "deps": []
+    },
+    {
+      "id": "M1",
+      "title": "Presence, identity & liveness",
+      "goal": "On module discovery/insertion read identity via the platform bridge and publish TRANSCEIVER_INFO (full CMIS dict vs. fixed SFF field list) plus TRANSCEIVER_STATUS_SW.status=1/error=N/A; seed the boot cmis_state=READY projection so downstream DOM can flow; on removal clear TRANSCEIVER_INFO and restore on re-plug. Retry a failed EEPROM identity read (60s cadence) and purge stale TRANSCEIVER_INFO left in STATE_DB at cold-start init. This establishes the INFO/STATUS_SW baseline the whole suite's clean-baseline fixture and liveness guard depend on.",
+      "test_modules": [
+        "test_presence",
+        "test_info_content",
+        "test_health",
+        "test_read_retry",
+        "test_stale_info"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:SfpStateUpdateTask",
+        "xcvrd.py:post_port_sfp_info_to_db",
+        "xcvrd.py:SfpStateUpdateTask._post_port_sfp_info_and_dom_thr_to_db_once",
+        "xcvrd.py:_init_port_sfp_status_sw_tbl",
+        "xcvrd.py:retry_eeprom_reading",
+        "xcvrd.py:remove_stale_transceiver_info",
+        "xcvrd_utilities/port_event_helper.py:get_port_mapping"
+      ],
+      "deps": [
+        "M0"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "DOM sensors, thresholds & polling",
+      "goal": "Run the DomInfoUpdateTask periodic loop: publish TRANSCEIVER_DOM_SENSOR (temperature, voltage and the 24 per-lane tx/rx power + tx bias keys, unit-stripped) with a last_update_time stamp, seed boot TRANSCEIVER_DOM_THRESHOLD, and (fast loop) TRANSCEIVER_DOM_TEMPERATURE. Honor the CONFIG_DB dom_polling=disabled gate. The emulator Monitor trace must show xcvrd genuinely polling the module and reacting to a plug event.",
+      "test_modules": [
+        "test_dom",
+        "test_dom_polling",
+        "test_interaction_trace"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/dom_mgr.py:DomInfoUpdateTask",
+        "dom/dom_mgr.py:DomThermalInfoUpdateTask",
+        "dom/dom_mgr.py:is_port_dom_monitoring_disabled",
+        "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils",
+        "dom/utilities/dom_sensor/utils.py:DOMUtils",
+        "dom/utilities/db/utils.py:DBUtils.post_diagnostic_values_to_db"
+      ],
+      "deps": [
+        "M1"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Rich transceiver status",
+      "goal": "Publish the rich TRANSCEIVER_STATUS table from the DomInfoUpdateTask read of get_transceiver_status(): module_state, module_fault_cause, DP[1-8]State, config_state_hostlane[1-8], dpinit_pending/dpdeinit, per-lane tx/rx OutputStatus, txNdisable, tx_disabled_channel (admin-down baseline ModuleLowPwr / DataPathDeactivated), each row carrying a well-formed last_update_time.",
+      "test_modules": [
+        "test_transceiver_status",
+        "test_last_update_time"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/utilities/status/db_utils.py:StatusDBUtils",
+        "dom/utilities/status/utils.py:StatusUtils",
+        "dom/dom_mgr.py:DomInfoUpdateTask.task_worker",
+        "dom/utilities/db/utils.py:DBUtils.get_current_time"
+      ],
+      "deps": [
+        "M2"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "SFP errors & flag metadata",
+      "goal": "Decode injected hardware error bitmaps to descriptions and write TRANSCEIVER_STATUS_SW.error (blocking error removes DOM rows but keeps TRANSCEIVER_INFO; non-blocking keeps DOM; recovery on re-plug clears the error and repopulates DOM). Run the flag-metadata engine for the DOM and STATUS latched-flag tables: TRANSCEIVER_DOM_FLAG / TRANSCEIVER_STATUS_FLAG plus each _CHANGE_COUNT/_SET_TIME/_CLEAR_TIME sibling, bumping the change count on a transition and stamping set/clear times (NEVER init). Re-capture the flag tables off-cadence on a link-change flap.",
+      "test_modules": [
+        "test_status_error",
+        "test_status_flag",
+        "test_dom_flag_meta",
+        "test_link_change_flags"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/sfp_status_helper.py",
+        "xcvrd.py:SfpStateUpdateTask.task_worker",
+        "dom/utilities/db/utils.py:_update_flag_metadata_tables",
+        "dom/dom_mgr.py:update_port_db_diagnostics_on_link_change",
+        "dom/dom_mgr.py:on_port_update_event"
+      ],
+      "deps": [
+        "M3"
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "VDM, PM & firmware diagnostics",
+      "goal": "Add the remaining DomInfoUpdateTask diagnostic posters: the VDM freeze->capture->unfreeze sequence populating TRANSCEIVER_VDM_REAL_VALUE (basic + statistic min/max/avg), the four TRANSCEIVER_VDM_{HALARM,LALARM,HWARN,LWARN}_THRESHOLD tables and the per-type VDM flag tables (with flag metadata); TRANSCEIVER_PM for coherent modules (skipped on flat-memory); and TRANSCEIVER_FIRMWARE_INFO (active/inactive firmware).",
+      "test_modules": [
+        "test_vdm",
+        "test_vdm_statistic",
+        "test_pm",
+        "test_firmware_info"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/utilities/vdm/utils.py:VDMUtils",
+        "dom/utilities/vdm/db_utils.py:VDMDBUtils",
+        "dom/dom_mgr.py:post_port_pm_info_to_db",
+        "dom/dom_mgr.py:post_port_sfp_firmware_info_to_db"
+      ],
+      "deps": [
+        "M4"
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "CMIS datapath bring-up (core)",
+      "goal": "Run the CmisManagerTask datapath bring-up state machine (INSERTED -> DP_PRE_INIT_CHECK -> DP_DEINIT -> AP_CONFIGURED -> DP_INIT -> DP_TXON -> READY): drive an admin-up CMIS port out of low power to ModuleReady with every configured datapath DataPathActivated, select the application from the module advertisement by host-lane-count + speed, compute host/media lane masks, publish intermediate cmis_state to TRANSCEIVER_STATUS_SW and active_apsel_hostlaneN to TRANSCEIVER_INFO, and gate DOM publication while a port is still in CMIS init (non-terminal cmis_state).",
+      "test_modules": [
+        "test_cmis_datapath",
+        "test_cmis_state_progression",
+        "test_app_select",
+        "test_daemon_control",
+        "test_dom_gating"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "cmis/cmis_manager_task.py:CmisManagerTask",
+        "cmis/cmis_manager_task.py:process_cmis_state_machine",
+        "cmis/cmis_manager_task.py:get_cmis_host_lanes_mask",
+        "cmis/cmis_manager_task.py:get_cmis_media_lanes_mask",
+        "xcvrd_utilities/common.py:get_cmis_application",
+        "cmis/cmis_manager_task.py:post_port_active_apsel_to_db",
+        "cmis/cmis_manager_task.py:update_port_transceiver_status_table_sw_cmis_state",
+        "dom/dom_mgr.py:is_port_in_cmis_initialization_process"
+      ],
+      "deps": [
+        "M5"
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "CMIS bring-up edge cases & fast-reboot",
+      "goal": "Handle the CMIS state-machine edges: per-state timers with a retry cap driving cmis_state=FAILED instead of looping forever; datapath teardown + re-provision on reconfiguration; forced Tx-disable when bring-up preconditions are lost (host_tx_ready != true OR admin_status != up); reacting to host_tx_ready transitions; and the fast-reboot datapath-skip that preserves an already-active datapath across re-init.",
+      "test_modules": [
+        "test_cmis_reconfig",
+        "test_cmis_failed",
+        "test_cmis_forced_tx",
+        "test_host_tx_ready",
+        "test_fast_reboot_dp_skip"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "cmis/cmis_manager_task.py:CmisManagerTask.process_single_lport",
+        "cmis/cmis_manager_task.py:is_cmis_application_update_required",
+        "cmis/cmis_manager_task.py:is_fast_reboot_enabled",
+        "cmis/cmis_manager_task.py:is_decommission_required",
+        "xcvrd_utilities/common.py:is_fast_reboot_enabled"
+      ],
+      "deps": [
+        "M6"
+      ]
+    },
+    {
+      "id": "M8",
+      "title": "Module power control & coherent tuning",
+      "goal": "Operator-driven module control-plane: sfputil lpmode / reset through XCVRDUtils get_lpmode/set_lpmode/reset with the expected write trace and module-state-machine transitions; gate the VDM-statistic freeze (and thus the TRANSCEIVER_PM refresh) while an activated coherent module is in low-power mode; and the coherent/ZR laser tuning writes configure_tx_output_power / configure_laser_frequency with grid validation.",
+      "test_modules": [
+        "test_lpmode_reset",
+        "test_dom_lpmode",
+        "test_coherent_tuning"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/utils.py:XCVRDUtils",
+        "cmis/cmis_manager_task.py:configure_tx_output_power",
+        "cmis/cmis_manager_task.py:configure_laser_frequency",
+        "dom/utilities/vdm/utils.py:VDMUtils"
+      ],
+      "deps": [
+        "M7"
+      ]
+    },
+    {
+      "id": "M9",
+      "title": "Media & optics SI settings",
+      "goal": "Parse media_settings.json and drive notify_media_setting, managing the STATE_DB PORT_TABLE.NPU_SI_SETTINGS_SYNC_STATUS lifecycle (seed/reset around the notify); and apply per-vendor optics Signal-Integrity settings from optics_si_settings.json during CMIS bring-up.",
+      "test_modules": [
+        "test_media_settings",
+        "test_optics_si"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/media_settings_parser.py",
+        "xcvrd_utilities/media_settings_parser.py:notify_media_setting",
+        "xcvrd_utilities/optics_si_parser.py"
+      ],
+      "deps": [
+        "M8"
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "SFF-8636 / flat-memory path",
+      "goal": "Support the non-CMIS module served by the emulator: SFF-8636 identity routing (Sff8636Api), DOM, and the optional SffManagerTask deterministic link bring-up (tx_disable per host_tx_ready/admin_status, lpmode-disable, high-power-class enable); and short-circuit the CMIS state machine straight to READY for flat-memory modules.",
+      "test_modules": [
+        "test_sff8636",
+        "test_sff_control",
+        "test_flat_memory"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "sff_mgr.py:SffManagerTask",
+        "xcvrd_utilities/utils.py:XCVRDUtils",
+        "cmis/cmis_manager_task.py:CmisManagerTask"
+      ],
+      "deps": [
+        "M9"
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "Multiport concurrency & table lifecycle",
+      "goal": "Prove per-module isolation with all tasks running concurrently across many ports/subports (natsort breakout ordering, no cross-talk on presence/change-events/DOM); and the full table-lifecycle contract: a physical unplug and a CONFIG_DB logical-port PORT_DEL delete the port's rows across the whole TRANSCEIVER_* table set, with a re-add repopulating them and reseeding NPU_SI_SETTINGS_SYNC_STATUS; warm/fast-reboot shutdown preserves TRANSCEIVER_STATUS / TRANSCEIVER_STATUS_SW (a normal shutdown deinit deletes them).",
+      "test_modules": [
+        "test_multiport",
+        "test_removal_tables",
+        "test_logical_port",
+        "test_warm_reboot"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/port_event_helper.py:PortMapping",
+        "xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db",
+        "xcvrd.py:SfpStateUpdateTask.on_remove_logical_port",
+        "xcvrd.py:DaemonXcvrd.deinit",
+        "xcvrd_utilities/common.py:is_syncd_warm_restore_complete"
+      ],
+      "deps": [
+        "M10"
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "Golden conformance (full suite)",
+      "goal": "Reproduce the reference STATE_DB projection exactly (golden per-scenario captures) and pass the ENTIRE xcvrd-tests suite cumulatively, including all slow tests, with no marker filter. This is the terminal full-suite conformance gate for the port.",
+      "test_modules": [
+        "test_golden"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py",
+        "cmis/cmis_manager_task.py",
+        "dom/dom_mgr.py",
+        "sff_mgr.py",
+        "xcvrd_utilities/"
+      ],
+      "deps": [
+        "M11"
+      ]
+    },
+    {
+      "id": "M13",
+      "title": "Retry deferred tests",
+      "goal": "Fix and re-enable the previously-skipped e2e tests so they pass: [\"test_dom_gating.py::test_dom_gated_during_cmis_init\", \"test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture\", \"test_cmis_datapath.py::test_cmis_datapath_activated\", \"test_cmis_state_progression.py::test_cmis_state_progression\"]. Implement the daemon functionality they exercise; they have been re-enabled in the cumulative gate for this milestone. If they still cannot pass, they will be skipped permanently.",
+      "test_modules": [],
+      "marker": "",
+      "origin": "retry",
+      "unit_only": false,
+      "source_refs": [
+        "test_dom_gating.py::test_dom_gated_during_cmis_init",
+        "test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture",
+        "test_cmis_datapath.py::test_cmis_datapath_activated",
+        "test_cmis_state_progression.py::test_cmis_state_progression"
+      ],
+      "deps": [
+        "M12"
+      ]
+    }
+  ]
+}

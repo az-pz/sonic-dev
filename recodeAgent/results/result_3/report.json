@@ -1,0 +1,38 @@
+{
+  "milestone": "M11",
+  "passed": false,
+  "tests": {
+    "unit": { "total": 219, "passed": 219, "failed": 0 },
+    "e2e":  { "total": 102, "passed": 98, "failed": 4 }
+  },
+  "failures": [
+    {
+      "layer": "e2e",
+      "test": "test_cmis_state_progression.py::test_cmis_state_progression",
+      "symptom": "Ethernet28 observed too few intermediate cmis_states [] (seq=['READY']); assert 0 >= 4 -- daemon jumps straight to READY without traversing the CMIS state machine",
+      "likely_cause": "CMIS manager does not publish the intermediate TRANSCEIVER_STATUS|Ethernet28 'cmis_state' transitions (INSERTED -> DP_DEINIT -> AP_CONFIGURED -> DP_INIT -> DP_TXON -> READY); it only writes the terminal READY, so the test cannot observe >=4 distinct states",
+      "repair_hint": "In src/cmis/cmis_manager_task.rs, write the cmis_state field to TRANSCEIVER_STATUS at each state-machine step instead of only at completion; mirror the per-state update_port_transceiver_status_table_sw_cmis_state writes in cmis/cmis_manager_task.py (CmisManagerTask.task_worker state loop)"
+    },
+    {
+      "layer": "e2e",
+      "test": "test_logical_port.py::test_logical_port_remove_deletes_full_table_set",
+      "symptom": "WaitTimeout after 80s waiting for Ethernet60 TRANSCEIVER_INFO deleted on CONFIG_DB logical-port removal (last=False)",
+      "likely_cause": "Daemon does not react to a CONFIG_DB PORT-table logical-port DEL event: the full STATE_DB table set (TRANSCEIVER_INFO/DOM_SENSOR/STATUS/PM/VDM/FLAG...) for the removed logical port is never torn down",
+      "repair_hint": "Implement CONFIG_DB PORT DEL handling in src/xcvrd_utilities/port_event_helper.rs + src/xcvrd/sfp_state_update.rs and the del_port_sfp_dom_info_from_db / delete_port_from_status_table teardown in src/xcvrd_utilities/xcvr_table_helper.rs; mirror xcvrd.py PortChangeObserver / on_port_config_change removal path (M11 table lifecycle)"
+    },
+    {
+      "layer": "e2e",
+      "test": "test_logical_port.py::test_logical_port_readd_repopulates_and_reseeds_sync_status",
+      "symptom": "WaitTimeout after 80s waiting for Ethernet60 INFO cleared on removal before re-add (last=False)",
+      "likely_cause": "Same missing CONFIG_DB PORT DEL teardown as above: because removal never clears TRANSCEIVER_INFO, the re-add/reseed (NPU SI sync-status) path is never reached",
+      "repair_hint": "Fix the logical-port removal teardown in src/xcvrd_utilities/port_event_helper.rs / xcvr_table_helper.rs so a subsequent PORT SET repopulates the tables and reseeds sync-status; mirror xcvrd.py on_port_config_change add/remove handling and the media-settings/NPU-SI reseed (media_settings_parser)"
+    },
+    {
+      "layer": "e2e",
+      "test": "test_warm_reboot.py::test_normal_shutdown_clears_transceiver_status",
+      "symptom": "WaitTimeout after 15s waiting for Ethernet8 TRANSCEIVER_STATUS deleted on a normal shutdown (last=False)",
+      "likely_cause": "On a normal (non-fast/non-warm-reboot) shutdown the daemon deinit cleanup does not delete TRANSCEIVER_STATUS rows; the fast-reboot preserve path works but the normal-shutdown clear path is missing",
+      "repair_hint": "In src/daemon.rs stop/signal-handler (and CMIS/DOM task deinit), delete the STATE_DB TRANSCEIVER_STATUS table when not in fast/warm reboot; mirror DaemonXcvrd.deinit() in xcvrd.py which clears TRANSCEIVER_STATUS on graceful shutdown while skipping cleanup under fast-reboot"
+    }
+  ]
+}
