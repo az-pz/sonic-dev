@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from burr.core import action
@@ -139,12 +140,85 @@ def _permanent_skips() -> list[str]:
     return [t for t in data["tests_to_skip"] if t in retried]
 
 
+# A pytest node id, e.g. "tests/test_dom.py::test_dom_sensor_values" (optionally
+# parametrized "...[Ethernet100]"). Used to recognise e2e tests inside free-form
+# failure text. Rust unit-test paths ("dom::tests::publishes") deliberately do NOT
+# match, since they contain no ".py::".
+_PYTEST_NODEID_RE = re.compile(r"[\w./\\-]+\.py::[\w\[\]\.-]+")
+# Keys a validator might use for the failing test's identifier.
+_TEST_ID_KEYS = ("test", "test_id", "testid", "nodeid", "node_id", "name", "id")
+
+
+def _extract_e2e_test_ids(report: dict) -> list[str]:
+    """Pull the failing E2E pytest node ids out of a validator report.
+
+    Deliberately tolerant: the report is produced by an LLM agent, so `failures`
+    entries may be dicts (with varying key names) or plain strings, and `layer`
+    may be missing. Rules:
+      * an entry explicitly marked layer="unit" is ignored (Rust unit tests are
+        not pytest selections),
+      * an entry explicitly marked layer="e2e" contributes its id verbatim,
+      * an unlabelled entry contributes only an unambiguous pytest node id
+        (something matching '<file>.py::<test>'), so we never mistake a Rust
+        unit-test path for an e2e test.
+    Returns de-duplicated ids in report order.
+    """
+    out: list[str] = []
+
+    def _add(val: str) -> None:
+        val = (val or "").strip()
+        if val and val not in out:
+            out.append(val)
+
+    for f in report.get("failures", []) or []:
+        if isinstance(f, dict):
+            layer = str(f.get("layer", "")).strip().lower()
+            if layer == "unit":
+                continue
+            raw = ""
+            for k in _TEST_ID_KEYS:
+                v = f.get(k)
+                if isinstance(v, str) and v.strip():
+                    raw = v.strip()
+                    break
+            if layer == "e2e":
+                # Trust the agent's own labelling; take the id (or mine it out of
+                # the whole entry if the id key was missing/oddly named).
+                if raw:
+                    _add(raw)
+                else:
+                    m = _PYTEST_NODEID_RE.search(json.dumps(f))
+                    if m:
+                        _add(m.group(0))
+                continue
+            # Unlabelled: only accept an unambiguous pytest node id.
+            m = _PYTEST_NODEID_RE.search(raw) or _PYTEST_NODEID_RE.search(json.dumps(f))
+            if m:
+                _add(m.group(0))
+        elif isinstance(f, str):
+            m = _PYTEST_NODEID_RE.search(f)
+            if m:
+                _add(m.group(0))
+    return out
+
+
 def _skip_funcs(skips: list[str]) -> list[str]:
-    """The pytest -k function-name for each skip node-id (part after '::')."""
+    """`-k`-safe selector tokens for each skipped test.
+
+    A `-k` expression only accepts bare identifier-ish words, so normalise:
+      "tests/test_dom.py::test_x[Ethernet100]" -> "test_x"   (drop path + params)
+      "test_dom.py"                            -> "test_dom" (whole-module fallback)
+    Anything that still isn't a plain word is dropped rather than emitted, since a
+    malformed -k makes pytest error out and would fail the whole gate.
+    """
     out: list[str] = []
     for s in skips:
-        fn = s.split("::")[-1].strip()
-        if fn and fn not in out:
+        fn = (s or "").split("::")[-1].strip()
+        fn = fn.split("[")[0].strip()          # drop pytest parametrisation
+        if fn.endswith(".py"):                 # whole-module fallback entry
+            fn = fn[:-3]
+        fn = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        if fn and re.fullmatch(r"\w+", fn) and fn not in out:
             out.append(fn)
     return out
 
@@ -343,7 +417,8 @@ def plan(state, __tracer) -> dict:
 
 @action(
     reads=["milestone_idx", "milestone_concluded"],
-    writes=["milestone_idx", "iter_count", "milestone_passed", "milestone_concluded"],
+    writes=["milestone_idx", "iter_count", "milestone_passed", "milestone_concluded",
+            "report"],
 )
 def select_milestone(state) -> dict:
     """Loop head: initialise (from plan/scope) or advance (after a milestone concludes).
@@ -353,14 +428,20 @@ def select_milestone(state) -> dict:
     milestone is skipped rather than failing the whole run; its untranslated
     functionality is caught later by the Parity Verifier. On the first entry
     (from plan, or after a re-scope) `milestone_concluded` is False, so we start
-    the current milestone without advancing. Always reset the per-milestone repair
-    counter, the passed flag, and the concluded flag.
+    the current milestone without advancing.
+
+    Always reset the PER-MILESTONE state: the repair counter, the passed/concluded
+    flags, AND `report`. Clearing the report matters after a GIVE-UP: validate keeps
+    the failing report so the (never-taken) repair path could use it, so without
+    clearing it here the next milestone's FIRST translate would see stale failures
+    and wrongly run in REPAIR mode instead of IMPLEMENT.
     """
     idx = state["milestone_idx"]
     if state["milestone_concluded"]:       # re-entered after this milestone passed or was given up
         idx += 1
     return state.update(milestone_idx=idx, iter_count=0,
-                        milestone_passed=False, milestone_concluded=False)
+                        milestone_passed=False, milestone_concluded=False,
+                        report={})
 
 
 @action(reads=["milestone_idx", "iter_count", "report"], writes=["last_agent"])
@@ -470,11 +551,21 @@ def validate(state, __tracer) -> dict:
     # later milestone's cumulative gate deselects them (see _add_skips docstring).
     newly_skipped: list[str] = []
     if gave_up:
-        for f in report.get("failures", []):
-            if isinstance(f, dict) and f.get("layer") == "e2e" and f.get("test"):
-                newly_skipped.append(f["test"])
+        newly_skipped = _extract_e2e_test_ids(report)
+        if not newly_skipped:
+            # The validator's report didn't name any e2e test id (or named only unit
+            # failures). Fall back to this milestone's OWN new test modules so the
+            # stuck gate still gets deselected -- otherwise every later milestone
+            # would keep re-running it and burn its whole repair budget again.
+            newly_skipped = [f"{mod}.py" for mod in m.test_modules]
+            if newly_skipped:
+                print(f"[recode] {m.id} gave up but the report named no e2e test id; "
+                      f"deferring its whole test module(s): {newly_skipped}")
         if newly_skipped:
             _add_skips(newly_skipped)
+        else:
+            print(f"[recode] WARNING: {m.id} gave up but no e2e test could be "
+                  "identified to defer; later milestones may re-run its failures.")
     summary = _log_agent(__tracer, stage=f"validate:{m.id}", prompt=prompt, result=res)
     if __tracer is not None:
         try:

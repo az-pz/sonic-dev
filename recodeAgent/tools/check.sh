@@ -14,11 +14,11 @@ export RECODE_PIPELINE_DIR="$HERE/pipeline"
 PY="${PYTHON:-python}"
 
 reset_run() {
-  rm -f "$HERE/pipeline/burr.db" "$HERE"/pipeline/.mock_attempts_* \
-        "$HERE/pipeline/.mock_parity_attempts" \
+  rm -f "$HERE/pipeline/burr.db" "$HERE"/pipeline/.mock_* \
         "$HERE/pipeline/milestones.json" "$HERE/pipeline/parity_report.json" \
         "$HERE/pipeline/skips.json" 2>/dev/null
-  unset RECODE_MOCK_FAIL RECODE_CRASH_AT RECODE_MOCK_PARITY_GAPS RECODE_MOCK_RETRY_FAIL 2>/dev/null || true
+  unset RECODE_MOCK_FAIL RECODE_CRASH_AT RECODE_MOCK_PARITY_GAPS RECODE_MOCK_RETRY_FAIL \
+        RECODE_MOCK_FAIL_STYLE 2>/dev/null || true
 }
 
 echo; echo "===== 1) HAPPY PATH - analyze->scope->plan->M0..M6->parity COMPLETE ====="
@@ -41,6 +41,22 @@ try:
 except FileNotFoundError:
     print("     MISSING skips.json (FAIL)")
 PY
+echo "  translate MODE per milestone (regression: M3, the milestone AFTER the skipped M2,"
+echo "  must start IMPLEMENT -- not REPAIR on M2's stale report):"
+"$PY" - <<'PY'
+import os
+p = os.path.join(os.environ["RECODE_PIPELINE_DIR"], ".mock_modes")
+seen, first = [], {}
+for line in open(p):
+    mid, mode = line.strip().split(":")
+    seen.append(f"{mid}:{mode}")
+    first.setdefault(mid, mode)
+print("      sequence:", " ".join(seen))
+bad = [m for m, mode in first.items() if m not in ("M2",) and mode != "IMPLEMENT"]
+print("      first-mode per milestone:", first)
+print("      RESULT:", "PASS (every milestone starts IMPLEMENT)" if not bad
+      else f"FAIL (started in REPAIR: {bad})")
+PY
 
 echo; echo "===== 3b) RETRY STILL FAILS -> PERMANENT SKIP - M2 + retry both give up ====="
 reset_run; export RECODE_MOCK_FAIL="M2:99" RECODE_MOCK_RETRY_FAIL=1 RECODE_MOCK_PARITY_GAPS=0
@@ -54,6 +70,26 @@ perm = [t for t in d.get("tests_to_skip", []) if t in set(d.get("retried", []))]
 print("     tests_to_skip=", d.get("tests_to_skip"), " retried=", d.get("retried"), " permanent=", perm)
 PY
 unset RECODE_MOCK_RETRY_FAIL
+
+echo; echo "===== 3c) SKIPS EXTRACTION IS SHAPE-TOLERANT - validator omits \"layer\" / uses prose ====="
+for style in nolayer string; do
+  reset_run
+  export RECODE_MOCK_FAIL="M2:99" RECODE_MOCK_PARITY_GAPS=0 RECODE_MOCK_RETRY_FAIL=1 \
+         RECODE_MOCK_FAIL_STYLE="$style"
+  "$PY" -m orchestrator.app --app-id "chk-style-$style" --mock --max-iter 2 >/dev/null 2>&1
+  echo "  failures reported as '$style' ->"
+  "$PY" - <<'PY'
+import json, os
+p = os.path.join(os.environ["RECODE_PIPELINE_DIR"], "skips.json")
+try:
+    d = json.load(open(p))
+    got = d.get("tests_to_skip") or d.get("retried")
+    print("     recorded:", got, "" if got else " <-- FAIL (nothing deferred)")
+except FileNotFoundError:
+    print("     MISSING skips.json (FAIL - extraction found no e2e test)")
+PY
+done
+unset RECODE_MOCK_FAIL_STYLE RECODE_MOCK_RETRY_FAIL
 
 echo; echo "===== 4) CRASH-RESUME (inner) - crash at M3, resume SAME app-id ====="
 reset_run; export RECODE_MOCK_PARITY_GAPS=0

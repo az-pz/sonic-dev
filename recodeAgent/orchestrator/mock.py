@@ -86,7 +86,14 @@ def respond(agent_name: str, prompt: str) -> str:
 
     if agent_name == "translator":
         (pdir / "translate.marker").write_text("mock translated\n", encoding="utf-8")
-        return "mock translator: filled skeleton"
+        # Record "<milestone>:<mode>" per call so the offline harness can assert the
+        # translate MODE (regression: after a milestone gives up, the next milestone's
+        # first translate must be IMPLEMENT, not REPAIR on the stale report).
+        mid = _extract_milestone(prompt)
+        mode = "REPAIR" if "Mode: REPAIR" in (prompt or "") else "IMPLEMENT"
+        with (pdir / ".mock_modes").open("a", encoding="utf-8") as fh:
+            fh.write(f"{mid}:{mode}\n")
+        return f"mock translator: filled skeleton ({mid} {mode})"
 
     if agent_name == "validator":
         # Crash hook (resume testing): abort before writing the verdict so the
@@ -116,15 +123,26 @@ def respond(agent_name: str, prompt: str) -> str:
         passed = attempts > budget
         # On a retry milestone, the failing tests are the re-enabled ones (source_refs)
         # -- mirroring the validator reporting the actual deferred tests, not a synthetic id.
+        # RECODE_MOCK_FAIL_STYLE selects the report SHAPE, so the harness can prove the
+        # skips.json extraction copes with what a real (LLM) validator actually emits:
+        #   dict (default) = {"layer":"e2e","test":...}; nolayer = no "layer" key;
+        #   string = a plain prose failure line.
+        style = os.environ.get("RECODE_MOCK_FAIL_STYLE", "dict")
+        nodeid = f"tests/test_mock_{mid}.py::test_mock_{mid}_behavior"
         if passed:
             failures = []
         elif is_retry and retry_refs:
             failures = [{"layer": "e2e", "test": t,
                          "symptom": f"(mock) retry {mid} attempt {attempts} still failing",
                          "repair_hint": "mock"} for t in retry_refs]
+        elif style == "nolayer":
+            failures = [{"test": nodeid,
+                         "symptom": f"(mock) {mid} attempt {attempts} <= budget {budget}"}]
+        elif style == "string":
+            failures = [f"{nodeid} FAILED - (mock) attempt {attempts} <= budget {budget}"]
         else:
             failures = [{"layer": "e2e",
-                         "test": f"tests/test_mock_{mid}.py::test_mock_{mid}_behavior",
+                         "test": nodeid,
                          "symptom": f"(mock) {mid} attempt {attempts} <= budget {budget}",
                          "repair_hint": "mock"}]
         report = {
