@@ -63,6 +63,7 @@ Do **not** re-add or force-run a skipped test, and do **not** report it as a fai
 ## Environment notes
 - The DUT chain (`ssh sonic-dev` → `docker exec mgmt` → `sshpass ssh admin@10.250.0.101` → `docker exec pmon`) is encapsulated by the tools; prefer them over hand-rolling it.
 - M0 is a *deploy-smoke* e2e gate (inject + supervisor RUNNING; no pytest). M1+ run real pytest subsets. E2E `passed` requires build+inject OK, exit 0, and zero failures/errors with total>0.
+- **Some tests need environment setup or they SKIP** (e.g. a special/provisioned emulator module, a port at a given speed, a required xcvrd flag). A SKIP is **not** a pass: check the pytest summary for skipped tests, do the setup so they actually run, and if one still can't run, report it explicitly (with its reason) rather than counting it as passing.
 
 ## Rules (hard boundaries)
 - **Never edit** the daemon (`pipeline/crate/`), the e2e tests (`../xcvrd-tests/`), the unit tests, the platform, `platform-bridge`, or `swss-common`. You may only run the two tools and **write `pipeline/report.json`** (plus read logs).
