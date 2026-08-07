@@ -46,8 +46,9 @@ attribute access works.
 ## Files
 | File | Purpose |
 |------|---------|
-| `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules |
-| `emu_config.yaml`   | 33 present modules (indices 0..32) |
+| `gen_emu_config.py` | generate `emu_config.yaml` with N present QSFP-DD modules, **including the 4 special modules the xcvrd-tests need** (see below) |
+| `emu_config.yaml`   | 33 present modules (indices 0..32), 4 of them special |
+| `provision_special_modules.sh` | **repair tool only** — retro-fit the special modules into an already-deployed config that predates them (a redeploy is the clean fix) |
 | `kvm_platform.json` | `chassis.sfps` inventory (32×40G) installed as the platform's `platform.json` — required by `platform_tests/api/test_sfp.py` (`duthost.facts["chassis"]["sfps"]`) |
 | `build_emu_image.sh`| build `xcvr-emu:local` from the repo Dockerfile → cached `xcvr-emu-image.tar.gz` |
 | `build_bundle.sh`   | assemble `emu-bundle.tar.gz` (bridge `sonic_platform` + `xcvr_emu` proto stubs + config) |
@@ -66,3 +67,25 @@ cd dev
 ```
 The emulator now deploys automatically as part of a full `./setup-sonic-testbed.sh`
 run and during `rebuild` (post-wipe recovery).
+
+## Special modules (always provisioned)
+Most of the 33 emulated modules are identical CMIS QSFP-DD 40G optics. Four are
+deliberately different, because parts of `xcvrd-tests` need an optic the uniform
+default can't express. They are emitted by `gen_emu_config.py`, so they ship in
+`emu_config.yaml` and exist after **every** deploy — the dependent tests can never
+silently skip:
+
+| idx | Port | Difference | Exercises |
+|-----|------|------------|-----------|
+| 10 | `Ethernet40` | `type: sff8636` (SFF-8636/QSFP28) | `test_sff8636.py` — routed to `SffManagerTask`, not CMIS |
+| 11 | `Ethernet44` | `MediaInterfaceID: 77` (400GBASE-ZR) | `test_pm.py` — coherent C-CMIS PM |
+| 13 | `Ethernet52` | `MemoryModel: FLAT` | `test_flat_memory.py` — CMIS short-circuits to READY |
+| 14 | `Ethernet56` | 2 apps: XLAUI 40G + CAUI-4 100G | `test_app_select.py` — application selection across speeds |
+
+Only config-level properties live in the YAML (the emulator re-applies them from
+config on every plug); the raw byte images — the SFF-8636 EEPROM page and the
+C-CMIS PM/VDM stimulus — are still written by the tests at runtime. `idx14` also
+needs the emulator's "ConfigSuccess on decommission" support (`xcvr-emu`
+`sonic-dev`) for the 40G↔100G re-provision handshake.
+
+`EMU_NO_SPECIAL=1 python3 gen_emu_config.py` emits a uniform config without them.
