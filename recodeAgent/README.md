@@ -42,15 +42,17 @@ python -m orchestrator.app --app-id run1
 persisted node (crash-resume); use a fresh id to start over. Useful flags:
 `--max-iter N` (per-milestone repair budget, default 10), `--max-parity-rounds N`
 (outer parity budget, default 3), `--mock` (offline), `--db PATH` (state file),
-`--pipeline-dir PATH`, and `--start-milestone Mx`.
+`--pipeline-dir PATH`, `--start-milestone Mx`, and `--start-parity`.
 Installed as a console script too: `recode --app-id run1`. Watch it live with the
 Burr UI: `burr` → open the printed URL → project `recodeagent-xcvrd` (see §7).
 
-### Start at a milestone from an existing pipeline folder
+### Start partway through, from an existing pipeline folder
 
-Use this when `analysis.md`, `milestones.json`, `plan.json`, and the translated
+Use these when `analysis.md`, `milestones.json`, `plan.json`, and the translated
 working copy (`crate/xcvrd-rs/`) already exist and you want a **new orchestration
-run** to begin directly at a chosen milestone:
+run** to begin somewhere other than the start.
+
+**At a chosen milestone** — skips analyze/scope/plan:
 
 ```bash
 python -m orchestrator.app \
@@ -59,16 +61,32 @@ python -m orchestrator.app \
   --app-id retry-from-m3
 ```
 
-This validates the required artifacts, loads the milestone ids from that folder's
-`milestones.json`, marks analyze/scope/plan complete, selects M3, and enters at
-`select_milestone` → `translate`. Existing `skips.json` is preserved and used.
-The default state DB is `<pipeline-dir>/burr.db`; pass `--db PATH` to keep bootstrap
-runs separate.
+Loads the milestone ids from that folder's `milestones.json`, marks
+analyze/scope/plan complete, selects M3, and enters at `select_milestone` →
+`translate`.
+
+**At the Parity Verifier** — also skips the entire milestone loop:
+
+```bash
+python -m orchestrator.app \
+  --pipeline-dir /path/to/existing/pipeline \
+  --start-parity \
+  --app-id parity-only
+```
+
+Enters directly at `parity_verify` to grade the translation as it currently
+stands. The outer loop still works from there: if parity reports gaps it
+re-scopes / appends a retry milestone and runs the milestone loop as usual, so
+this is also the quick way to re-check coverage after a manual fix. The two
+flags are mutually exclusive.
+
+Both validate the required artifacts up front and fail fast with a clear message
+if any are missing. Existing `skips.json` is preserved and used. The default state
+DB is `<pipeline-dir>/burr.db`; pass `--db PATH` to keep bootstrap runs separate.
 
 **Use a fresh `--app-id` to force the requested start.** If that app id already
-exists in the selected DB, Burr's normal crash-resume state wins and
-`--start-milestone` does not rewind or override it. The environment-variable form
-also works:
+exists in the selected DB, Burr's normal crash-resume state wins and these flags
+do not rewind or override it. The environment-variable form also works:
 
 ```bash
 RECODE_PIPELINE_DIR=/path/to/existing/pipeline \
@@ -184,7 +202,7 @@ Its untranslated source still shows up as a **parity gap** (→ re-scope) until 
 is complete or the outer budget is spent.
 
 Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
-offline with mock agents via `tools/check.sh` (10 scenarios, zero tokens).
+offline with mock agents via `tools/check.sh` (11 scenarios, zero tokens).
 
 Everything else — Analyzer, Planner, skeleton-first, name mapping, the
 translate→validate→repair loop with `maxIter` — is the paper's design.
@@ -512,7 +530,7 @@ From **Git Bash**, in `dev/recodeAgent/`:
 bash tools/check.sh
 ```
 
-Runs ten scenarios against the mock agents and prints a summary:
+Runs eleven scenarios against the mock agents and prints a summary:
 
 | # | Scenario | Look for |
 |---|----------|----------|
@@ -525,6 +543,7 @@ Runs ten scenarios against the mock agents and prints a summary:
 | 6 | Outer budget exhaustion | `done=False parity_complete=False` (parity never completes) |
 | 7,8 | Crash-resume at scope / parity | process 2 resumes at that node, `done=True` |
 | 9 | Start from existing artifacts at M3 | analyze/scope/plan skipped; history begins at M3, then M4..M6→parity |
+| 10 | Start at the Parity Verifier | `--start-parity`: history is just PARITY; no milestone runs at all |
 
 Run a single scenario manually:
 

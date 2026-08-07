@@ -65,11 +65,16 @@ def _configure_pipeline_dir(path: str | os.PathLike) -> Path:
 
 def _state_from_existing_pipeline(
     pipeline_dir: Path,
-    milestone_id: str,
+    milestone_id: str | None,
     max_iter: int,
     max_parity_rounds: int,
 ) -> dict:
-    """Bootstrap a NEW Burr run from existing pipeline artifacts at Mx."""
+    """Bootstrap a NEW Burr run from existing pipeline artifacts.
+
+    ``milestone_id`` selects the entry milestone; pass None to jump straight to the
+    Parity Verifier (every milestone is treated as already concluded, so parity runs
+    against the translation as it stands).
+    """
     required = [
         pipeline_dir / "analysis.md",
         pipeline_dir / "milestones.json",
@@ -84,14 +89,19 @@ def _state_from_existing_pipeline(
         )
 
     ms = milestones.load()
-    try:
-        idx = milestones.index_of(milestone_id, ms)
-    except KeyError as e:
-        ids = ", ".join(m.id for m in ms)
-        raise ValueError(
-            f"milestone {milestone_id!r} is not in {pipeline_dir / 'milestones.json'} "
-            f"(available: {ids})"
-        ) from e
+    if milestone_id is None:
+        # Parity entry: sit on the LAST milestone so any loop-back (a parity retry
+        # milestone, or a re-scope) appends and advances from a consistent position.
+        idx = len(ms) - 1
+    else:
+        try:
+            idx = milestones.index_of(milestone_id, ms)
+        except KeyError as e:
+            ids = ", ".join(m.id for m in ms)
+            raise ValueError(
+                f"milestone {milestone_id!r} is not in {pipeline_dir / 'milestones.json'} "
+                f"(available: {ids})"
+            ) from e
 
     state = S.initial_state(
         max_iter=max_iter, max_parity_rounds=max_parity_rounds)
@@ -104,6 +114,10 @@ def _state_from_existing_pipeline(
         "plan_done": True,
         "last_agent": "pipeline-bootstrap",
     })
+    if milestone_id is None:
+        # The milestone loop is behind us; mark the current one concluded/passed so
+        # a retry milestone appended by parity is picked up cleanly by select_milestone.
+        state.update({"milestone_passed": True, "milestone_concluded": True})
     return state
 
 
@@ -193,6 +207,11 @@ def main() -> int:
         help="start a NEW app-id from an existing pipeline folder at this milestone; "
              "requires analysis.md, milestones.json, plan.json, and crate/xcvrd-rs.")
     ap.add_argument(
+        "--start-parity", action="store_true",
+        help="start a NEW app-id from an existing pipeline folder directly at the "
+             "Parity Verifier, skipping analyze/scope/plan and the whole milestone "
+             "loop. Same artifact requirements as --start-milestone.")
+    ap.add_argument(
         "--db", default=None,
         help="SQLite persistence path (default: <pipeline-dir>/burr.db).")
     ap.add_argument("--mock", action="store_true", help="offline: mock agents (no Copilot).")
@@ -212,15 +231,18 @@ def main() -> int:
     db_path = args.db or str(pipeline_dir / "burr.db")
     bootstrap_state = None
     entrypoint = "analyze"
-    if args.start_milestone:
+    if args.start_milestone and args.start_parity:
+        ap.error("--start-milestone and --start-parity are mutually exclusive")
+    if args.start_milestone or args.start_parity:
         try:
             bootstrap_state = _state_from_existing_pipeline(
-                pipeline_dir, args.start_milestone,
+                pipeline_dir,
+                None if args.start_parity else args.start_milestone,
                 max_iter=args.max_iter,
                 max_parity_rounds=args.max_parity_rounds)
         except ValueError as e:
             ap.error(str(e))
-        entrypoint = "select_milestone"
+        entrypoint = "parity_verify" if args.start_parity else "select_milestone"
 
     app = build_application(app_id, max_iter=args.max_iter,
                             max_parity_rounds=args.max_parity_rounds,
@@ -230,13 +252,16 @@ def main() -> int:
 
     print(f"[recode] app_id={app_id}  mock={os.environ.get('RECODE_MOCK')=='1'}  "
           f"pipeline={pipeline_dir}  db={db_path}")
-    if args.start_milestone:
+    if args.start_milestone or args.start_parity:
+        where = "the Parity Verifier" if args.start_parity else args.start_milestone
+        flag = "--start-parity" if args.start_parity else f"--start-milestone {args.start_milestone}"
         if app.state["last_agent"] == "pipeline-bootstrap":
-            print(f"[recode] starting from existing artifacts at {args.start_milestone}; "
-                  "analyze/scope/plan are skipped")
+            skipped = ("analyze/scope/plan and the milestone loop are skipped"
+                       if args.start_parity else "analyze/scope/plan are skipped")
+            print(f"[recode] starting from existing artifacts at {where}; {skipped}")
         else:
             print(f"[recode] persisted state exists for app_id={app_id}; resuming it "
-                  f"(--start-milestone {args.start_milestone} only initializes a NEW app-id)")
+                  f"({flag} only initializes a NEW app-id)")
     print(f"[recode] loaded state at startup: milestone_idx={app.state['milestone_idx']} "
           f"history_len={len(app.state['history'])}  (idx>0 or history => resumed, not restarted)")
     last_action, result, final_state = app.run(halt_after=["terminal"])

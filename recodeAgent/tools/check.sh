@@ -139,6 +139,13 @@ rm -f "$START_DIR"/.mock_* "$START_DIR/report.json" "$START_DIR/parity_report.js
 RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
   --pipeline-dir "$START_DIR" --start-milestone M3 \
   --app-id chk-start-m3 --db "$START_DIR/start.db" --mock
+
+echo; echo "===== 10) START AT PARITY - jump straight to the Parity Verifier ====="
+rm -f "$START_DIR"/.mock_* "$START_DIR/report.json" "$START_DIR/parity_report.json" \
+      "$START_DIR/skips.json"
+RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
+  --pipeline-dir "$START_DIR" --start-parity \
+  --app-id chk-start-parity --db "$START_DIR/parity.db" --mock
 rm -rf "$START_DIR"
 export RECODE_PIPELINE_DIR="$HERE/pipeline"
 
@@ -153,4 +160,5 @@ echo "  5 ids include appended M7 (origin parity), done=True parity_round=2"
 echo "  6 done=False parity_complete=False (outer give-up, no deferral)"
 echo "  7 proc-2 resumes at scope, done=True   8 proc-2 resumes at parity, done=True"
 echo "  9 starts at M3 (history begins M3; no M0/M1/M2, analyze/scope/plan skipped)"
+echo " 10 starts at PARITY (history is just PARITY; no milestones run at all)"
 echo "Artifacts: pipeline/{milestones,report,parity_report,skips}.json ; traces: ~/.burr/recodeagent-xcvrd"
