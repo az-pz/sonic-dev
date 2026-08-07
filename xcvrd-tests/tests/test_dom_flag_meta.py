@@ -73,7 +73,12 @@ def test_dom_flag_groups_temp_and_vcc(dom_flags):
     vcc-high (00h:9.4) surfaces both tempHAlarm and vccHAlarm; clearing drops both."""
     m = dom_flags
     m.plug()
-    # baseline: table published, neither alarm raised.
+    # Establish a KNOWN-cleared baseline first (like the other tests in this file).
+    # The emulator holds whatever was last written to 00h:9 with no clear-on-read and
+    # its state outlives a pytest run, so a flag raised by an earlier test (or an
+    # earlier session) would otherwise leave this waiting for a 'False' that can never
+    # arrive -- an 80s timeout that looks like a daemon bug but is stale stimulus.
+    m.emu.write_field(m.index, cmis.MODULE_FLAGS_TEMP_VCC, bytes([0x00]))
     wait_until(lambda: _flag(m, "tempHAlarm") == "False" and _flag(m, "vccHAlarm") == "False",
                timeout=T_DOM, msg=f"{m.port} DOM flag baseline (temp+vcc False)")
 

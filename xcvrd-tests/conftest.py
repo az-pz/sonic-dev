@@ -180,6 +180,15 @@ def module(emu, statedb, test_index):
         emu.plug(test_index)
         emu.write_field(test_index, cmis.TEMP, snap_temp)
         emu.write_field(test_index, cmis.VCC, snap_vcc)
+        # Also CLEAR the module flag byte (00h:9 temp/vcc alarms). Several tests
+        # raise an alarm here (e.g. test_removal_tables) and the emulator holds it
+        # with no clear-on-read, so a leaked flag would survive the whole session --
+        # and, because emulator state outlives a pytest run, poison the NEXT run
+        # too (test_dom_flag_meta then never sees its cleared baseline).
+        # We clear rather than restore a snapshot: 0x00 is the only valid resting
+        # state (the emulator never raises a flag on its own), so restoring would
+        # perpetuate a stuck flag instead of healing it.
+        emu.write_field(test_index, cmis.MODULE_FLAGS_TEMP_VCC, bytes([0x00]))
     except Exception:  # noqa: BLE001
         pass
 
