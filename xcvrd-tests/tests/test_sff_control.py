@@ -10,11 +10,11 @@ insert / admin-up (sff_mgr.py:477-490):
     the High Power Class Enable bit (00h:93.2). The emulator SFF module ships power class
     4, so the gate provisions a class-5 code (00h:129) + re-plugs first.
 
-Like the TX_DISABLE gate, these run ONLY when xcvrd is launched with --enable_sff_mgr.
-The reference (oracle) xcvrd in this testbed is launched WITHOUT it (syslog "Skipping SFF
-Task Manager"), so there is no SFF control behavior to reproduce -- both tests self-skip
-here and become live parity gates on a platform that runs sff_mgr. Every test also skips
-cleanly if the port is not an SFF-8636 module, so the suite stays portable.
+Like the TX_DISABLE gate, these assert real SffManagerTask behaviour, which only runs
+when xcvrd is launched with --enable_sff_mgr. If it is not, these tests **FAIL** rather
+than skip: the SFF control path is part of the parity surface, and skipping would hide
+the fact that an entire xcvrd code path went unverified. Every test still skips cleanly
+if the port is not an SFF-8636 module, so the suite stays portable.
 
 No emulator change: pure plug / admin toggle + raw-page provisioning + Monitor observation.
 """
@@ -51,9 +51,9 @@ def sff_module(emu, statedb, configdb):
                    timeout=T_DOM, msg=f"{port} SFF-8636 (QSFP28) identity")
     except WaitTimeout:
         pytest.skip(f"{port} is not an SFF-8636 (QSFP28) module; deploy the SFF emulator config")
-    if not sff.sff_mgr_enabled():
-        pytest.skip("xcvrd launched without --enable_sff_mgr (SffManagerTask disabled); "
-                    "no SFF-8636 daemon control behavior to assert on this testbed")
+    # NOTE: the --enable_sff_mgr requirement is asserted inside each test (via
+    # sff.require_sff_mgr()), not here: raising in a fixture produces a setup ERROR,
+    # and we want a real test FAILURE.
     yield port, idx
     try:
         configdb.hset(f"PORT|{port}", "admin_status", "up")
@@ -66,6 +66,7 @@ def test_sff_lpmode_disabled_on_bringup(sff_module, emu, statedb, configdb, moni
     """On admin-up bring-up, xcvrd's SffManagerTask takes the SFF module OUT of low
     power: it writes the 00h:93 Power Control byte with Power_override set and
     Power_set clear. A reduced daemon that never manages SFF power leaves 00h:93 alone."""
+    sff.require_sff_mgr()      # FAIL (not skip) if SffManagerTask isn't running
     port, idx = sff_module
 
     # Toggle admin down->up to trigger the insert/admin-up control path fresh.
@@ -91,6 +92,7 @@ def test_sff_high_power_class_enabled(sff_module, emu, statedb, configdb, monito
     no-op below class 5). The emulator SFF module ships class 4 (00h:129 = 0xC0), so
     this gate is live only on a class-5+ SFF module -- keeping the suite portable while
     still locking the behavior for a platform that has one."""
+    sff.require_sff_mgr()      # FAIL (not skip) if SffManagerTask isn't running
     port, idx = sff_module
 
     # SFF-8636 power class lives in 00h:129 bits 7:6 (00b..11b => class 1..4); a class

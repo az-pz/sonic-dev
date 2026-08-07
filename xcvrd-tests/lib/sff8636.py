@@ -42,18 +42,53 @@ POWER_CLASS_5_VALUE = 193           # Sff8636Codes.POWER_CLASSES: 193 = Power Cl
 
 
 def sff_mgr_enabled():
-    """True iff pmon's xcvrd was launched with --enable_sff_mgr.
+    """True iff the running xcvrd was launched with --enable_sff_mgr.
 
     SffManagerTask (which drives the SFF-8636 TX_DISABLE / power-control registers)
-    is off by default; without it there is no daemon SFF control behavior to
-    observe. We read the live xcvrd cmdline from the pmon container so the
-    daemon-driven SFF-control gates run only when they can actually pass."""
+    is OFF by default, so we read the live xcvrd cmdline out of the pmon container.
+    Matches both the Python daemon (`python3 /usr/local/bin/xcvrd`) and an injected
+    Rust build (`xcvrd-rs`).
+
+    NOTE: the Rust injection shim (`/usr/local/bin/xcvrd` -> `os.execv(".../xcvrd-rs",
+    ["xcvrd-rs"])`) drops argv, so flags set in supervisor do NOT reach the Rust
+    daemon. That is why this probes the *process*, not the supervisor config: it
+    reports what the daemon actually received.
+    """
     import subprocess
     try:
         out = subprocess.run(
             ["docker", "exec", "pmon", "bash", "-lc",
-             "cat /proc/$(pgrep -f '/usr/local/bin/xcvrd' | head -1)/cmdline | tr '\\0' ' '"],
+             "for p in $(pgrep -f 'xcvrd' 2>/dev/null); do "
+             "tr '\\0' ' ' < /proc/$p/cmdline 2>/dev/null; echo; done"],
             capture_output=True, text=True, timeout=20)
         return "--enable_sff_mgr" in out.stdout
     except Exception:  # noqa: BLE001
         return False
+
+
+def require_sff_mgr():
+    """FAIL (do not skip) when xcvrd is running without --enable_sff_mgr.
+
+    These are parity gates for real daemon behaviour, so a missing SffManagerTask
+    is a genuine coverage hole, not an "n/a" environment. Skipping it silently
+    hides the fact that an entire xcvrd control path went unverified, so we fail
+    loudly with instructions instead.
+    """
+    import pytest
+    if sff_mgr_enabled():
+        return
+    pytest.fail(
+        "xcvrd is running WITHOUT --enable_sff_mgr, so SffManagerTask never runs and "
+        "no SFF-8636 control behaviour can be observed.\n"
+        "This is a FAILURE, not a skip: the SFF control path is part of the parity "
+        "surface and must be exercised.\n"
+        "To enable it on the DUT:\n"
+        "  1. edit pmon's supervisor entry so xcvrd starts with the flag, e.g.\n"
+        "       command=python3 /usr/local/bin/xcvrd --enable_sff_mgr\n"
+        "     (docker exec pmon vi /etc/supervisor/conf.d/supervisord.conf)\n"
+        "  2. docker exec pmon supervisorctl update && "
+        "docker exec pmon supervisorctl restart xcvrd\n"
+        "If a Rust xcvrd is injected, note the shim execs the binary with NO argv, "
+        "so it must pass --enable_sff_mgr itself (or default the SFF manager on).",
+        pytrace=False)
+

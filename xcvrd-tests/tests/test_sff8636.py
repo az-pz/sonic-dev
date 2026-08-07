@@ -10,17 +10,14 @@ These lock: (1) the identity/routing (only non-CMIS module in the suite) and
 which no other test exercises and which a Rust reimplementation must reproduce.
 
 (3) The daemon-driven TX_DISABLE gate is the SFF-8636 analogue of the CMIS
-datapath-teardown gate, but SffManagerTask only runs when xcvrd is launched with
---enable_sff_mgr. The reference (oracle) xcvrd in this testbed is launched WITHOUT
-it (syslog: "Skipping SFF Task Manager"), so there is no SFF control behavior to
-reproduce -- that test self-skips unless sff_mgr is enabled, and asserts the gate
-when it is.
+datapath-teardown gate, and SffManagerTask only runs when xcvrd is launched with
+--enable_sff_mgr. If it is not, that test **FAILS** rather than skipping: the SFF
+control path is part of the parity surface, so skipping it would silently hide an
+entire unverified xcvrd code path.
 
 Requires the SFF emulator deploy; every test skips cleanly if the port is not an
 SFF-8636 module, so the suite stays portable to a plain all-CMIS testbed.
 """
-import subprocess
-
 import pytest
 
 from lib import sff8636 as sff
@@ -30,23 +27,6 @@ from lib.waits import eventually, wait_until, WaitTimeout, T_FAST, T_DOM
 pytestmark = pytest.mark.slow
 
 STATE_PORT_TABLE = "PORT_TABLE"  # STATE_DB PORT_TABLE, where host_tx_ready lives
-
-
-def _sff_mgr_enabled():
-    """True iff pmon's xcvrd was launched with --enable_sff_mgr.
-
-    SffManagerTask (which drives the SFF-8636 TX_DISABLE register) is off by
-    default; without it there is no daemon SFF control behavior to observe. We
-    read the live xcvrd cmdline from the pmon container so the daemon-driven gate
-    runs only when it can actually pass."""
-    try:
-        out = subprocess.run(
-            ["docker", "exec", "pmon", "bash", "-lc",
-             "cat /proc/$(pgrep -f '/usr/local/bin/xcvrd' | head -1)/cmdline | tr '\\0' ' '"],
-            capture_output=True, text=True, timeout=20)
-        return "--enable_sff_mgr" in out.stdout
-    except Exception:  # noqa: BLE001
-        return False
 
 
 @pytest.fixture
@@ -125,15 +105,12 @@ def test_sff8636_daemon_drives_tx_disable(sff_module, emu, statedb, configdb, mo
     (target = not(host_tx_ready and admin_up)). A reduced daemon that never drives
     the SFF Tx-disable register fails this.
 
-    SKIPS unless xcvrd runs SffManagerTask (--enable_sff_mgr). The reference oracle
-    in this testbed is launched without it (syslog "Skipping SFF Task Manager"), so
-    there is no SFF control behavior to reproduce; the gate becomes live -- and this
-    assertion meaningful -- only when sff_mgr is enabled. Admin-status is used (not
+    FAILS (does not skip) unless xcvrd runs SffManagerTask (--enable_sff_mgr): the SFF
+    control path is part of the parity surface, so a disabled task is an unverified
+    code path, not an "n/a" environment. Admin-status is used (not
     host_tx_ready) because a background keeper continuously re-asserts
     host_tx_ready=true; admin-down is stable + keeper-immune. Restores admin-up."""
-    if not _sff_mgr_enabled():
-        pytest.skip("xcvrd launched without --enable_sff_mgr (SffManagerTask disabled); "
-                    "no SFF-8636 daemon control behavior to assert on this testbed")
+    sff.require_sff_mgr()      # FAIL (not skip) if SffManagerTask isn't running
     port, idx = sff_module
     wait_until(lambda: emu.read_field(idx, sff.TX_DISABLE)[0] == 0, timeout=T_DOM,
                msg=f"{port} Tx enabled (00h:86 == 0) at baseline")
