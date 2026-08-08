@@ -23,7 +23,7 @@ fi
 echo "[revert] restoring pmon_daemon_control.json"
 if [ -e "${PDC}.orig" ]; then
   sudo cp "${PDC}.orig" "$PDC"
-  echo "  restored (skip_xcvrd back to original)"
+  echo "  restored (skip_xcvrd / enable_xcvrd_sff_mgr back to original)"
 fi
 
 echo "[revert] removing platform.json"

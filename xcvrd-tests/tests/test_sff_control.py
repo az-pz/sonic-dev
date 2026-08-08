@@ -88,31 +88,46 @@ def test_sff_high_power_class_enabled(sff_module, emu, statedb, configdb, monito
     """For a power-class >= 5 module, xcvrd enables High Power Class (00h:93.2) on
     bring-up (sff_mgr.py:enable_high_power_class -> set_high_power_class).
 
-    Skips when the module advertises power class < 5 (enable_high_power_class is a
-    no-op below class 5). The emulator SFF module ships class 4 (00h:129 = 0xC0), so
-    this gate is live only on a class-5+ SFF module -- keeping the suite portable while
-    still locking the behavior for a platform that has one."""
+    The emulator SFF module ships power class 4 (00h:129 = 0xC0), for which
+    enable_high_power_class is a documented no-op, so the gate PROVISIONS a class-5
+    code (0xC1) first. Two details make that work:
+
+      * the trigger is an admin-down/up toggle, NOT a re-plug: the emulator re-applies
+        its config on every plug, which would reset 00h:129 straight back to 0xC0 and
+        make the gate unexercisable. sff_mgr runs the same control path on either
+        event (`xcvr_inserted or (admin_status_changed and admin == up)`,
+        sff_mgr.py:477), so the toggle is equivalent and keeps the provisioning.
+      * get_power_class() is a live EEPROM read (not a cached-at-insert API), so
+        xcvrd sees the class we just wrote.
+
+    The fixture restores admin-up; we restore the original power-class byte.
+    """
     sff.require_sff_mgr()      # FAIL (not skip) if SffManagerTask isn't running
     port, idx = sff_module
 
-    # SFF-8636 power class lives in 00h:129 bits 7:6 (00b..11b => class 1..4); a class
-    # >= 5 module additionally sets a low bit (0xC1 = class 5). The emulator ships 0xC0
-    # (class 4), for which enable_high_power_class does nothing, so skip cleanly.
-    pclass = emu.read_field(idx, sff.POWER_CLASS)[0]
-    if pclass == 0xC0 or (pclass & 0x07) == 0:
-        pytest.skip(f"{port} advertises SFF power class < 5 (00h:129={pclass:#04x}); "
-                    "enable_high_power_class is a no-op below class 5. Provision a class-5 "
-                    "SFF emulator module to exercise this gate.")
+    # SFF-8636 power class lives in 00h:129: bits 7:6 give classes 1-4, and bits 1:0
+    # extend it (01b => class 5). 0xC0 = class 4 (emulator default), 0xC1 = class 5.
+    snap_pclass = bytes(emu.read_field(idx, sff.POWER_CLASS))
+    try:
+        emu.write_field(idx, sff.POWER_CLASS, bytes([sff.POWER_CLASS_5_VALUE]))
+        assert emu.read_field(idx, sff.POWER_CLASS)[0] == sff.POWER_CLASS_5_VALUE, (
+            f"{port}: could not provision SFF power class 5 (00h:129)")
 
-    # Re-plug to run the insert control path fresh against the class-5 module.
-    monitor.clear()
-    emu.unplug(idx)
-    wait_until(lambda: not statedb.hget(f"TRANSCEIVER_INFO|{port}", "manufacturer"),
-               timeout=T_FAST, msg=f"{port} removed before class-5 re-insert")
-    emu.plug(idx)
+        # Toggle admin down->up to re-run the insert/admin-up control path against the
+        # now class-5 module (a re-plug would wipe the provisioning above).
+        configdb.hset(f"PORT|{port}", "admin_status", "down")
+        wait_until(lambda: configdb.hget(f"PORT|{port}", "admin_status") == "down",
+                   timeout=T_FAST, msg=f"{port} admin-down applied")
+        monitor.clear()
+        configdb.hset(f"PORT|{port}", "admin_status", "up")
 
-    vals = eventually(lambda: _power_ctrl_writes(monitor, idx) or None, timeout=T_DOM,
-                      msg=f"{port} xcvrd Power Control write (00h:93) on class-5 bring-up")
-    assert any(v & sff.HIGH_POWER_CLASS_5_7_BIT for v in vals), (
-        f"{port}: xcvrd did not set High Power Class Enable (00h:93.2) for a class-5 "
-        f"module (00h:93 writes={[hex(v) for v in vals]})")
+        vals = eventually(lambda: _power_ctrl_writes(monitor, idx) or None, timeout=T_DOM,
+                          msg=f"{port} xcvrd Power Control write (00h:93) on class-5 bring-up")
+        assert any(v & sff.HIGH_POWER_CLASS_5_7_BIT for v in vals), (
+            f"{port}: xcvrd did not set High Power Class Enable (00h:93.2) for a class-5 "
+            f"module (00h:93 writes={[hex(v) for v in vals]})")
+    finally:
+        try:
+            emu.write_field(idx, sff.POWER_CLASS, snap_pclass)
+        except Exception:  # noqa: BLE001
+            pass

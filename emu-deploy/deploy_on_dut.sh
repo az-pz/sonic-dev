@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs ON the DUT (admin@vlab-01). "Systematic-at-runtime" wiring — NO image changes:
 #   1. HOST sonic_platform := our emulator-backed bridge  (fixes host sfputil/sfpshow/reset)
-#   2. flip skip_xcvrd -> false                            (enable xcvrd natively in pmon)
+#   2. flip skip_xcvrd -> false + enable_xcvrd_sff_mgr -> true  (xcvrd native in pmon, with sff_mgr)
 #   3. inject our bridge into pmon's dist-packages         (so native xcvrd imports it)
 # The xcvr-emu emulator runs as a standalone --network host container (reused/started here).
 #
@@ -96,13 +96,21 @@ else
 fi
 
 # --- 2) flip skip_xcvrd -> false, restart pmon so supervisord regenerates ---
-echo "[native] STEP 2: flip skip_xcvrd -> false"
+echo "[native] STEP 2: flip skip_xcvrd -> false, enable_xcvrd_sff_mgr -> true"
 [ -e "${PDC}.orig" ] || sudo cp "$PDC" "${PDC}.orig"
 sudo python3 - "$PDC" <<'PY'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d['skip_xcvrd'] = False
+# Run xcvrd with --enable_sff_mgr. The pmon supervisord template turns this key
+# into the flag (docker-pmon.supervisord.conf.j2: `{% if enable_xcvrd_sff_mgr %}`),
+# which is the ONLY way to get it -- editing the generated supervisord.conf is
+# futile because pmon re-renders it from the template on every restart.
+# Without it SffManagerTask never runs, so every SFF-8636 control behaviour
+# (TX_DISABLE, lpmode-disable, high-power-class) is silently absent and the
+# xcvrd-tests SFF gates fail.
+d['enable_xcvrd_sff_mgr'] = True
 json.dump(d, open(p, 'w'), indent=4)
 print("    pmon_daemon_control.json ->", d)
 PY
