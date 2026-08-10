@@ -1,0 +1,24 @@
+{
+  "coverage_matrix": [
+    {"module": "xcvrd.py", "covered": true, "missing": []},
+    {"module": "sff_mgr.py", "covered": true, "missing": []},
+    {"module": "cmis/cmis_manager_task.py", "covered": true, "missing": []},
+    {"module": "dom/dom_mgr.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/db/utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/dom_sensor/utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/dom_sensor/db_utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/status/utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/status/db_utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/vdm/utils.py", "covered": true, "missing": []},
+    {"module": "dom/utilities/vdm/db_utils.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/common.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/utils.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/sfp_status_helper.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/xcvr_table_helper.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/port_event_helper.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/media_settings_parser.py", "covered": true, "missing": []},
+    {"module": "xcvrd_utilities/optics_si_parser.py", "covered": true, "missing": []}
+  ],
+  "gaps": [],
+  "complete": true
+}

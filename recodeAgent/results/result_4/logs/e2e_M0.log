@@ -1,0 +1,126 @@
+[validate] M0 cumulative gate: (deploy-smoke)
+[validate] staging crate (/home/sonic/dev/sonic-dev/recodeAgent/pipeline/crate) + dut scripts -> local
+[validate] running build+inject+test+restore on the DUT
+[run] building crate
+[swsslib] already staged at /home/sonic/recode/swsslib
+[build] cargo build --release in recode-rust-build (crate=/home/sonic/recode/crate)
+    Updating crates.io index
+    Updating git repository `https://github.com/sonic-net/sonic-swss-common`
+ Downloading crates ...
+  Downloaded unindent v0.2.4
+  Downloaded aho-corasick v1.1.5
+  Downloaded memoffset v0.9.1
+  Downloaded cfg-if v1.0.4
+  Downloaded heck v0.5.0
+  Downloaded lazy_static v1.5.0
+  Downloaded matchers v0.2.0
+  Downloaded autocfg v1.5.1
+  Downloaded bitflags v2.13.1
+  Downloaded cexpr v0.6.0
+  Downloaded zmij v1.0.23
+  Downloaded indoc v2.0.7
+  Downloaded nu-ansi-term v0.50.3
+  Downloaded pin-project-lite v0.2.17
+  Downloaded pyo3-macros v0.22.6
+  Downloaded pyo3-build-config v0.22.6
+  Downloaded itoa v1.0.18
+  Downloaded thread_local v1.1.10
+  Downloaded getset v0.1.7
+  Downloaded rustversion v1.0.23
+  Downloaded thiserror v1.0.69
+  Downloaded target-lexicon v0.12.16
+  Downloaded either v1.17.0
+  Downloaded log v0.4.33
+  Downloaded shlex v1.3.0
+  Downloaded libloading v0.8.9
+  Downloaded once_cell v1.21.4
+  Downloaded rustc-hash v1.1.0
+  Downloaded glob v0.3.4
+  Downloaded thiserror-impl v1.0.69
+  Downloaded sharded-slab v0.1.7
+  Downloaded smallvec v1.15.2
+  Downloaded tracing-log v0.2.0
+  Downloaded quote v1.0.47
+  Downloaded serde_derive v1.0.229
+  Downloaded unicode-ident v1.0.24
+  Downloaded clang-sys v1.9.1
+  Downloaded proc-macro2 v1.0.107
+  Downloaded serde_core v1.0.229
+  Downloaded tracing-core v0.1.36
+  Downloaded pyo3-ffi v0.22.6
+  Downloaded memchr v2.8.3
+  Downloaded prettyplease v0.2.37
+  Downloaded pyo3-macros-backend v0.22.6
+  Downloaded nom v7.1.3
+  Downloaded serde v1.0.229
+  Downloaded itertools v0.13.0
+  Downloaded minimal-lexical v0.2.1
+  Downloaded bindgen v0.70.1
+  Downloaded serde_json v1.0.151
+  Downloaded regex v1.13.1
+  Downloaded tracing-subscriber v0.3.23
+  Downloaded syn v2.0.119
+  Downloaded syn v3.0.3
+  Downloaded regex-syntax v0.8.11
+  Downloaded tracing v0.1.44
+  Downloaded regex-automata v0.4.16
+  Downloaded pyo3 v0.22.6
+  Downloaded libc v0.2.189
+   Compiling xcvrd-rs v0.1.0 (/src/xcvrd-rs)
+    Finished `release` profile [optimized] target(s) in 1.78s
+[build] OK -> /home/sonic/recode/crate/target/release/xcvrd-rs
+[run][t] build                  5281 ms
+[run] staging binary + dut_validate.sh on the DUT
+Debian GNU/Linux 13 \n \l
+
+Debian GNU/Linux 13 \n \l
+
+Debian GNU/Linux 13 \n \l
+
+[run][t] ship                   2441 ms
+[run] validating on the DUT (milestone M0)
+Debian GNU/Linux 13 \n \l
+
+[dut] injecting Rust xcvrd for milestone M0
+[dut][t] docker cp binary               62 ms
+[dut][t] chmod xcvrd-rs                145 ms
+[dut][t] backup xcvrd                  151 ms
+[dut][t] verify backup                 121 ms
+[dut][t] write shim.new                139 ms
+[dut][t] mv shim -> xcvrd              127 ms
+[dut][t] supervisorctl restart       13455 ms
+[dut][t] settle (poll RUNNING)         309 ms
+[dut] xcvrd status after inject:
+[dut][t] inject() total              14519 ms  <== INJECT PHASE TOTAL
+xcvrd                            RUNNING   pid 160, uptime 0:00:11
+[dut] M0 smoke: supervisor xcvrd status=RUNNING
+[dut] restoring Python xcvrd
+xcvrd                            RUNNING   pid 207, uptime 0:00:11
+[dut] report:
+{
+  "milestone": "M0",
+  "passed": true,
+  "tests": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0
+  },
+  "failures": []
+}
+[run][t] validate (on DUT)     28892 ms
+[run] fetching report.json
+Debian GNU/Linux 13 \n \l
+
+[run][t] fetch                   663 ms
+[run] report -> /home/sonic/recode/report.json
+[validate] fetching report.json -> pipeline/
+{
+  "milestone": "M0",
+  "passed": true,
+  "tests": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0
+  },
+  "failures": []
+}
