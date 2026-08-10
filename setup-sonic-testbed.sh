@@ -79,6 +79,22 @@ NUM_VMS="${NUM_VMS:-4}"                         # neighbor VM count for T0
 SERVER="${SERVER:-server_1}"
 INV="${INV:-veos_vtb}"
 TB_FILE="${TB_FILE:-vtestbed.yaml}"
+
+# pytest's --neighbor_type must match the neighbor VM flavour we actually deploy.
+# Upstream it defaults to "eos", and tests/conftest.py::converge_topo_if_needed
+# treats "eos"/"ceos" as cEOS neighbors, so for a testbed with
+# `use_converged_peers: True` (vms-kvm-t0 has had it since sonic-mgmt 1b3b173ac)
+# it CONVERGES ansible/vars/topo_<topo>.yml in place -- every neighbor merged
+# onto one multi-VRF VM. Our neighbors are vsonic/csonic, whose startup configs
+# and the DUT minigraph are unconverged, and ansible/testbed-cli.sh skips the
+# converge (and its restore-from-.bak) for non-ceos vm_type. A converged topo
+# file left behind by pytest therefore makes a later `add-topo` wire every DUT
+# link to VM0100, and only 1 of N BGP sessions ever comes up.
+# Deriving --neighbor_type from VM_TYPE keeps conftest on the non-cEOS path.
+case "$VM_TYPE" in
+  veos) NEIGHBOR_TYPE="${NEIGHBOR_TYPE:-eos}" ;;
+  *)    NEIGHBOR_TYPE="${NEIGHBOR_TYPE:-$VM_TYPE}" ;;
+esac
 VAULT_FILE="${VAULT_FILE:-password.txt}"
 SONIC_VS_URL="${SONIC_VS_URL:-https://sonic-build.azurewebsites.net/api/sonic/artifacts?branchName=master&platform=vs&target=target/sonic-vs.img.gz}"
 
@@ -396,6 +412,7 @@ run_pytest() {
     "cd /data/sonic-mgmt/tests && python3 -m pytest $* \
         --inventory ../ansible/$INV --host-pattern $DUT \
         --testbed $TESTBED_NAME --testbed_file ../ansible/$TB_FILE \
+        --neighbor_type $NEIGHBOR_TYPE \
         --skip_sanity --disable_loganalyzer $extra -v"
 }
 
