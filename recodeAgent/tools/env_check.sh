@@ -16,7 +16,7 @@ source "$HERE/lib_remote.sh"
 
 echo "[env] staging crate + dut scripts -> $(r_where)"
 r_put_dir "$RECODE_DIR/crate" "~/recode/crate"
-r_put_files "/home/sonic/recode/dut/" "$HERE/dut/env_check.sh" "$HERE/dut/ensure_swsslib.sh"
+r_put_files "~/recode/dut/" "$HERE/dut/env_check.sh" "$HERE/dut/ensure_swsslib.sh"
 
 echo "[env] building + running smokes on the DUT"
 r_run "bash ~/recode/dut/env_check.sh"

@@ -17,7 +17,7 @@ source "$HERE/lib_remote.sh"
 
 echo "[build-check] staging crate ($CRATE_DIR) -> $(r_where)"
 r_put_dir "$CRATE_DIR" "~/recode/crate"
-r_put_files "/home/sonic/recode/dut/" "$HERE/dut/build_crate.sh" "$HERE/dut/ensure_swsslib.sh"
+r_put_files "~/recode/dut/" "$HERE/dut/build_crate.sh" "$HERE/dut/ensure_swsslib.sh"
 
 echo "[build-check] compiling xcvrd-rs for pmon (trixie container)"
 r_run "bash ~/recode/dut/build_crate.sh ~/recode/crate"

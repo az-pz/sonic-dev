@@ -15,7 +15,7 @@ source "$HERE/lib_remote.sh"
 
 echo "[bridge] staging crate + dut script -> $(r_where)"
 r_put_dir "$RECODE_DIR/crate" "~/recode/crate"
-r_put_files "/home/sonic/recode/dut/" "$HERE/dut/bridge_smoke.sh"
+r_put_files "~/recode/dut/" "$HERE/dut/bridge_smoke.sh"
 
 echo "[bridge] building + running smoke on the DUT"
 r_run "bash ~/recode/dut/bridge_smoke.sh"

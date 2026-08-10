@@ -18,6 +18,11 @@
 #                       (e.g. `RECODE_RUN_MODE=local bash tools/validate_on_dut.sh M1`).
 # The inner DUT hops (tools/dut/*.sh: mgmt -> admin@10.250.0.101 -> pmon) are
 # unaffected -- they always run on the sonic-dev host regardless of this mode.
+#
+# Staging root: every wrapper stages into "~/recode/..." on the TARGET (never an
+# absolute /home/<user> path), so the pipeline works for any account on any host --
+# the sonic-dev "sonic" user over ssh, or e.g. "azureuser" in local mode. The
+# tools/dut/*.sh scripts resolve the same root as "$HOME/recode".
 
 : "${RECODE_SSH_HOST:=sonic-dev}"
 
@@ -37,6 +42,11 @@ r_where() {
 # does NOT tilde-expand). Remote mode leaves paths untouched so "~" expands on the
 # far side inside the ssh command string.
 _r_lpath() { case "$1" in "~/"*) printf '%s' "$HOME/${1#\~/}" ;; *) printf '%s' "$1" ;; esac; }
+
+# Turn a target-side path into one scp can use. scp/sftp does not reliably expand a
+# leading "~/" in "host:~/path", so drop it -- a relative scp path is already taken
+# relative to the remote user's home, which is exactly what "~/" meant.
+_r_rpath() { case "$1" in "~/"*) printf '%s' "${1#\~/}" ;; *) printf '%s' "$1" ;; esac; }
 
 # r_run "<shell command>" -- execute on the target. In local mode the command runs
 # in a plain bash -c (the same `~`/$HOME as the remote sonic user, since local mode
@@ -69,11 +79,11 @@ r_put_files() {
     mkdir -p "$dest"; cp "$@" "$dest"
   else
     ssh "$RECODE_SSH_HOST" "mkdir -p $dest"
-    scp -q "$@" "$RECODE_SSH_HOST:$dest"
+    scp -q "$@" "$RECODE_SSH_HOST:$(_r_rpath "$dest")"
   fi
 }
 
 # r_get <target_src_file> <local_dest> -- fetch a file from the target.
 r_get() {
-  if [ "$RECODE_RUN_MODE" = local ]; then cp "$(_r_lpath "$1")" "$(_r_lpath "$2")"; else scp -q "$RECODE_SSH_HOST:$1" "$2"; fi
+  if [ "$RECODE_RUN_MODE" = local ]; then cp "$(_r_lpath "$1")" "$(_r_lpath "$2")"; else scp -q "$RECODE_SSH_HOST:$(_r_rpath "$1")" "$2"; fi
 }

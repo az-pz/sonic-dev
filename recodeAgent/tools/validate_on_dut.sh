@@ -74,12 +74,12 @@ source "$HERE/lib_remote.sh"
 
 echo "[validate] staging crate ($CRATE_DIR) + dut scripts -> $(r_where)"
 r_put_dir "$CRATE_DIR" "~/recode/crate"
-r_put_files "/home/sonic/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
+r_put_files "~/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
 
 echo "[validate] running build+inject+test+restore on the DUT"
 r_run "bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
 
 echo "[validate] fetching report.json -> pipeline/"
 mkdir -p "$RECODE_DIR/pipeline"
-r_get "/home/sonic/recode/report.json" "$RECODE_DIR/pipeline/report.json"
+r_get "~/recode/report.json" "$RECODE_DIR/pipeline/report.json"
 cat "$RECODE_DIR/pipeline/report.json"
