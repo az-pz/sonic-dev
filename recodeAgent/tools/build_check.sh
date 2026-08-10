@@ -16,6 +16,7 @@ SD="${RECODE_SSH_HOST:-sonic-dev}"
 source "$HERE/lib_remote.sh"
 
 echo "[build-check] staging crate ($CRATE_DIR) -> $(r_where)"
+CRATE_DIR="$(r_resolve_crate "$CRATE_DIR")" || exit 2
 r_put_dir "$CRATE_DIR" "~/recode/crate"
 r_put_files "~/recode/dut/" "$HERE/dut/build_crate.sh" "$HERE/dut/ensure_swsslib.sh"
 

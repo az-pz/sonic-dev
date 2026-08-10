@@ -76,6 +76,7 @@ SD="${RECODE_SSH_HOST:-sonic-dev}"
 source "$HERE/lib_remote.sh"
 
 echo "[validate] staging crate ($CRATE_DIR) + xcvrd-tests + dut scripts -> $(r_where)"
+CRATE_DIR="$(r_resolve_crate "$CRATE_DIR")" || exit 2
 [ -f "$TESTS_DIR/run.sh" ] || { echo "[validate] xcvrd-tests not found at $TESTS_DIR (set RECODE_TESTS_DIR)" >&2; exit 2; }
 r_put_dir "$CRATE_DIR" "~/recode/crate"
 # Ship the tests too: dut_validate.sh runs /home/admin/xcvrd-tests/run.sh on the
