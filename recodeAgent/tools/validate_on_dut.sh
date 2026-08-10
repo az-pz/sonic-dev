@@ -2,9 +2,9 @@
 # validate_on_dut.sh — the Validator's entry point (called from the Windows/
 # Git-Bash side where the orchestrator + Copilot run).
 #
-# Ships the Rust crate + DUT scripts to the sonic-dev host, runs the full
-# build -> reversible-inject -> xcvrd-tests -> restore cycle on the DUT, and
-# fetches the authoritative report.json into pipeline/.
+# Ships the Rust crate + the xcvrd-tests suite + DUT scripts to the sonic-dev
+# host, runs the full build -> reversible-inject -> xcvrd-tests -> restore cycle
+# on the DUT, and fetches the authoritative report.json into pipeline/.
 #
 # Usage: tools/validate_on_dut.sh <MILESTONE|--all> [pytest args passed to run.sh...]
 #   tools/validate_on_dut.sh M0 -k test_xcvrd_running
@@ -21,6 +21,9 @@ RECODE_DIR="$(cd "$HERE/.." && pwd)"          # dev/recodeAgent
 # sets RECODE_CRATE_DIR=<recodeAgent>/pipeline/crate so translation works on a copy
 # and the pristine crate/ is never modified.
 CRATE_DIR="${RECODE_CRATE_DIR:-$RECODE_DIR/crate}"
+# The xcvrd-tests suite that grades the translated crate. It is shipped to the DUT
+# on every run (see below) so a validation never grades against a stale tree.
+TESTS_DIR="${RECODE_TESTS_DIR:-$(cd "$RECODE_DIR/.." && pwd)/xcvrd-tests}"
 MILESTONE="${1:?milestone id (e.g. M0) or --all}"; shift || true
 
 # --all / -a (or a bare "all"/"ALL"): run the ENTIRE xcvrd-tests suite with no
@@ -72,8 +75,14 @@ fi
 SD="${RECODE_SSH_HOST:-sonic-dev}"
 source "$HERE/lib_remote.sh"
 
-echo "[validate] staging crate ($CRATE_DIR) + dut scripts -> $(r_where)"
+echo "[validate] staging crate ($CRATE_DIR) + xcvrd-tests + dut scripts -> $(r_where)"
+[ -f "$TESTS_DIR/run.sh" ] || { echo "[validate] xcvrd-tests not found at $TESTS_DIR (set RECODE_TESTS_DIR)" >&2; exit 2; }
 r_put_dir "$CRATE_DIR" "~/recode/crate"
+# Ship the tests too: dut_validate.sh runs /home/admin/xcvrd-tests/run.sh on the
+# DUT, and nothing else in this path refreshes it. Excludes mirror the ones
+# setup-sonic-testbed.sh's xcvrd_tests phase uses (local build artifacts only --
+# wheels/ MUST ship, run.sh installs pytest from it offline).
+r_put_dir "$TESTS_DIR" "~/recode/xcvrd-tests" .pydeps results.xml __pycache__
 r_put_files "~/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
 
 echo "[validate] running build+inject+test+restore on the DUT"

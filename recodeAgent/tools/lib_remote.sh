@@ -6,7 +6,7 @@
 # Sourced by the wrapper scripts. It exposes four primitives that replace the raw
 # ssh/tar/scp calls:
 #     r_run "<cmd>"                 run a shell command on the target
-#     r_put_dir <src> <dest>        stage a directory tree (excludes target/)
+#     r_put_dir <src> <dest> [ex...]  stage a directory tree (excludes target/)
 #     r_put_files <dest> <file>...  copy files into a target directory
 #     r_get <src> <dest>            fetch a file from the target
 #
@@ -55,18 +55,23 @@ r_run() {
   if [ "$RECODE_RUN_MODE" = local ]; then bash -c "$1"; else ssh "$RECODE_SSH_HOST" "$1"; fi
 }
 
-# r_put_dir <local_src> <target_dir> -- stage a directory tree, excluding target/.
+# r_put_dir <local_src> <target_dir> [extra_exclude...] -- stage a directory tree.
+# target/ (the cargo build cache) is always excluded; any extra arguments are
+# passed to tar as additional --exclude patterns, e.g.
+#     r_put_dir "$TESTS_DIR" "~/recode/xcvrd-tests" .pydeps results.xml __pycache__
 # Uses a tar stream in both modes so the exclude semantics (and sonic-dev's cargo
 # target/ cache) are identical.
 r_put_dir() {
-  local src="$1" dest="$2"
+  local src="$1" dest="$2"; shift 2
+  local ex=(--exclude target) p
+  for p in "$@"; do ex+=(--exclude "$p"); done
   if [ "$RECODE_RUN_MODE" = local ]; then
     dest="$(_r_lpath "$dest")"
     mkdir -p "$dest"
-    tar -C "$src" --exclude target -cf - . | tar -C "$dest" -xf -
+    tar -C "$src" "${ex[@]}" -cf - . | tar -C "$dest" -xf -
   else
     ssh "$RECODE_SSH_HOST" "mkdir -p $dest"
-    tar -C "$src" --exclude target -cf - . | ssh "$RECODE_SSH_HOST" "tar -C $dest -xf -"
+    tar -C "$src" "${ex[@]}" -cf - . | ssh "$RECODE_SSH_HOST" "tar -C $dest -xf -"
   fi
 }
 

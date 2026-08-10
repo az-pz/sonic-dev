@@ -119,6 +119,21 @@ PY
 fi
 
 echo "[dut] running xcvrd-tests (args_b64=${ARGS_B64:-<none>})"
+# Explicit guard: the suite is shipped by run_validate.sh. If it is missing we'd
+# otherwise fail deep inside with "No such file or directory" and then report a
+# generic "<harness> results.xml parse failed", which hides the real cause.
+if [ ! -f "$TESTS/run.sh" ]; then
+  echo "[dut] xcvrd-tests missing at $TESTS -- restoring Python xcvrd and bailing" >&2
+  restore
+  python3 - "$MILESTONE" "$TESTS" > "$REPORT" <<'PY'
+import json, sys
+print(json.dumps({"milestone": sys.argv[1], "passed": False, "tests": {},
+                  "failures": [{"test": "<harness>",
+                                "msg": f"xcvrd-tests not present on the DUT at {sys.argv[2]}"}]}, indent=2))
+PY
+  cat "$REPORT"
+  exit 1
+fi
 export PYTEST_ARGS_B64="$ARGS_B64"
 _PHASE=$(_now_ms)
 echo "==================== run.sh / pytest output ===================="
