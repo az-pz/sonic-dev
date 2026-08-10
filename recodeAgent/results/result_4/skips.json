@@ -1,0 +1,10 @@
+{
+  "tests_to_skip": [
+    "test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture"
+  ],
+  "retried": [
+    "test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture",
+    "test_dom_flag_meta.py::test_dom_flag_groups_temp_and_vcc",
+    "test_sff_control.py::test_sff_high_power_class_enabled"
+  ]
+}

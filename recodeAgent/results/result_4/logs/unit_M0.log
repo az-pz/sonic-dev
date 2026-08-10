@@ -1,0 +1,143 @@
+    Updating crates.io index
+    Updating git repository `https://github.com/sonic-net/sonic-swss-common`
+ Downloading crates ...
+  Downloaded heck v0.5.0
+  Downloaded nu-ansi-term v0.50.3
+  Downloaded tracing-log v0.2.0
+  Downloaded autocfg v1.5.1
+  Downloaded cexpr v0.6.0
+  Downloaded bindgen v0.70.1
+  Downloaded aho-corasick v1.1.5
+  Downloaded bitflags v2.13.1
+  Downloaded libloading v0.8.9
+  Downloaded nom v7.1.3
+  Downloaded pin-project-lite v0.2.17
+  Downloaded log v0.4.33
+  Downloaded lazy_static v1.5.0
+  Downloaded pyo3-build-config v0.22.6
+  Downloaded memoffset v0.9.1
+  Downloaded pyo3 v0.22.6
+  Downloaded unindent v0.2.4
+  Downloaded once_cell v1.21.4
+  Downloaded proc-macro2 v1.0.107
+  Downloaded getset v0.1.7
+  Downloaded minimal-lexical v0.2.1
+  Downloaded rustversion v1.0.23
+  Downloaded zmij v1.0.23
+  Downloaded rustc-hash v1.1.0
+  Downloaded glob v0.3.4
+  Downloaded cfg-if v1.0.4
+  Downloaded prettyplease v0.2.37
+  Downloaded thiserror v1.0.69
+  Downloaded unicode-ident v1.0.24
+  Downloaded itoa v1.0.18
+  Downloaded pyo3-macros v0.22.6
+  Downloaded thiserror-impl v1.0.69
+  Downloaded serde_derive v1.0.229
+  Downloaded target-lexicon v0.12.16
+  Downloaded clang-sys v1.9.1
+  Downloaded matchers v0.2.0
+  Downloaded thread_local v1.1.10
+  Downloaded indoc v2.0.7
+  Downloaded quote v1.0.47
+  Downloaded either v1.17.0
+  Downloaded smallvec v1.15.2
+  Downloaded memchr v2.8.3
+  Downloaded sharded-slab v0.1.7
+  Downloaded shlex v1.3.0
+  Downloaded itertools v0.13.0
+  Downloaded pyo3-ffi v0.22.6
+  Downloaded pyo3-macros-backend v0.22.6
+  Downloaded serde_core v1.0.229
+  Downloaded tracing-core v0.1.36
+  Downloaded serde v1.0.229
+  Downloaded serde_json v1.0.151
+  Downloaded regex v1.13.1
+  Downloaded tracing-subscriber v0.3.23
+  Downloaded syn v2.0.119
+  Downloaded syn v3.0.3
+  Downloaded regex-syntax v0.8.11
+  Downloaded tracing v0.1.44
+  Downloaded libc v0.2.189
+  Downloaded regex-automata v0.4.16
+    Finished `release` profile [optimized] target(s) in 1.57s
+     Running unittests src/lib.rs (target/release/deps/xcvrd_rs-0aaf8a84791462d6)
+
+running 62 tests
+test cmis::cmis_manager_task::tests::test_cmis_manager_task_task_worker ... ignored, stub: implement with M6 (CMIS datapath bring-up core)
+test cmis::cmis_manager_task::tests::test_get_cmis_host_lanes_mask ... ignored, stub: implement with M6 (host/media lane masks)
+test cmis::cmis_manager_task::tests::test_get_desired_app_map ... ignored, stub: implement with M6 (application select)
+test cmis::cmis_manager_task::tests::test_is_cmis_application_update_required ... ignored, stub: implement with M7 (reconfig)
+test cmis::cmis_manager_task::tests::test_is_decommission_required ... ignored, stub: implement with M7 (decommission)
+test dom::dom_mgr::tests::test_dom_info_update_task_task_worker ... ignored, stub: implement with M2 (DOM polling loop)
+test dom::dom_mgr::tests::test_get_dom_polling_from_config_db ... ignored, stub: implement with M2 (dom_polling gate)
+test dom::dom_mgr::tests::test_is_port_in_cmis_initialization_process ... ignored, stub: implement with M6 (DOM gating on CMIS init)
+test dom::dom_mgr::tests::test_post_port_pm_info_to_db ... ignored, stub: implement with M5 (PM)
+test dom::utilities::db::tests::test_update_flag_metadata_tables ... ignored, stub: implement with M4 (flag-metadata engine)
+test dom::utilities::dom_sensor::tests::test_beautify_dom_info_dict ... ignored, stub: implement with M2
+test dom::utilities::dom_sensor::tests::test_post_port_dom_flags_to_db ... ignored, stub: implement with M4 (DOM flags + metadata)
+test dom::utilities::dom_sensor::tests::test_post_port_dom_sensor_info_to_db ... ignored, stub: implement with M2 (DOM sensors)
+test dom::utilities::dom_sensor::tests::test_post_port_dom_thresholds_to_db ... ignored, stub: implement with M2 (DOM thresholds)
+test dom::utilities::status::tests::test_post_port_transceiver_hw_status_flags_to_db ... ignored, stub: implement with M4 (status flags + metadata)
+test dom::utilities::status::tests::test_post_port_transceiver_hw_status_to_db ... ignored, stub: implement with M3 (rich transceiver status)
+test dom::utilities::vdm::tests::test_post_port_vdm_real_values_from_dict_to_db ... ignored, stub: implement with M5 (VDM)
+test dom::utilities::vdm::tests::test_post_port_vdm_thresholds_to_db ... ignored, stub: implement with M5
+test dom::utilities::db::tests::value_to_py_str_matches_python ... ok
+test dom::utilities::db::tests::strip_unit_drops_trailing_suffix ... ok
+test hal::tests::empty_and_no_token_inputs_are_stable ... ok
+test hal::tests::bare_nonfinite_tokens_become_quoted_python_str_form ... ok
+test hal::tests::escaped_quote_inside_string_does_not_end_it_early ... ok
+test hal::tests::finite_and_ordinary_json_is_byte_identical ... ok
+test hal::tests::negative_finite_numbers_are_not_confused_with_neg_infinity ... ok
+test hal::tests::quoted_field_text_is_untouched ... ok
+test hal::tests::sanitized_nonfinite_renders_to_python_str_field_text ... ok
+test mock::tests::mock_db_table_del_and_hdel ... ok
+test sff_mgr::tests::test_enable_high_power_class ... ignored, stub: implement with M10
+test mock::tests::mock_db_table_set_get_and_field_count ... ok
+test sff_mgr::tests::test_get_active_lanes_for_lport ... ignored, stub: implement with M10
+test sff_mgr::tests::test_sff_manager_task_task_worker ... ignored, stub: implement with M10 (SFF control)
+test xcvrd::sfp_state_update::tests::test_mapping_event_from_change_event ... ignored, stub: implement with M1
+test xcvrd::sfp_state_update::tests::test_retry_eeprom_reading ... ignored, stub: implement with M1 (EEPROM read retry)
+test xcvrd::sfp_state_update::tests::test_sfp_insert_events ... ignored, stub: implement with M1/M11 (insert/remove lifecycle)
+test mock::tests::mock_sfp_and_hal_return_canned_values ... ok
+test xcvrd::sfp_state_update::tests::test_sfp_state_update_task_task_worker ... ignored, stub: implement with M1 (plug/unplug state machine)
+test xcvrd::tests::planned_task_names_track_flags ... ok
+test xcvrd::tests::pybool_and_stringify_match_python_str ... ok
+test xcvrd::tests::test_post_port_sfp_info_to_db ... ignored, stub: implement with M1 (presence/identity INFO builder)
+test xcvrd_utilities::common::tests::test_get_cmis_application ... ignored, stub: implement with M6
+test xcvrd_utilities::common::tests::test_get_cmis_state_from_state_db ... ignored, stub: implement with M6 (CMIS datapath bring-up)
+test xcvrd_utilities::media_settings_parser::tests::test_media_settings_with_comma_dict ... ignored, stub: implement with M9
+test xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting ... ignored, stub: implement with M9 (media & optics SI settings)
+test xcvrd_utilities::optics_si_parser::tests::test_optics_si_settings ... ignored, stub: implement with M9 (optics SI settings)
+test xcvrd_utilities::port_event_helper::tests::breakout_physical_to_logical_is_natural_sorted ... ok
+test xcvrd_utilities::port_event_helper::tests::handle_port_add_populates_maps ... ok
+test xcvrd_utilities::port_event_helper::tests::handle_port_remove_reverses_add ... ok
+test xcvrd_utilities::port_event_helper::tests::test_get_port_mapping ... ignored, stub: implement with M1 (CONFIG_DB PORT read via get_port_mapping)
+test xcvrd_utilities::port_event_helper::tests::test_handle_port_update_event ... ignored, stub: implement with M4/M6 (link-change + CMIS observers)
+test xcvrd_utilities::sfp_status_helper::tests::test_detect_port_in_error_status ... ignored, stub: implement with M4 (SFP errors & flag metadata)
+test xcvrd_utilities::sfp_status_helper::tests::test_fetch_generic_error_description ... ignored, stub: implement with M4
+test xcvrd_utilities::utils::tests::test_is_transceiver_flat_memory ... ignored, stub: implement with M8/M10 (lpmode/flat-memory)
+test xcvrd_utilities::utils::tests::test_is_transceiver_lpmode_on ... ignored, stub: implement with M8
+test xcvrd_utilities::port_event_helper::tests::natural_cmp_orders_numeric_suffixes ... ok
+test xcvrd_utilities::port_event_helper::tests::is_front_panel_port_excludes_internal_ports ... ok
+test xcvrd_utilities::xcvr_table_helper::tests::is_npu_si_settings_update_required_matches_python ... ok
+test xcvrd::tests::run_detects_panicked_worker_and_still_deinits ... ok
+test xcvrd::tests::run_spawns_scaffold_and_deinit_clears_tables ... ok
+test xcvrd_utilities::xcvr_table_helper::tests::registry_getters_return_independent_tables ... ok
+test xcvrd_utilities::xcvr_table_helper::tests::vdm_threshold_and_flag_table_names ... ok
+test xcvrd_utilities::xcvr_table_helper::tests::registry_vdm_getters_are_per_type ... ok
+
+test result: ok. 25 passed; 0 failed; 37 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/deps/xcvrd_rs-66f8c5bc5306c5ca)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xcvrd_rs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

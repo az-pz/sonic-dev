@@ -1,0 +1,16 @@
+{
+  "milestone": "M16",
+  "passed": true,
+  "tests": {
+    "unit": { "total": 312, "passed": 312, "failed": 0 },
+    "e2e":  { "total": 104, "passed": 103, "failed": 0, "skipped": 1, "deselected": 1 }
+  },
+  "failures": [],
+  "notes": [
+    "Unit layer (bash tools/unit_test.sh): cargo test in the trixie container => 312 passed, 0 failed, 0 ignored.",
+    "E2E layer (bash tools/validate_on_dut.sh M16 -k <cumulative-minus-skips>): build+inject OK, run.sh exit 0, results.xml => 103 passed, 0 failed/errored, 1 skipped, 1 deselected in 3703.54s.",
+    "Deselected (1): test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture -- deferred via pipeline/skips.json tests_to_skip; NOT a failure.",
+    "Skipped (1): test_sff_control.py::test_sff_high_power_class_enabled -- portable-by-design skip, NOT counted as a pass and NOT a daemon defect. The emulator SFF module on Ethernet40 advertises SFF-8636 power class 4 (00h:129=0xC0); enable_high_power_class (sff_mgr.py:set_high_power_class -> 00h:93.2) is a no-op below class 5, so the test skips cleanly. Exercising this gate requires provisioning a class-5+ SFF emulator module (00h:129 low bit set, e.g. 0xC1); no such module exists on this testbed and it cannot be provisioned via a daemon flag or test setup here. Reported explicitly for transparency; there is no Translator-fixable behaviour behind this skip.",
+    "Testbed health after run: harness restored the Python xcvrd; supervisor reports 'xcvrd RUNNING pid 30086'. DUT healthy (no ENOSPC / truncated binary; Rust binary reversibly removed)."
+  ]
+}
