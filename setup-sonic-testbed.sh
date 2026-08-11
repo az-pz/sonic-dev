@@ -16,39 +16,18 @@
 # Ubuntu 24.04, 64 GB+ OS disk OR a large local/temp disk (auto-used below).
 #
 # USAGE:
-#   ./setup-sonic-testbed.sh              # run every phase in order (now INCLUDES the emulator)
+#   ./setup-sonic-testbed.sh              # run every phase in order (INCLUDES the emulator)
 #   ./setup-sonic-testbed.sh <phase>      # run a single phase (re-runnable)
-#   ./setup-sonic-testbed.sh smoke_test   # just run the BGP verification test
-#   ./setup-sonic-testbed.sh transceiver_tests      # xcvrd/SFP tests (now pass with the emulator)
-#   ./setup-sonic-testbed.sh transceiver_tests_all  # full validated xcvrd/SFP set
-#   VERBOSE=1 ./setup-sonic-testbed.sh transceiver_tests_all   # full tracebacks for errors
-#   ./setup-sonic-testbed.sh transceiver_tests_all -v          # same, via -v flag
-#   RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all  # skip the SLOW module-reset tests
-#   ./setup-sonic-testbed.sh transceiver_eeprom_tests  # declarative transceiver/eeprom suite
-#                                              #   (injects inventory + temporarily flips asic_type)
-#   ./setup-sonic-testbed.sh emulator          # native emulator deploy: host sonic_platform:=bridge,
-#                                              #   skip_xcvrd=false, pmon inject, + xcvr-emu container
-#   ./setup-sonic-testbed.sh emulator_revert   # undo the native emulator deploy (restore stock platform)
-#   ./setup-sonic-testbed.sh transceiver_emu_test  # run test_xcvr_info_in_db (needs emulator)
-#   ./setup-sonic-testbed.sh emulator_e2e      # emulator + test_xcvr_info_in_db in one go
-#   ./setup-sonic-testbed.sh hotplug_test [PORT]   # unplug a module in the emulator and
-#                                              #   assert xcvrd clears+restores it (needs emulator)
-#   ./setup-sonic-testbed.sh xcvrd_tests [-- pytest args]  # ship dev/xcvrd-tests to the DUT and
-#                                              #   run the pytest black-box suite there (needs emulator)
-#   ./setup-sonic-testbed.sh transceiver_tests_rust <folder> [-v]      # build a Rust xcvrd from a
-#                                              #   recodeAgent pipeline folder (e.g. recodeAgent/pipeline_run3),
-#                                              #   inject it into pmon, FLUSH STATE_DB (clean baseline so the
-#                                              #   Rust daemon must repopulate), run the vs-compatible subset,
-#                                              #   then ALWAYS restore the Python xcvrd
-#   ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder> [-v]  # same, but the FULL validated
-#                                              #   xcvrd/SFP set (needs emulator deployed first)
-#   ./setup-sonic-testbed.sh transceiver_tests_noop      # NEGATIVE CONTROL: inject a no-op xcvrd + clean
-#                                              #   baseline, run the subset — the STATE_DB tests SHOULD fail
-#                                              #   (proves the suite actually exercises xcvrd). No folder arg.
-#   ./setup-sonic-testbed.sh xcvrd_status      # report the xcvrd running in pmon: PYTHON vs injected
-#                                              #   RUST xcvrd-rs, supervisor state + inject markers (read-only)
-#   ./setup-sonic-testbed.sh remove_topo  # tear down the topology + VMs
-#   ./setup-sonic-testbed.sh rebuild      # recover after a /mnt/data wipe (also redeploys the emulator)
+#   ./setup-sonic-testbed.sh --help       # full phase list, arguments and env vars
+#
+# The authoritative phase list lives in phase_registry() near the bottom of this
+# file; `--help`, argument validation and shell completion are all generated from
+# it, so they cannot drift out of sync. Do NOT maintain a duplicate list here.
+#
+# Tab completion (phase names, Rust pipeline folders, DUT ports):
+#   eval "$(./setup-sonic-testbed.sh --completion bash)"     # current shell
+#   ./setup-sonic-testbed.sh --completion bash | sudo tee \
+#       /etc/bash_completion.d/setup-sonic-testbed >/dev/null   # persistent
 #
 # The `emulator` phase needs this script's sibling assets (platform/ and
 # emu-deploy/), so run it from a full sonic-develop checkout on the VM:
@@ -1045,4 +1024,247 @@ all() {
   log "DONE — SONiC KVM testbed is up (emulator-backed transceivers). DUT=$DUT  testbed=$TESTBED_NAME"
 }
 
-"${1:-all}" "${@:2}"
+# ---------------------------------------------------------------------------
+# Phase registry — the SINGLE SOURCE OF TRUTH for `--help`, argument validation
+# and shell completion. One record per line, pipe-delimited:
+#
+#     <phase>|<arg-hint>|<group>|<description>
+#
+# Add new user-facing phases HERE. Everything else (help text, the "unknown
+# phase" check, `--list-phases`, tab completion) is generated from this table,
+# so a new phase is documented and completable the moment it is registered.
+# Internal helpers (log/die/tbcli/_rust_* ...) are deliberately absent, which is
+# what stops them being invoked from the command line.
+# ---------------------------------------------------------------------------
+phase_registry() {
+  cat <<'REG'
+all||setup|Run every phase in order (default when no phase is given)
+preflight||setup|Verify KVM/nested-virt, OS version and passwordless sudo
+install_prereqs||setup|Install host packages, docker and python deps
+setup_storage||setup|Lay out the big-disk storage under the DATA mount point
+clone_repo||setup|Clone/refresh the sonic-mgmt repo
+setup_mgmt_network||setup|Create the mgmt bridge network for the testbed
+download_image||setup|Download the sonic-vs DUT image
+setup_container||setup|Start the docker-sonic-mgmt container
+setup_ssh||setup|Set up key-based SSH from the container to the vm_host
+start_vms||setup|Start the neighbor VMs (see VM_TYPE / NUM_VMS below)
+add_topo||setup|Deploy the topology (see TESTBED_NAME below)
+deploy_mg||setup|Deploy the minigraph/config to the DUT
+verify||setup|Verify the DUT is reachable and BGP sessions are up
+inject_conn_graph||setup|Inject the connection graph used by the transceiver tests
+smoke_test|[test] [-v]|test|Run the BGP verification test (default bgp/test_bgp_fact.py)
+transceiver_tests|[-v]|test|xcvrd/SFP tests that pass on a vs DUT (green smoke set)
+transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set (RESET_TESTS=0 skips slow reset tests)
+transceiver_eeprom_tests|[-v]|test|Declarative transceiver/eeprom suite (injects inventory, flips asic_type)
+transceiver_emu_test||test|Run test_xcvr_info_in_db (needs the emulator deployed)
+hotplug_test|[PORT]|test|Unplug/replug a module and assert xcvrd clears+restores it
+xcvrd_tests|[-- pytest args]|test|Ship xcvrd-tests/ to the DUT and run the pytest black-box suite there
+emulator||emu|Native emulator deploy (bridge sonic_platform, pmon inject, xcvr-emu container)
+emulator_revert||emu|Undo the native emulator deploy and restore the stock platform
+emulator_e2e||emu|emulator + transceiver_emu_test in one go
+transceiver_tests_rust|<folder> [-v]|rust|Build+inject a Rust xcvrd from a recodeAgent folder, run the subset, always restore Python
+transceiver_tests_all_rust|<folder> [-v]|rust|Same as transceiver_tests_rust but the FULL validated set
+transceiver_tests_noop|[-v]|rust|NEGATIVE CONTROL: inject a no-op xcvrd; STATE_DB tests SHOULD fail
+transceiver_tests_all_noop|[-v]|rust|NEGATIVE CONTROL over the full set
+xcvrd_status||rust|Report the xcvrd running in pmon: PYTHON vs injected RUST (read-only)
+xcvrd_info||rust|Alias for xcvrd_status
+remove_topo||teardown|Tear down the topology and stop the VMs
+rebuild||teardown|Recover after a /mnt/data wipe (re-lays storage, VMs, topo, emulator)
+REG
+}
+
+phase_names() { phase_registry | cut -d'|' -f1; }
+
+# Exact-match lookup; used by the dispatcher to reject unknown/internal names.
+phase_exists() { phase_names | grep -qxF -- "$1"; }
+
+usage() {
+  local b="" d="" n=""
+  # Only colourise when stdout is a terminal, so `--help | less` stays clean.
+  if [ -t 1 ]; then b=$'\033[1m'; d=$'\033[2m'; n=$'\033[0m'; fi
+
+  cat <<EOF
+${b}setup-sonic-testbed.sh${n} — one-shot, idempotent SONiC KVM virtual testbed
+
+${b}USAGE${n}
+  ./setup-sonic-testbed.sh [<phase>] [args...]
+  ./setup-sonic-testbed.sh --help | --list-phases | --completion bash
+
+  With no phase it runs ${b}all${n} (every setup phase in order). Every phase is
+  re-runnable on its own.
+
+EOF
+
+  local group title
+  for group in setup test emu rust teardown; do
+    case "$group" in
+      setup)    title="SETUP PHASES (in the order \`all\` runs them)" ;;
+      test)     title="TESTS" ;;
+      emu)      title="EMULATOR (xcvr-emu)" ;;
+      rust)     title="RUST xcvrd / recodeAgent" ;;
+      teardown) title="TEARDOWN & RECOVERY" ;;
+    esac
+    printf '%s%s%s\n' "$b" "$title" "$n"
+    # Render "<phase> <arg-hint>" left-padded, then the description.
+    phase_registry | awk -F'|' -v g="$group" -v d="$d" -v n="$n" '
+      $3 == g {
+        label = $1 (length($2) ? " " $2 : "")
+        printf "  %-42s %s%s%s\n", label, d, $4, n
+      }'
+    printf '\n'
+  done
+
+  cat <<EOF
+${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-sonic-testbed.sh ...)${n}
+  ${b}VERBOSE${n}=1            Full tracebacks (-rA --tb=long --showlocals -s); same as the -v flag
+  ${b}RESET_TESTS${n}=0        Skip the SLOW module-reset tests in transceiver_tests_all
+  ${b}TESTBED_NAME${n}=...     conf-name in vtestbed.yaml            (current: $TESTBED_NAME)
+  ${b}DUT${n}=...              DUT hostname                          (current: $DUT)
+  ${b}DUT_IP${n}=...           DUT mgmt IPv4 as seen from the mgmt ctr (current: $DUT_IP)
+  ${b}VM_TYPE${n}=...          vsonic | ceos | csonic | veos         (current: $VM_TYPE)
+  ${b}NUM_VMS${n}=...          Neighbor VM count                     (current: $NUM_VMS)
+  ${b}EMU_MODULES${n}=...      Present CMIS modules (0..N-1)         (current: $EMU_MODULES)
+  ${b}MGMT_CONTAINER${n}=...   sonic-mgmt container name             (current: $MGMT_CONTAINER)
+  ${b}DATA${n}=...             Big-disk mount point                  (current: $DATA)
+
+${b}EXAMPLES${n}
+  ./setup-sonic-testbed.sh                                  ${d}# full setup, end to end${n}
+  ./setup-sonic-testbed.sh emulator_e2e                     ${d}# emulator + its e2e test${n}
+  ./setup-sonic-testbed.sh transceiver_tests_all -v         ${d}# full xcvrd set, verbose${n}
+  ./setup-sonic-testbed.sh xcvrd_tests -- -m "not slow"     ${d}# skip the ~60s DOM tests${n}
+  ./setup-sonic-testbed.sh xcvrd_tests -- -k test_dom       ${d}# one module's tests${n}
+  ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
+  ./setup-sonic-testbed.sh hotplug_test Ethernet40
+  ./setup-sonic-testbed.sh xcvrd_status                     ${d}# which xcvrd is live?${n}
+
+${b}TAB COMPLETION${n}
+  eval "\$(./setup-sonic-testbed.sh --completion bash)"       ${d}# this shell${n}
+  ./setup-sonic-testbed.sh --completion bash | sudo tee \\
+      /etc/bash_completion.d/setup-sonic-testbed >/dev/null  ${d}# persistent${n}
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# print_completion: emit a bash completion script on stdout.
+#   The completion asks THIS script for its phase list at runtime
+#   (`--list-phases`), so newly registered phases complete without the user
+#   re-installing anything. Falls back silently if the script is not executable.
+# ---------------------------------------------------------------------------
+print_completion() {
+  local shell="${1:-bash}"
+  case "$shell" in
+    bash) ;;
+    *) die "unsupported completion shell '$shell' (only 'bash' is supported)" ;;
+  esac
+
+  cat <<'COMPLETION'
+# bash completion for setup-sonic-testbed.sh
+# Install:  eval "$(./setup-sonic-testbed.sh --completion bash)"
+_setup_sonic_testbed() {
+  local cur script phase
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]:-}"
+  script="${COMP_WORDS[0]}"
+  phase="${COMP_WORDS[1]:-}"
+
+  # Position 1: the phase name (or a top-level flag).
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    local phases
+    phases="$("$script" --list-phases 2>/dev/null)"
+    COMPREPLY=($(compgen -W "$phases --help -h --list-phases --completion" -- "$cur"))
+    return 0
+  fi
+
+  # --completion <shell>
+  if [ "$phase" = "--completion" ]; then
+    COMPREPLY=($(compgen -W "bash" -- "$cur"))
+    return 0
+  fi
+
+  case "$phase" in
+    transceiver_tests_rust|transceiver_tests_all_rust)
+      # Position 2 is the recodeAgent pipeline folder; after that only -v.
+      if [ "$COMP_CWORD" -eq 2 ]; then
+        local dirs
+        dirs="$(compgen -d -- "$cur")"
+        # Surface recodeAgent result/pipeline folders even before the user types
+        # the path prefix, since those are what this phase actually expects.
+        if [ -z "$cur" ]; then
+          dirs="$dirs $(compgen -d -- recodeAgent/results/ 2>/dev/null)"
+          dirs="$dirs $(compgen -d -- recodeAgent/pipeline_run 2>/dev/null)"
+        fi
+        COMPREPLY=($(compgen -W "$dirs" -- "$cur"))
+      else
+        COMPREPLY=($(compgen -W "-v --verbose" -- "$cur"))
+      fi
+      return 0
+      ;;
+    hotplug_test)
+      # The vs testbed exposes Ethernet0..Ethernet124 in steps of 4.
+      local ports="" i
+      for ((i = 0; i <= 124; i += 4)); do ports="$ports Ethernet$i"; done
+      COMPREPLY=($(compgen -W "$ports" -- "$cur"))
+      return 0
+      ;;
+    xcvrd_tests)
+      # Everything after `--` is forwarded to pytest on the DUT.
+      COMPREPLY=($(compgen -W "-- -k -m -x -q --collect-only --capture-golden" -- "$cur"))
+      return 0
+      ;;
+    smoke_test|transceiver_tests|transceiver_tests_all|transceiver_eeprom_tests| \
+    transceiver_tests_noop|transceiver_tests_all_noop)
+      COMPREPLY=($(compgen -W "-v --verbose" -- "$cur"))
+      return 0
+      ;;
+  esac
+  return 0
+}
+complete -o default -F _setup_sonic_testbed setup-sonic-testbed.sh ./setup-sonic-testbed.sh
+COMPLETION
+}
+
+# Suggest close matches for a typo'd phase. Tries, in order: substring of a real
+# phase, real phase contained in the input, then a shared-prefix match (which is
+# what catches transposition typos like "transciever_tests").
+suggest_phase() {
+  local bad="$1" hits
+  hits="$(phase_names | grep -iF -- "$bad" 2>/dev/null)"
+  if [ -z "$hits" ]; then
+    hits="$(phase_names | while read -r p; do
+              case "$bad" in *"$p"*) echo "$p" ;; esac
+            done)"
+  fi
+  if [ -z "$hits" ]; then
+    local prefix="${bad:0:5}"
+    [ -n "$prefix" ] && hits="$(phase_names | grep -i "^$(printf '%s' "$prefix" | sed 's/[^a-zA-Z0-9_]/./g')" 2>/dev/null)"
+  fi
+  [ -n "$hits" ] && { echo "Did you mean:" >&2; echo "$hits" | sed 's/^/  /' >&2; }
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# main: dispatch to a single named phase (default: all).
+#   The phase name is validated against phase_registry() FIRST. Previously the
+#   argument was executed directly, so a typo produced a bare "command not
+#   found" and any shell command or internal helper was invocable.
+# ---------------------------------------------------------------------------
+main() {
+  case "${1:-}" in
+    -h|--help|help) usage; exit 0 ;;
+    --list-phases)  phase_names; exit 0 ;;
+    --completion)   print_completion "${2:-bash}"; exit 0 ;;
+  esac
+
+  local phase="${1:-all}"
+  if ! phase_exists "$phase"; then
+    echo -e "\033[1;31m[fail]\033[0m unknown phase: '$phase'" >&2
+    suggest_phase "$phase"
+    echo "Run './setup-sonic-testbed.sh --help' for the full list of phases." >&2
+    exit 2
+  fi
+
+  "$phase" "${@:2}"
+}
+
+main "$@"
+
