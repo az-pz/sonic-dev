@@ -439,9 +439,12 @@ transceiver_tests() {
 #                                                 error_status, low_power_mode, reset)
 #     - platform_tests/api/test_sfp.py           (23 SFP platform-API methods,
 #                                                 incl. lpmode + error_description)
+#     - transceiver/eeprom/                      (declarative presence, eeprom
+#                                                 content, hexdump, breakout
+#                                                 serial, VDM, error handling)
 #
-#   The declarative transceiver/eeprom suite runs in its own phase
-#   (`transceiver_eeprom_tests`) since it lives under a different pytest path.
+#   The declarative transceiver/eeprom suite is included here too, and also has
+#   its own standalone phase (`transceiver_eeprom_tests`) for running it alone.
 #   The emulator deploy stamps a non-vs asic_type into the DUT platform.json, so
 #   all of these suites actually RUN (real PASS/FAIL) rather than being skipped/
 #   xfailed by sonic-mgmt's `asic_type in ['vs']` conditional marks.
@@ -470,6 +473,7 @@ transceiver_tests_all() {
     "platform_tests/sfp/test_sfpshow.py" \
     "platform_tests/sfp/test_sfputil.py" \
     "platform_tests/api/test_sfp.py" \
+    "transceiver/eeprom/" \
     "${reset_deselect[@]}"
 }
 
@@ -1108,7 +1112,7 @@ verify||setup|Verify the DUT is reachable and BGP sessions are up
 inject_conn_graph||setup|Inject the connection graph used by the transceiver tests
 smoke_test|[test] [-v]|test|Run the BGP verification test (default bgp/test_bgp_fact.py)
 transceiver_tests|[-v]|test|xcvrd/SFP tests that pass on a vs DUT (green smoke set)
-transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set (RESET_TESTS=0 skips slow reset tests)
+transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set + the transceiver/eeprom suite (RESET_TESTS=0 skips slow reset tests)
 transceiver_eeprom_tests|[-v]|test|Declarative transceiver/eeprom suite (injects inventory, flips asic_type)
 transceiver_emu_test||test|Run test_xcvr_info_in_db (needs the emulator deployed)
 hotplug_test|[PORT]|test|Unplug/replug a module and assert xcvrd clears+restores it
