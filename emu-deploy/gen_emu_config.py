@@ -22,9 +22,22 @@ PM/VDM stimulus -- are still written by the tests themselves at runtime.
 Set EMU_NO_SPECIAL=1 to emit a uniform config with no special modules.
 
 Usage: gen_emu_config.py [N] [OUT]
+       gen_emu_config.py --list-special    # print the special indices and exit
+
+--list-special makes this file the SINGLE SOURCE OF TRUTH for which modules are
+non-uniform. setup-sonic-testbed.sh's inject_conn_graph consumes it to keep the
+special ports out of the sonic-mgmt connection graph, so the platform suite only
+ever tests uniform CMIS ports. Without that, adding a special module here would
+silently start failing the sonic-mgmt transceiver tests. It honours
+EMU_NO_SPECIAL=1 (prints nothing), so a uniform testbed excludes nothing.
 """
 import os
 import sys
+
+# Consume --list-special before the positional args, so it can be passed alone.
+LIST_SPECIAL = "--list-special" in sys.argv
+if LIST_SPECIAL:
+    sys.argv = [a for a in sys.argv if a != "--list-special"]
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 33
 out = sys.argv[2] if len(sys.argv) > 2 else "emu_config.yaml"
@@ -117,6 +130,13 @@ SPECIAL = {
 
 if os.environ.get("EMU_NO_SPECIAL") == "1":
     SPECIAL = {}
+
+# Emit the special indices for consumers that must stay in sync with this table
+# (inject_conn_graph). Done AFTER the EMU_NO_SPECIAL override so a uniform
+# testbed correctly reports "no special modules". Exits before writing any file.
+if LIST_SPECIAL:
+    print(" ".join(str(i) for i in sorted(SPECIAL) if i < N))
+    sys.exit(0)
 
 with open(out, "w") as f:
     f.write("transceivers:\n")

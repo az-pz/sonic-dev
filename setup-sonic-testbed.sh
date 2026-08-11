@@ -701,6 +701,45 @@ inject_conn_graph() {
   local files_dir="/data/sonic-mgmt/ansible/files"
   local tmp; tmp="$(mktemp -d)"
 
+  # ------------------------------------------------------------------------
+  # Ports carrying a SPECIAL (non-uniform) emulator module are EXCLUDED from the
+  # graph below. The sonic-mgmt platform suite derives the ports it tests from
+  # this graph -- test_sfputil.py iterates conn_graph_facts' dev_conn, and
+  # api/test_sfp.py builds sfp_test_port_indices from
+  # conn_graph_facts["device_conn"] -- and it assumes every port is a uniform,
+  # fully-featured CMIS module. The special modules deliberately are not:
+  #
+  #   idx10 SFF-8636   -> Sff8636Api has no reset() (sfputil reset / api test_reset)
+  #   idx11 400G-ZR    -> coherent VDM thresholds the emulator does not serve
+  #   idx13 flat mem   -> no upper pages: no laser-temp thresholds, no per-channel
+  #                       tx disable, module reports ModuleLowPwr
+  #   idx14 multi-app  -> app-selection module
+  #
+  # Leaving them in the graph made 6 sonic-mgmt tests fail for reasons that have
+  # nothing to do with xcvrd. Excluding them at the GRAPH level (rather than
+  # deselecting whole tests, or toggling the emulator config between suites)
+  # keeps every assertion running on the remaining uniform ports, needs no DUT
+  # or emulator mutation, and leaves no state to restore. xcvrd-tests is
+  # unaffected: it talks to the emulator gRPC and STATE_DB directly and never
+  # reads this graph, so the special modules stay fully covered there.
+  #
+  # The index list comes from gen_emu_config.py --list-special, so this can never
+  # drift from the emulator config (and EMU_NO_SPECIAL=1 excludes nothing).
+  # Port<->index mapping is Ethernet(4*idx), verified on the DUT: Ethernet40 is
+  # the SFF-8636 module and Ethernet44 advertises 400GBASE-ZR.
+  # ------------------------------------------------------------------------
+  local gen="$SCRIPT_DIR/emu-deploy/gen_emu_config.py"
+  local special_idx="" special_ports=""
+  if [ -f "$gen" ]; then
+    special_idx="$(python3 "$gen" --list-special 2>/dev/null)" || special_idx=""
+  else
+    warn "gen_emu_config.py not found at $gen -- cannot exclude special-module ports"
+  fi
+  local i
+  for i in $special_idx; do
+    special_ports="$special_ports Ethernet$((i * 4))"
+  done
+
   cat > "$tmp/sonic_vlab_devices.csv" <<'CSV'
 Hostname,ManagementIp,HwSku,Type,Protocol,Os,AuthType
 vlab-01,10.250.0.101/24,Force10-S6000,DevSonic,,sonic,
@@ -734,7 +773,7 @@ Servers22,10.64.0.23/24,TestServ,Server,,ubuntu,
 Servers23,10.64.0.24/24,TestServ,Server,,ubuntu,
 CSV
 
-  cat > "$tmp/sonic_vlab_links.csv" <<'CSV'
+  cat > "$tmp/links.raw" <<'CSV'
 StartDevice,StartPort,EndDevice,EndPort,BandWidth,VlanID,VlanMode,AutoNeg
 vlab-01,Ethernet4,Servers0,eth0,40000,,,
 vlab-01,Ethernet8,Servers1,eth0,40000,,,
@@ -765,6 +804,21 @@ vlab-01,Ethernet116,ARISTA02T1,Ethernet1,40000,,,
 vlab-01,Ethernet120,ARISTA03T1,Ethernet1,40000,,,
 vlab-01,Ethernet124,ARISTA04T1,Ethernet1,40000,,,
 CSV
+
+  # Strip the special-module links. Match ",EthernetNN," (with BOTH commas) so a
+  # short port name can never match a longer one -- ",Ethernet4," must not delete
+  # the Ethernet40/44/48 rows.
+  if [ -n "$special_ports" ]; then
+    local -a gv=()
+    local p
+    for p in $special_ports; do gv+=(-e ",${p},"); done
+    grep -vF "${gv[@]}" "$tmp/links.raw" > "$tmp/sonic_vlab_links.csv"
+    log "  excluding special-module ports from the graph:${special_ports}"
+    log "  sonic-mgmt will test $(( $(grep -c '^vlab-01,' "$tmp/sonic_vlab_links.csv") )) of $(grep -c '^vlab-01,' "$tmp/links.raw") $DUT ports"
+  else
+    cp "$tmp/links.raw" "$tmp/sonic_vlab_links.csv"
+    log "  no special modules reported -- graph keeps every port"
+  fi
 
   docker cp "$tmp/sonic_vlab_devices.csv" "$MGMT_CONTAINER:$files_dir/sonic_vlab_devices.csv"
   docker cp "$tmp/sonic_vlab_links.csv"   "$MGMT_CONTAINER:$files_dir/sonic_vlab_links.csv"
