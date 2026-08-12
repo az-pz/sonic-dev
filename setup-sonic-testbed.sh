@@ -421,6 +421,19 @@ _run_pytest() {
 #         platform_tests/test_xcvr_info_in_db.py
 #     ./setup-sonic-testbed.sh run_pytest transceiver/eeprom/ --rust ./recodeAgent/results/result_4
 #
+#   --dom_update_interval <secs>  (or DOM_UPDATE_INTERVAL=<secs>) is baked into
+#   the Rust inject shim as the daemon's --dom_update_interval. xcvrd's DOM loop
+#   defaults to 60 s, so after the inject's STATE_DB flush the DOM-backed tables
+#   (TRANSCEIVER_DOM_SENSOR / _STATUS) stay empty for up to a minute while
+#   TRANSCEIVER_INFO / _DOM_THRESHOLD appear immediately -- a smaller value makes
+#   DOM-cadence tests finish sooner and shrinks that window. Opt-in: unset keeps
+#   the upstream 60 s, so the Rust port is never silently graded under
+#   non-default timing. Applies to --rust runs only (it is a property of the
+#   injected daemon); it is ignored, with a warning, without --rust.
+#     ./setup-sonic-testbed.sh run_pytest --rust recodeAgent/results/result_4 \
+#         --dom_update_interval 5 platform_tests/test_xcvr_info_in_db.py
+#     DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder>
+#
 #   NOTE: -v is NOT consumed as a verbosity flag here (unlike the canned test
 #   phases) because it is also pytest's own flag -- it is forwarded to pytest
 #   like everything else. Use VERBOSE=1 for full tracebacks/--showlocals/-s.
@@ -446,6 +459,13 @@ run_pytest() {
         rust_folder="${1#--rust=}"
         [ -n "$rust_folder" ] || die "--rust= needs a folder, e.g. --rust=./recodeAgent/results/result_4"
         shift ;;
+      --dom_update_interval)
+        [ "$#" -ge 2 ] || die "--dom_update_interval needs a value in seconds, e.g. --dom_update_interval 5"
+        DOM_UPDATE_INTERVAL="$2"; shift 2 ;;
+      --dom_update_interval=*)
+        DOM_UPDATE_INTERVAL="${1#--dom_update_interval=}"
+        [ -n "$DOM_UPDATE_INTERVAL" ] || die "--dom_update_interval= needs a value, e.g. --dom_update_interval=5"
+        shift ;;
       *) pyargs+=("$1"); shift ;;
     esac
   done
@@ -458,12 +478,23 @@ run_pytest() {
     ./setup-sonic-testbed.sh run_pytest --rust ./recodeAgent/results/result_4 platform_tests/test_xcvr_info_in_db.py
   (paths are relative to /data/sonic-mgmt/tests; run --help for more examples)"
   fi
-  log "pytest: $*  (verbose=${VERBOSE:-0}${rust_folder:+, rust=$rust_folder})"
-  # Validate the Rust folder BEFORE any DUT/docker work, so a typo'd path fails
+  log "pytest: $*  (verbose=${VERBOSE:-0}${rust_folder:+, rust=$rust_folder}${DOM_UPDATE_INTERVAL:+, dom_update_interval=$DOM_UPDATE_INTERVAL})"
+  # Validate BEFORE any DUT/docker work, so a typo'd path or interval fails
   # instantly instead of after the connection-graph injection.
+  if [ -n "${DOM_UPDATE_INTERVAL:-}" ]; then
+    case "$DOM_UPDATE_INTERVAL" in
+      ''|*[!0-9]*) die "--dom_update_interval/DOM_UPDATE_INTERVAL must be a non-negative integer (got '$DOM_UPDATE_INTERVAL')" ;;
+    esac
+  fi
   if [ -n "$rust_folder" ]; then
     [ -d "$rust_folder" ] || die "rust pipeline folder not found: $rust_folder"
     [ -d "$rust_folder/crate" ] || die "no crate/ workspace under $rust_folder — is this a recodeAgent pipeline folder? (expected $rust_folder/crate/Cargo.toml)"
+  elif [ -n "${DOM_UPDATE_INTERVAL:-}" ]; then
+    # The interval is applied by baking it into the Rust inject shim, so without
+    # --rust there is nothing to apply it to. Warn instead of silently ignoring
+    # it -- a user who thinks they changed the DOM cadence would otherwise
+    # misread the resulting timings.
+    warn "--dom_update_interval/DOM_UPDATE_INTERVAL only applies to the injected Rust xcvrd (--rust); ignoring it for this run"
   fi
   if [ "${SKIP_CONN_GRAPH:-0}" = "1" ]; then
     log "  SKIP_CONN_GRAPH=1 -> not re-injecting the connection graph"
@@ -695,10 +726,21 @@ _rust_build_and_inject() {
     || die "failed to copy Rust artifacts to DUT"
 
   # 3) inject (crash-safe) — arm the restore trap BEFORE touching pmon's xcvrd.
-  log "Injecting Rust xcvrd into pmon (reversible)"
+  #    DOM_UPDATE_INTERVAL (seconds, opt-in) is forwarded to the Rust daemon as
+  #    --dom_update_interval. Unset => the daemon keeps its upstream 60 s default,
+  #    so a Rust run is never silently graded under non-default DOM timing.
+  local ival="${DOM_UPDATE_INTERVAL:-}"
+  if [ -n "$ival" ]; then
+    case "$ival" in
+      ''|*[!0-9]*) die "DOM_UPDATE_INTERVAL must be a non-negative integer (got '$ival')" ;;
+    esac
+    log "Injecting Rust xcvrd into pmon (reversible, --dom_update_interval=$ival)"
+  else
+    log "Injecting Rust xcvrd into pmon (reversible)"
+  fi
   trap '_rust_restore' EXIT INT TERM
   docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
-    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs'" \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs $ival'" \
     || die "inject FAILED (Python xcvrd left intact)"
   ok "Rust xcvrd injected + RUNNING in pmon"
 }
@@ -1290,6 +1332,7 @@ EOF
 ${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-sonic-testbed.sh ...)${n}
   ${b}VERBOSE${n}=1            Full tracebacks (-rA --tb=long --showlocals -s); same as the -v flag
   ${b}RESET_TESTS${n}=0        Skip the SLOW module-reset tests in transceiver_tests_all
+  ${b}DOM_UPDATE_INTERVAL${n}= DOM poll seconds for an injected RUST xcvrd (unset = upstream 60s)
   ${b}TESTBED_NAME${n}=...     conf-name in vtestbed.yaml            (current: $TESTBED_NAME)
   ${b}DUT${n}=...              DUT hostname                          (current: $DUT)
   ${b}DUT_IP${n}=...           DUT mgmt IPv4 as seen from the mgmt ctr (current: $DUT_IP)
@@ -1309,6 +1352,8 @@ ${b}EXAMPLES${n}
   ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
   ./setup-sonic-testbed.sh run_pytest --rust recodeAgent/results/result_4 \\
       platform_tests/test_xcvr_info_in_db.py                ${d}# one test vs Rust xcvrd${n}
+  DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh transceiver_tests_all_rust \\
+      recodeAgent/results/result_4                          ${d}# faster DOM cadence${n}
   ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
   ./setup-sonic-testbed.sh hotplug_test Ethernet40
   ./setup-sonic-testbed.sh xcvrd_status                     ${d}# which xcvrd is live?${n}
@@ -1402,7 +1447,7 @@ _setup_sonic_testbed() {
         fi
         COMPREPLY=($(compgen -W "$rdirs" -- "$cur"))
       elif [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--rust -k -m -x -q -s --collect-only --durations=25 --tb=short --tb=long --lf --sw" -- "$cur"))
+        COMPREPLY=($(compgen -W "--rust --dom_update_interval -k -m -x -q -s --collect-only --durations=25 --tb=short --tb=long --lf --sw" -- "$cur"))
       else
         COMPREPLY=($(compgen -W "platform_tests/ platform_tests/test_xcvr_info_in_db.py \
           platform_tests/sfp/test_sfpshow.py platform_tests/sfp/test_sfputil.py \

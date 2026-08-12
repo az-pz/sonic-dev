@@ -9,10 +9,13 @@
 # shim, so a partial/ENOSPC write can never truncate xcvrd).
 #
 # Verbs:
-#   inject <staged-binary>   back up python xcvrd, install a shim that execv's the
+#   inject <staged-binary> [dom_update_interval]
+#                            back up python xcvrd, install a shim that execv's the
 #                            rust binary, then clean-baseline restart: flush stale
 #                            TRANSCEIVER_* rows so the injected daemon MUST
-#                            repopulate STATE_DB (stale python data can't mask it)
+#                            repopulate STATE_DB (stale python data can't mask it).
+#                            The optional second arg is passed through to the Rust
+#                            daemon as --dom_update_interval <secs> (see below)
 #   inject-noop              negative control: install a NO-OP xcvrd (stays RUNNING
 #                            but never writes STATE_DB) + same clean baseline, so
 #                            xcvrd-dependent tests MUST fail (proves they have teeth)
@@ -20,12 +23,36 @@
 #   status                   report which xcvrd is running (python vs rust) + markers
 #
 # Usage (on the DUT): bash rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs
+#                     bash rust_xcvrd_ctl.sh inject /home/admin/xcvrd-rs 5
+#
+# DOM poll interval: xcvrd's DOM sensor loop defaults to 60 s, so after the
+# clean-baseline flush TRANSCEIVER_DOM_SENSOR / TRANSCEIVER_STATUS stay EMPTY for
+# up to a minute (TRANSCEIVER_INFO and _DOM_THRESHOLD are written during per-port
+# init and appear immediately). Passing a smaller interval makes the DOM-backed
+# tables appear sooner, which both speeds up DOM-cadence tests and shrinks the
+# window in which a test can race the first poll. It is OPT-IN: with no value the
+# daemon keeps the upstream 60 s default, so the Rust port is never silently
+# graded under non-default timing. The Python xcvrd takes the same flag, so the
+# value means the same thing for both daemons.
+#
+# Readiness: supervisor reports RUNNING the moment the process exists, which is
+# earlier than the daemon being usable. inject therefore settles for
+# RUST_SETTLE_SECS (default 15) after start, before anything asserts on
+# STATE_DB. Set RUST_SETTLE_SECS=0 to skip it.
 set -uo pipefail
 
 PMON="${PMON:-pmon}"
 XBIN=/usr/local/bin/xcvrd            # what supervisor runs: python3 /usr/local/bin/xcvrd
 XORIG=/usr/local/bin/xcvrd.pyorig    # backup of the real python xcvrd
 XRUST=/usr/local/bin/xcvrd-rs        # the injected Rust binary
+
+# Seconds to let a freshly-started Rust daemon settle before anything reads
+# STATE_DB. supervisorctl reports RUNNING as soon as the process exists, which is
+# well before xcvrd-rs has opened its DB connections, enumerated the ports and
+# completed its first pass -- so "RUNNING" alone is not "ready", and a test that
+# starts immediately can read a half-populated STATE_DB. Override with
+# RUST_SETTLE_SECS (0 disables).
+RUST_SETTLE_SECS="${RUST_SETTLE_SECS:-15}"
 
 wait_running() {
   local i st
@@ -118,15 +145,24 @@ restore() {
 }
 
 inject() {
-  local staged="${1:?usage: rust_xcvrd_ctl.sh inject <staged-binary>}"
+  local staged="${1:?usage: rust_xcvrd_ctl.sh inject <staged-binary> [dom_update_interval]}"
+  local ival="${2:-}"
   [ -s "$staged" ] || { echo "[rust-ctl] staged binary missing/empty: $staged" >&2; return 1; }
+  # Validate here rather than letting a typo reach the shim: a bad value would
+  # make the daemon reject its own argv and fail to start, which looks like a
+  # broken Rust build instead of a bad argument.
+  if [ -n "$ival" ]; then
+    case "$ival" in
+      ''|*[!0-9]*) echo "[rust-ctl] dom_update_interval must be a non-negative integer (got '$ival')" >&2; return 1 ;;
+    esac
+  fi
   # Crash-safe: never truncate xcvrd unless the backup is confirmed and the shim
   # is fully staged. Any failure (e.g. ENOSPC) aborts with xcvrd untouched.
   docker cp "$staged" "$PMON:$XRUST" || { echo "[rust-ctl] docker cp binary failed" >&2; return 1; }
   docker exec "$PMON" chmod +x "$XRUST" || return 1
-  _backup_and_shim || return 1
-  _restart_clean
-  echo "[rust-ctl] injected rust xcvrd (clean baseline); status: $(sup_word)"
+  _backup_and_shim "$ival" || return 1
+  _restart_clean "$RUST_SETTLE_SECS"
+  echo "[rust-ctl] injected rust xcvrd${ival:+ (--dom_update_interval=$ival)} (clean baseline); status: $(sup_word)"
 }
 
 inject_noop() {
@@ -143,7 +179,9 @@ NOOP
   docker exec "$PMON" sh -c "[ -s $XRUST ] && chmod +x $XRUST" \
       || { echo "[rust-ctl] no-op write failed" >&2; return 1; }
   _backup_and_shim || return 1
-  _restart_clean
+  # No settle: the no-op deliberately never writes STATE_DB, so there is nothing
+  # to wait for and the negative control stays fast.
+  _restart_clean 0
   echo "[rust-ctl] injected NO-OP xcvrd (negative control, clean baseline); status: $(sup_word)"
 }
 
@@ -151,21 +189,32 @@ NOOP
 sup_word() { docker exec "$PMON" supervisorctl status xcvrd 2>/dev/null | awk '{print $1, $2}'; }
 
 _backup_and_shim() {
+  # $1 = optional dom_update_interval (seconds) to hand the Rust daemon.
+  local ival="${1:-}"
   # 1) back up the real xcvrd FIRST and verify the backup is non-empty.
   docker exec "$PMON" sh -c "[ -s $XBIN ] || exit 1; [ -e $XORIG ] || cp $XBIN $XORIG" \
       || { echo "[rust-ctl] backup of xcvrd failed" >&2; return 1; }
   docker exec "$PMON" sh -c "[ -s $XORIG ]" || { echo "[rust-ctl] backup empty" >&2; return 1; }
-  # 2) stage the shim to a temp file, verify it, then atomically move into place.
-  docker exec -i "$PMON" sh -c "cat > $XBIN.new" <<'SHIM'
+  # 2) build the shim's argv. The daemon reads its options from argv (not the
+  # environment), and execv's argv[0] is the program name, so any flag has to be
+  # baked in here -- supervisor invokes $XBIN with no arguments.
+  local shim_args='"xcvrd-rs"'
+  if [ -n "$ival" ]; then
+    shim_args="$shim_args, \"--dom_update_interval\", \"$ival\""
+  fi
+  # 3) stage the shim to a temp file, verify it, then atomically move into place.
+  docker exec -i "$PMON" sh -c "cat > $XBIN.new" <<SHIM
 #!/usr/bin/env python3
 import os
-os.execv("/usr/local/bin/xcvrd-rs", ["xcvrd-rs"])
+os.execv("/usr/local/bin/xcvrd-rs", [$shim_args])
 SHIM
   docker exec "$PMON" sh -c "[ -s $XBIN.new ] && mv $XBIN.new $XBIN && chmod +x $XBIN" \
       || { echo "[rust-ctl] shim write failed; aborting" >&2; docker exec "$PMON" rm -f "$XBIN.new" 2>/dev/null; return 1; }
 }
 
 _restart_clean() {
+  # $1 = seconds to settle after the daemon reports RUNNING (0 = don't).
+  local settle="${1:-0}"
   # Clean-baseline restart: stop the daemon, flush stale TRANSCEIVER_* rows while
   # nothing is writing, start fresh, then (soft) verify repopulation. Stopping
   # first guarantees no daemon can re-add rows between flush and start.
@@ -173,11 +222,17 @@ _restart_clean() {
   flush_baseline
   docker exec "$PMON" supervisorctl start xcvrd >/dev/null 2>&1
   wait_running || echo "[rust-ctl] warning: xcvrd not RUNNING after start" >&2
+  # Settle AFTER the process is up but BEFORE we assert on STATE_DB, so the
+  # daemon gets a head start on its first pass instead of being raced.
+  if [ "$settle" -gt 0 ] 2>/dev/null; then
+    echo "[rust-ctl] settling ${settle}s for the daemon to come up ..."
+    sleep "$settle"
+  fi
   wait_repopulate
 }
 
 case "${1:-}" in
-  inject)      inject "${2:-}" ;;
+  inject)      inject "${2:-}" "${3:-}" ;;
   inject-noop) inject_noop ;;
   restore)     restore ;;
   status)      status ;;
