@@ -1224,7 +1224,7 @@ deploy_mg||setup|Deploy the minigraph/config to the DUT
 verify||setup|Verify the DUT is reachable and BGP sessions are up
 inject_conn_graph||setup|Inject the connection graph used by the transceiver tests
 smoke_test|[test] [-v]|test|Run the BGP verification test (default bgp/test_bgp_fact.py)
-run_pytest|[--rust <folder>] <target> [pytest args]|test|Run ARBITRARY sonic-mgmt pytest targets (optionally against an injected Rust xcvrd)
+run_pytest|[--rust <folder>] <target>|test|Run ARBITRARY sonic-mgmt pytest targets/args (optionally vs an injected Rust xcvrd)
 transceiver_tests|[-v]|test|xcvrd/SFP tests that pass on a vs DUT (green smoke set)
 transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set + the transceiver/eeprom suite (RESET_TESTS=0 skips slow reset tests)
 transceiver_eeprom_tests|[-v]|test|Declarative transceiver/eeprom suite (injects inventory, flips asic_type)
