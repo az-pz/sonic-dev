@@ -381,7 +381,7 @@ verify() {
 # Verbose adds: --tb=long (full tracebacks), --showlocals (local vars in frames),
 #   -rA (report reason for every outcome incl. errors/skips) and -s (no capture).
 # ---------------------------------------------------------------------------
-run_pytest() {
+_run_pytest() {
   # $* = pytest test paths/args
   local extra="-ra --tb=short"
   if [ "${VERBOSE:-0}" = "1" ]; then
@@ -393,6 +393,47 @@ run_pytest() {
         --testbed $TESTBED_NAME --testbed_file ../ansible/$TB_FILE \
         --neighbor_type $NEIGHBOR_TYPE \
         --skip_sanity --disable_loganalyzer $extra -v"
+}
+
+# ---------------------------------------------------------------------------
+# run_pytest: run ARBITRARY sonic-mgmt pytest targets against this testbed,
+#   with the same wiring (inventory, testbed file, neighbor_type, --skip_sanity,
+#   --disable_loganalyzer) the canned phases use. This is the escape hatch for
+#   iterating on a single test instead of waiting out a whole suite.
+#
+#   Everything after the phase name is passed straight to pytest, so paths,
+#   node IDs and pytest flags all work. A leading `--` is accepted (and dropped)
+#   for symmetry with `xcvrd_tests`, and to disambiguate a leading pytest flag:
+#     ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfpshow.py
+#     ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
+#     ./setup-sonic-testbed.sh run_pytest transceiver/eeprom/ --collect-only -q
+#     ./setup-sonic-testbed.sh run_pytest -- -k "presence and not hexdump" transceiver/
+#     VERBOSE=1 ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfputil.py
+#
+#   NOTE: -v is NOT consumed as a verbosity flag here (unlike the canned test
+#   phases) because it is also pytest's own flag -- it is forwarded to pytest
+#   like everything else. Use VERBOSE=1 for full tracebacks/--showlocals/-s.
+#
+#   Paths are relative to /data/sonic-mgmt/tests inside the mgmt container.
+#   The connection graph is injected first (same as the canned phases), so
+#   conn_graph_facts resolves and the special-module ports stay excluded; set
+#   SKIP_CONN_GRAPH=1 to skip that step when iterating rapidly.
+# ---------------------------------------------------------------------------
+run_pytest() {
+  [ "${1:-}" = "--" ] && shift   # allow `run_pytest -- <pytest args>`
+  if [ "$#" -eq 0 ]; then
+    die "run_pytest needs at least one pytest target, e.g.
+    ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfpshow.py
+    ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
+  (paths are relative to /data/sonic-mgmt/tests; run --help for more examples)"
+  fi
+  log "pytest: $*  (verbose=${VERBOSE:-0})"
+  if [ "${SKIP_CONN_GRAPH:-0}" = "1" ]; then
+    log "  SKIP_CONN_GRAPH=1 -> not re-injecting the connection graph"
+  else
+    inject_conn_graph
+  fi
+  _run_pytest "$@"
 }
 
 # Consume a leading -v/--verbose arg (sets VERBOSE=1) so `<phase> -v` works.
@@ -407,7 +448,7 @@ smoke_test() {
   parse_verbose "${1:-}" && shift || true
   local tp="${1:-bgp/test_bgp_fact.py}"
   log "Smoke test: pytest $tp  (verbose=${VERBOSE:-0})"
-  run_pytest "$tp"
+  _run_pytest "$tp"
 }
 
 # ---------------------------------------------------------------------------
@@ -418,7 +459,7 @@ smoke_test() {
 transceiver_tests() {
   parse_verbose "${1:-}" && shift || true
   log "Transceiver tests (vs-compatible subset)  (verbose=${VERBOSE:-0})"
-  run_pytest \
+  _run_pytest \
     "platform_tests/sfp/test_sfpshow.py" \
     "platform_tests/sfp/test_sfputil.py::test_check_sfputil_presence" \
     "platform_tests/sfp/test_sfputil.py::test_check_sfputil_eeprom" \
@@ -468,7 +509,7 @@ transceiver_tests_all() {
       "--deselect" "platform_tests/api/test_sfp.py::TestSfpApi::test_reset"
     )
   fi
-  run_pytest \
+  _run_pytest \
     "platform_tests/test_xcvr_info_in_db.py" \
     "platform_tests/sfp/test_sfpshow.py" \
     "platform_tests/sfp/test_sfputil.py" \
@@ -492,7 +533,7 @@ transceiver_eeprom_tests() {
   parse_verbose "${1:-}" && shift || true
   log "Transceiver eeprom suite (declarative)  (verbose=${VERBOSE:-0})"
   inject_conn_graph
-  run_pytest "transceiver/eeprom/"
+  _run_pytest "transceiver/eeprom/"
 }
 
 # ---------------------------------------------------------------------------
@@ -950,7 +991,7 @@ transceiver_emu_test() {
   parse_verbose "${1:-}" && shift || true
   inject_conn_graph
   log "Running test_xcvr_info_in_db against the emulator-backed DUT"
-  run_pytest "platform_tests/test_xcvr_info_in_db.py"
+  _run_pytest "platform_tests/test_xcvr_info_in_db.py"
 }
 
 # emulator_e2e: one-shot — deploy the emulator then run the target test.
@@ -1111,6 +1152,7 @@ deploy_mg||setup|Deploy the minigraph/config to the DUT
 verify||setup|Verify the DUT is reachable and BGP sessions are up
 inject_conn_graph||setup|Inject the connection graph used by the transceiver tests
 smoke_test|[test] [-v]|test|Run the BGP verification test (default bgp/test_bgp_fact.py)
+run_pytest|<target> [pytest args]|test|Run ARBITRARY sonic-mgmt pytest targets with this testbed's wiring
 transceiver_tests|[-v]|test|xcvrd/SFP tests that pass on a vs DUT (green smoke set)
 transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set + the transceiver/eeprom suite (RESET_TESTS=0 skips slow reset tests)
 transceiver_eeprom_tests|[-v]|test|Declarative transceiver/eeprom suite (injects inventory, flips asic_type)
@@ -1191,6 +1233,8 @@ ${b}EXAMPLES${n}
   ./setup-sonic-testbed.sh transceiver_tests_all -v         ${d}# full xcvrd set, verbose${n}
   ./setup-sonic-testbed.sh xcvrd_tests -- -m "not slow"     ${d}# skip the ~60s DOM tests${n}
   ./setup-sonic-testbed.sh xcvrd_tests -- -k test_dom       ${d}# one module's tests${n}
+  ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfpshow.py    ${d}# one file${n}
+  ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
   ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
   ./setup-sonic-testbed.sh hotplug_test Ethernet40
   ./setup-sonic-testbed.sh xcvrd_status                     ${d}# which xcvrd is live?${n}
@@ -1267,6 +1311,19 @@ _setup_sonic_testbed() {
     xcvrd_tests)
       # Everything after `--` is forwarded to pytest on the DUT.
       COMPREPLY=($(compgen -W "-- -k -m -x -q --collect-only --capture-golden" -- "$cur"))
+      return 0
+      ;;
+    run_pytest)
+      # Complete sonic-mgmt test paths (relative to tests/) plus common pytest
+      # flags. The suite lives in the mgmt container, so offer the well-known
+      # roots rather than trying to stat a path that is not on this host.
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "-k -m -x -q -s --collect-only --durations=25 --tb=short --tb=long --lf --sw" -- "$cur"))
+      else
+        COMPREPLY=($(compgen -W "platform_tests/ platform_tests/test_xcvr_info_in_db.py \
+          platform_tests/sfp/test_sfpshow.py platform_tests/sfp/test_sfputil.py \
+          platform_tests/api/test_sfp.py transceiver/ transceiver/eeprom/ bgp/test_bgp_fact.py" -- "$cur"))
+      fi
       return 0
       ;;
     smoke_test|transceiver_tests|transceiver_tests_all|transceiver_eeprom_tests| \
