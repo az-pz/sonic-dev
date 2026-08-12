@@ -410,6 +410,17 @@ _run_pytest() {
 #     ./setup-sonic-testbed.sh run_pytest -- -k "presence and not hexdump" transceiver/
 #     VERBOSE=1 ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfputil.py
 #
+#   --rust <folder>  builds the Rust xcvrd from a recodeAgent pipeline folder,
+#   reversibly injects it into pmon (flushing STATE_DB so it must repopulate),
+#   runs the target against it, then ALWAYS restores the Python xcvrd -- the
+#   same crash-safe build/inject/restore the transceiver_tests_*_rust phases
+#   use, so a single test can be graded against the Rust daemon without running
+#   a whole suite. It is consumed by this phase and never forwarded to pytest;
+#   `--rust=<folder>` works too, and it may appear before or after the target:
+#     ./setup-sonic-testbed.sh run_pytest --rust ./recodeAgent/results/result_4 \
+#         platform_tests/test_xcvr_info_in_db.py
+#     ./setup-sonic-testbed.sh run_pytest transceiver/eeprom/ --rust ./recodeAgent/results/result_4
+#
 #   NOTE: -v is NOT consumed as a verbosity flag here (unlike the canned test
 #   phases) because it is also pytest's own flag -- it is forwarded to pytest
 #   like everything else. Use VERBOSE=1 for full tracebacks/--showlocals/-s.
@@ -421,19 +432,61 @@ _run_pytest() {
 # ---------------------------------------------------------------------------
 run_pytest() {
   [ "${1:-}" = "--" ] && shift   # allow `run_pytest -- <pytest args>`
+
+  # Pull --rust/--rust=<folder> out of the argv; everything else is pytest's.
+  # Scanning (rather than only checking $1) lets the flag sit anywhere, which
+  # matters because the natural thing to type is `<target> --rust <folder>`.
+  local rust_folder="" ; local -a pyargs=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --rust)
+        [ "$#" -ge 2 ] || die "--rust needs a recodeAgent pipeline folder, e.g. --rust ./recodeAgent/results/result_4"
+        rust_folder="$2"; shift 2 ;;
+      --rust=*)
+        rust_folder="${1#--rust=}"
+        [ -n "$rust_folder" ] || die "--rust= needs a folder, e.g. --rust=./recodeAgent/results/result_4"
+        shift ;;
+      *) pyargs+=("$1"); shift ;;
+    esac
+  done
+  set -- "${pyargs[@]+"${pyargs[@]}"}"
+
   if [ "$#" -eq 0 ]; then
     die "run_pytest needs at least one pytest target, e.g.
     ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfpshow.py
     ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
+    ./setup-sonic-testbed.sh run_pytest --rust ./recodeAgent/results/result_4 platform_tests/test_xcvr_info_in_db.py
   (paths are relative to /data/sonic-mgmt/tests; run --help for more examples)"
   fi
-  log "pytest: $*  (verbose=${VERBOSE:-0})"
+  log "pytest: $*  (verbose=${VERBOSE:-0}${rust_folder:+, rust=$rust_folder})"
+  # Validate the Rust folder BEFORE any DUT/docker work, so a typo'd path fails
+  # instantly instead of after the connection-graph injection.
+  if [ -n "$rust_folder" ]; then
+    [ -d "$rust_folder" ] || die "rust pipeline folder not found: $rust_folder"
+    [ -d "$rust_folder/crate" ] || die "no crate/ workspace under $rust_folder — is this a recodeAgent pipeline folder? (expected $rust_folder/crate/Cargo.toml)"
+  fi
   if [ "${SKIP_CONN_GRAPH:-0}" = "1" ]; then
     log "  SKIP_CONN_GRAPH=1 -> not re-injecting the connection graph"
   else
     inject_conn_graph
   fi
+
+  if [ -z "$rust_folder" ]; then
+    _run_pytest "$@"
+    return $?
+  fi
+
+  # Rust path: _rust_build_and_inject arms an EXIT/INT/TERM trap that restores
+  # the Python xcvrd, so an interrupt or a die() mid-run cannot strand the DUT
+  # with a Rust daemon injected.
+  _rust_build_and_inject "$rust_folder"
+  log "Running pytest against the injected Rust xcvrd: $*"
   _run_pytest "$@"
+  local rc=$?
+  _rust_restore
+  trap - EXIT INT TERM
+  if [ "$rc" -eq 0 ]; then ok "Rust xcvrd: pytest PASSED"; else warn "Rust xcvrd: pytest exited rc=$rc"; fi
+  return "$rc"
 }
 
 # Consume a leading -v/--verbose arg (sets VERBOSE=1) so `<phase> -v` works.
@@ -581,6 +634,25 @@ _rust_restore() {
   local dut="admin@$DUT_IP"
   docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
     "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh restore'" 2>/dev/null || true
+
+  # VERIFY, and complain loudly if the Python xcvrd is not actually back. The
+  # restore above is best-effort (it runs from a trap, so it must never abort),
+  # but staying silent means a later run can grade the WRONG daemon: a stranded
+  # Rust xcvrd looks exactly like a normal testbed until you check. Non-fatal by
+  # design -- we are often already unwinding from an error or an interrupt.
+  local st
+  st="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+        "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh status'" 2>/dev/null)"
+  case "$st" in
+    *"PYTHON (stock)"*) : ;;   # restored as expected
+    "")
+      warn "could not verify xcvrd flavor after restore (DUT unreachable?) — run './setup-sonic-testbed.sh xcvrd_status' before trusting the next test run" ;;
+    *)
+      warn "RUST xcvrd may STILL be injected after restore — the next test run would grade the wrong daemon.
+  Check with : ./setup-sonic-testbed.sh xcvrd_status
+  Fix with   : ssh to the DUT and run 'bash /home/admin/rust_xcvrd_ctl.sh restore'"
+      printf '%s\n' "$st" | sed 's/^/  /' ;;
+  esac
 }
 
 _rust_build_and_inject() {
@@ -1152,7 +1224,7 @@ deploy_mg||setup|Deploy the minigraph/config to the DUT
 verify||setup|Verify the DUT is reachable and BGP sessions are up
 inject_conn_graph||setup|Inject the connection graph used by the transceiver tests
 smoke_test|[test] [-v]|test|Run the BGP verification test (default bgp/test_bgp_fact.py)
-run_pytest|<target> [pytest args]|test|Run ARBITRARY sonic-mgmt pytest targets with this testbed's wiring
+run_pytest|[--rust <folder>] <target> [pytest args]|test|Run ARBITRARY sonic-mgmt pytest targets (optionally against an injected Rust xcvrd)
 transceiver_tests|[-v]|test|xcvrd/SFP tests that pass on a vs DUT (green smoke set)
 transceiver_tests_all|[-v]|test|Full validated xcvrd/SFP set + the transceiver/eeprom suite (RESET_TESTS=0 skips slow reset tests)
 transceiver_eeprom_tests|[-v]|test|Declarative transceiver/eeprom suite (injects inventory, flips asic_type)
@@ -1235,6 +1307,8 @@ ${b}EXAMPLES${n}
   ./setup-sonic-testbed.sh xcvrd_tests -- -k test_dom       ${d}# one module's tests${n}
   ./setup-sonic-testbed.sh run_pytest platform_tests/sfp/test_sfpshow.py    ${d}# one file${n}
   ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
+  ./setup-sonic-testbed.sh run_pytest --rust recodeAgent/results/result_4 \\
+      platform_tests/test_xcvr_info_in_db.py                ${d}# one test vs Rust xcvrd${n}
   ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
   ./setup-sonic-testbed.sh hotplug_test Ethernet40
   ./setup-sonic-testbed.sh xcvrd_status                     ${d}# which xcvrd is live?${n}
@@ -1263,9 +1337,11 @@ print_completion() {
 # bash completion for setup-sonic-testbed.sh
 # Install:  eval "$(./setup-sonic-testbed.sh --completion bash)"
 _setup_sonic_testbed() {
-  local cur script phase
+  local cur prev script phase
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]:-}"
+  # Guard index 0 so this is safe at the first word (and under `set -u`).
+  if [ "$COMP_CWORD" -gt 0 ]; then prev="${COMP_WORDS[COMP_CWORD-1]:-}"; else prev=""; fi
   script="${COMP_WORDS[0]}"
   phase="${COMP_WORDS[1]:-}"
 
@@ -1317,8 +1393,16 @@ _setup_sonic_testbed() {
       # Complete sonic-mgmt test paths (relative to tests/) plus common pytest
       # flags. The suite lives in the mgmt container, so offer the well-known
       # roots rather than trying to stat a path that is not on this host.
-      if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-k -m -x -q -s --collect-only --durations=25 --tb=short --tb=long --lf --sw" -- "$cur"))
+      # After --rust, complete recodeAgent pipeline folders on THIS host.
+      if [ "$prev" = "--rust" ]; then
+        local rdirs
+        rdirs="$(compgen -d -- "$cur")"
+        if [ -z "$cur" ]; then
+          rdirs="$rdirs $(compgen -d -- recodeAgent/results/ 2>/dev/null)"
+        fi
+        COMPREPLY=($(compgen -W "$rdirs" -- "$cur"))
+      elif [[ "$cur" == -* ]]; then
+        COMPREPLY=($(compgen -W "--rust -k -m -x -q -s --collect-only --durations=25 --tb=short --tb=long --lf --sw" -- "$cur"))
       else
         COMPREPLY=($(compgen -W "platform_tests/ platform_tests/test_xcvr_info_in_db.py \
           platform_tests/sfp/test_sfpshow.py platform_tests/sfp/test_sfputil.py \
