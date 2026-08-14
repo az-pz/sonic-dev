@@ -1,0 +1,3545 @@
+{
+  "working_copy": "pipeline/crate",
+  "generated_by": "planning-agent",
+  "source_of_truth": {
+    "analysis": "pipeline/analysis.md",
+    "milestones": "pipeline/milestones.json",
+    "python_source": "source/xcvrd (verified against reconstructed snapshot)",
+    "python_tests": "source/xcvrd/tests/test_xcvrd.py (187 cases)"
+  },
+  "name_mapping": {
+    "modules": {
+      "xcvrd/xcvrd.py": "xcvrd-rs/src/xcvrd.rs",
+      "xcvrd/sff_mgr.py": "xcvrd-rs/src/sff_mgr.rs",
+      "xcvrd/cmis/cmis_manager_task.py": "xcvrd-rs/src/cmis/cmis_manager_task.rs",
+      "xcvrd/dom/dom_mgr.py": "xcvrd-rs/src/dom/dom_mgr.rs",
+      "xcvrd/dom/utilities/db/utils.py": "xcvrd-rs/src/dom/utilities/db/utils.rs",
+      "xcvrd/dom/utilities/dom_sensor/utils.py": "xcvrd-rs/src/dom/utilities/dom_sensor/utils.rs",
+      "xcvrd/dom/utilities/dom_sensor/db_utils.py": "xcvrd-rs/src/dom/utilities/dom_sensor/db_utils.rs",
+      "xcvrd/dom/utilities/status/utils.py": "xcvrd-rs/src/dom/utilities/status/utils.rs",
+      "xcvrd/dom/utilities/status/db_utils.py": "xcvrd-rs/src/dom/utilities/status/db_utils.rs",
+      "xcvrd/dom/utilities/vdm/utils.py": "xcvrd-rs/src/dom/utilities/vdm/utils.rs",
+      "xcvrd/dom/utilities/vdm/db_utils.py": "xcvrd-rs/src/dom/utilities/vdm/db_utils.rs",
+      "xcvrd/xcvrd_utilities/common.py": "xcvrd-rs/src/xcvrd_utilities/common.rs",
+      "xcvrd/xcvrd_utilities/sfp_status_helper.py": "xcvrd-rs/src/xcvrd_utilities/sfp_status_helper.rs",
+      "xcvrd/xcvrd_utilities/port_event_helper.py": "xcvrd-rs/src/xcvrd_utilities/port_event_helper.rs",
+      "xcvrd/xcvrd_utilities/xcvr_table_helper.py": "xcvrd-rs/src/xcvrd_utilities/xcvr_table_helper.rs",
+      "xcvrd/xcvrd_utilities/media_settings_parser.py": "xcvrd-rs/src/xcvrd_utilities/media_settings_parser.rs",
+      "xcvrd/xcvrd_utilities/optics_si_parser.py": "xcvrd-rs/src/xcvrd_utilities/optics_si_parser.rs",
+      "xcvrd/xcvrd_utilities/utils.py": "xcvrd-rs/src/xcvrd_utilities/utils.rs"
+    },
+    "types": {
+      "xcvrd.py:SfpStateUpdateTask": "crate::xcvrd::SfpStateUpdateTask",
+      "xcvrd.py:DaemonXcvrd": "crate::xcvrd::DaemonXcvrd",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent": "crate::sff_mgr::SffLoggerForPortUpdateEvent",
+      "sff_mgr.py:SffManagerTask": "crate::sff_mgr::SffManagerTask",
+      "cmis/cmis_manager_task.py:CmisManagerTask": "crate::cmis::cmis_manager_task::CmisManagerTask",
+      "dom/dom_mgr.py:DomInfoUpdateBase": "crate::dom::dom_mgr::DomInfoUpdateBase",
+      "dom/dom_mgr.py:DomInfoUpdateTask": "crate::dom::dom_mgr::DomInfoUpdateTask",
+      "dom/dom_mgr.py:DomThermalInfoUpdateTask": "crate::dom::dom_mgr::DomThermalInfoUpdateTask",
+      "dom/utilities/db/utils.py:DBUtils": "crate::dom::utilities::db::utils::DBUtils",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils": "crate::dom::utilities::dom_sensor::utils::DOMUtils",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils",
+      "dom/utilities/status/utils.py:StatusUtils": "crate::dom::utilities::status::utils::StatusUtils",
+      "dom/utilities/status/db_utils.py:StatusDBUtils": "crate::dom::utilities::status::db_utils::StatusDBUtils",
+      "dom/utilities/vdm/utils.py:VDMUtils": "crate::dom::utilities::vdm::utils::VDMUtils",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils": "crate::dom::utilities::vdm::db_utils::VDMDBUtils",
+      "xcvrd_utilities/common.py:HelperLoggerProxy": "crate::xcvrd_utilities::common::HelperLoggerProxy",
+      "xcvrd_utilities/port_event_helper.py:PortChangeEvent": "crate::xcvrd_utilities::port_event_helper::PortChangeEvent",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver",
+      "xcvrd_utilities/port_event_helper.py:PortMapping": "crate::xcvrd_utilities::port_event_helper::PortMapping",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper",
+      "xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase": "crate::xcvrd_utilities::media_settings_parser::MediaSettingsParserBase",
+      "xcvrd_utilities/media_settings_parser.py:GlobalMediaSettingsParser": "crate::xcvrd_utilities::media_settings_parser::GlobalMediaSettingsParser",
+      "xcvrd_utilities/media_settings_parser.py:PortMediaSettingsParser": "crate::xcvrd_utilities::media_settings_parser::PortMediaSettingsParser",
+      "xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser": "crate::xcvrd_utilities::media_settings_parser::CustomMediaSettingsParser",
+      "xcvrd_utilities/utils.py:XCVRDUtils": "crate::xcvrd_utilities::utils::XCVRDUtils"
+    },
+    "functions": {
+      "xcvrd.py:_wrapper_is_replaceable": "crate::xcvrd::wrapper_is_replaceable",
+      "xcvrd.py:_wrapper_get_transceiver_info": "crate::xcvrd::wrapper_get_transceiver_info",
+      "xcvrd.py:_wrapper_soak_sfp_insert_event": "crate::xcvrd::wrapper_soak_sfp_insert_event",
+      "xcvrd.py:_wrapper_get_transceiver_change_event": "crate::xcvrd::wrapper_get_transceiver_change_event",
+      "xcvrd.py:_wrapper_get_sfp_type": "crate::xcvrd::wrapper_get_sfp_type",
+      "xcvrd.py:_wrapper_get_sfp_error_description": "crate::xcvrd::wrapper_get_sfp_error_description",
+      "xcvrd.py:post_port_sfp_info_to_db": "crate::xcvrd::post_port_sfp_info_to_db",
+      "xcvrd.py:waiting_time_compensation_with_sleep": "crate::xcvrd::waiting_time_compensation_with_sleep",
+      "xcvrd.py:SfpStateUpdateTask.__init__": "crate::xcvrd::SfpStateUpdateTask::new",
+      "xcvrd.py:SfpStateUpdateTask.initialize_warm_fast_reboot_status": "crate::xcvrd::SfpStateUpdateTask::initialize_warm_fast_reboot_status",
+      "xcvrd.py:SfpStateUpdateTask.is_warm_fast_reboot_for_lport": "crate::xcvrd::SfpStateUpdateTask::is_warm_fast_reboot_for_lport",
+      "xcvrd.py:SfpStateUpdateTask._mapping_event_from_change_event": "crate::xcvrd::SfpStateUpdateTask::mapping_event_from_change_event",
+      "xcvrd.py:SfpStateUpdateTask._post_port_sfp_info_and_dom_thr_to_db_once": "crate::xcvrd::SfpStateUpdateTask::post_port_sfp_info_and_dom_thr_to_db_once",
+      "xcvrd.py:SfpStateUpdateTask._init_port_sfp_status_sw_tbl": "crate::xcvrd::SfpStateUpdateTask::init_port_sfp_status_sw_tbl",
+      "xcvrd.py:SfpStateUpdateTask.init": "crate::xcvrd::SfpStateUpdateTask::init",
+      "xcvrd.py:SfpStateUpdateTask.task_worker": "crate::xcvrd::SfpStateUpdateTask::task_worker",
+      "xcvrd.py:SfpStateUpdateTask.run": "crate::xcvrd::SfpStateUpdateTask::run",
+      "xcvrd.py:SfpStateUpdateTask.raise_exception": "crate::xcvrd::SfpStateUpdateTask::raise_exception",
+      "xcvrd.py:SfpStateUpdateTask.join": "crate::xcvrd::SfpStateUpdateTask::join",
+      "xcvrd.py:SfpStateUpdateTask.on_port_config_change": "crate::xcvrd::SfpStateUpdateTask::on_port_config_change",
+      "xcvrd.py:SfpStateUpdateTask.on_remove_logical_port": "crate::xcvrd::SfpStateUpdateTask::on_remove_logical_port",
+      "xcvrd.py:SfpStateUpdateTask.on_add_logical_port": "crate::xcvrd::SfpStateUpdateTask::on_add_logical_port",
+      "xcvrd.py:SfpStateUpdateTask.retry_eeprom_reading": "crate::xcvrd::SfpStateUpdateTask::retry_eeprom_reading",
+      "xcvrd.py:SfpStateUpdateTask.update_log_level": "crate::xcvrd::SfpStateUpdateTask::update_log_level",
+      "xcvrd.py:DaemonXcvrd.__init__": "crate::xcvrd::DaemonXcvrd::new",
+      "xcvrd.py:DaemonXcvrd.update_loggers_log_level": "crate::xcvrd::DaemonXcvrd::update_loggers_log_level",
+      "xcvrd.py:DaemonXcvrd.signal_handler": "crate::xcvrd::DaemonXcvrd::signal_handler",
+      "xcvrd.py:DaemonXcvrd.wait_for_port_config_done": "crate::xcvrd::DaemonXcvrd::wait_for_port_config_done",
+      "xcvrd.py:DaemonXcvrd.initialize_port_init_control_fields_in_port_table": "crate::xcvrd::DaemonXcvrd::initialize_port_init_control_fields_in_port_table",
+      "xcvrd.py:DaemonXcvrd.initialize_sfp_obj_dict": "crate::xcvrd::DaemonXcvrd::initialize_sfp_obj_dict",
+      "xcvrd.py:DaemonXcvrd.remove_stale_transceiver_info": "crate::xcvrd::DaemonXcvrd::remove_stale_transceiver_info",
+      "xcvrd.py:DaemonXcvrd.init": "crate::xcvrd::DaemonXcvrd::init",
+      "xcvrd.py:DaemonXcvrd.deinit": "crate::xcvrd::DaemonXcvrd::deinit",
+      "xcvrd.py:DaemonXcvrd.run": "crate::xcvrd::DaemonXcvrd::run",
+      "xcvrd.py:main": "crate::xcvrd::main",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.__init__": "crate::sff_mgr::SffLoggerForPortUpdateEvent::new",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.log_info": "crate::sff_mgr::SffLoggerForPortUpdateEvent::log_info",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.log_notice": "crate::sff_mgr::SffLoggerForPortUpdateEvent::log_notice",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.log_warning": "crate::sff_mgr::SffLoggerForPortUpdateEvent::log_warning",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.log_error": "crate::sff_mgr::SffLoggerForPortUpdateEvent::log_error",
+      "sff_mgr.py:SffLoggerForPortUpdateEvent.log_debug": "crate::sff_mgr::SffLoggerForPortUpdateEvent::log_debug",
+      "sff_mgr.py:SffManagerTask.__init__": "crate::sff_mgr::SffManagerTask::new",
+      "sff_mgr.py:SffManagerTask.log_notice": "crate::sff_mgr::SffManagerTask::log_notice",
+      "sff_mgr.py:SffManagerTask.log_warning": "crate::sff_mgr::SffManagerTask::log_warning",
+      "sff_mgr.py:SffManagerTask.log_error": "crate::sff_mgr::SffManagerTask::log_error",
+      "sff_mgr.py:SffManagerTask.get_active_lanes_for_lport": "crate::sff_mgr::SffManagerTask::get_active_lanes_for_lport",
+      "sff_mgr.py:SffManagerTask.on_port_update_event": "crate::sff_mgr::SffManagerTask::on_port_update_event",
+      "sff_mgr.py:SffManagerTask.get_host_tx_status": "crate::sff_mgr::SffManagerTask::get_host_tx_status",
+      "sff_mgr.py:SffManagerTask.get_admin_status": "crate::sff_mgr::SffManagerTask::get_admin_status",
+      "sff_mgr.py:SffManagerTask.run": "crate::sff_mgr::SffManagerTask::run",
+      "sff_mgr.py:SffManagerTask.join": "crate::sff_mgr::SffManagerTask::join",
+      "sff_mgr.py:SffManagerTask.calculate_tx_disable_delta_array": "crate::sff_mgr::SffManagerTask::calculate_tx_disable_delta_array",
+      "sff_mgr.py:SffManagerTask.convert_bool_array_to_bit_mask": "crate::sff_mgr::SffManagerTask::convert_bool_array_to_bit_mask",
+      "sff_mgr.py:SffManagerTask.enable_high_power_class": "crate::sff_mgr::SffManagerTask::enable_high_power_class",
+      "sff_mgr.py:SffManagerTask.task_worker": "crate::sff_mgr::SffManagerTask::task_worker",
+      "cmis/cmis_manager_task.py:CmisManagerTask.__init__": "crate::cmis::cmis_manager_task::CmisManagerTask::new",
+      "cmis/cmis_manager_task.py:CmisManagerTask.initialize_fast_reboot_status": "crate::cmis::cmis_manager_task::CmisManagerTask::initialize_fast_reboot_status",
+      "cmis/cmis_manager_task.py:CmisManagerTask.log_debug": "crate::cmis::cmis_manager_task::CmisManagerTask::log_debug",
+      "cmis/cmis_manager_task.py:CmisManagerTask.log_notice": "crate::cmis::cmis_manager_task::CmisManagerTask::log_notice",
+      "cmis/cmis_manager_task.py:CmisManagerTask.log_error": "crate::cmis::cmis_manager_task::CmisManagerTask::log_error",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_asic_id": "crate::cmis::cmis_manager_task::CmisManagerTask::get_asic_id",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_fast_reboot_enabled_for_lport": "crate::cmis::cmis_manager_task::CmisManagerTask::is_fast_reboot_enabled_for_lport",
+      "cmis/cmis_manager_task.py:CmisManagerTask.update_port_transceiver_status_table_sw_cmis_state": "crate::cmis::cmis_manager_task::CmisManagerTask::update_port_transceiver_status_table_sw_cmis_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.on_port_update_event": "crate::cmis::cmis_manager_task::CmisManagerTask::on_port_update_event",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_init_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_dp_init_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_deinit_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_dp_deinit_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_tx_turnoff_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_dp_tx_turnoff_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_tx_turnon_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_dp_tx_turnon_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_module_power_up_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_module_power_up_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_module_power_down_duration_secs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_module_power_down_duration_secs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_host_lane_count": "crate::cmis::cmis_manager_task::CmisManagerTask::get_host_lane_count",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_max_host_lanes_mask": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_max_host_lanes_mask",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_host_lanes_mask": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_host_lanes_mask",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_media_lanes_mask": "crate::cmis::cmis_manager_task::CmisManagerTask::get_cmis_media_lanes_mask",
+      "cmis/cmis_manager_task.py:CmisManagerTask.clear_decomm_pending": "crate::cmis::cmis_manager_task::CmisManagerTask::clear_decomm_pending",
+      "cmis/cmis_manager_task.py:CmisManagerTask.set_decomm_pending": "crate::cmis::cmis_manager_task::CmisManagerTask::set_decomm_pending",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_lead_lport": "crate::cmis::cmis_manager_task::CmisManagerTask::is_decomm_lead_lport",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_pending": "crate::cmis::cmis_manager_task::CmisManagerTask::is_decomm_pending",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_failed": "crate::cmis::cmis_manager_task::CmisManagerTask::is_decomm_failed",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_sibling_port_configs": "crate::cmis::cmis_manager_task::CmisManagerTask::get_sibling_port_configs",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_desired_app_map": "crate::cmis::cmis_manager_task::CmisManagerTask::get_desired_app_map",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_decommission_required": "crate::cmis::cmis_manager_task::CmisManagerTask::is_decommission_required",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_cmis_application_update_required": "crate::cmis::cmis_manager_task::CmisManagerTask::is_cmis_application_update_required",
+      "cmis/cmis_manager_task.py:CmisManagerTask.force_cmis_reinit": "crate::cmis::cmis_manager_task::CmisManagerTask::force_cmis_reinit",
+      "cmis/cmis_manager_task.py:CmisManagerTask.check_module_state": "crate::cmis::cmis_manager_task::CmisManagerTask::check_module_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.check_config_error": "crate::cmis::cmis_manager_task::CmisManagerTask::check_config_error",
+      "cmis/cmis_manager_task.py:CmisManagerTask.check_datapath_init_pending": "crate::cmis::cmis_manager_task::CmisManagerTask::check_datapath_init_pending",
+      "cmis/cmis_manager_task.py:CmisManagerTask.check_datapath_state": "crate::cmis::cmis_manager_task::CmisManagerTask::check_datapath_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_configured_laser_freq_from_db": "crate::cmis::cmis_manager_task::CmisManagerTask::get_configured_laser_freq_from_db",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_configured_tx_power_from_db": "crate::cmis::cmis_manager_task::CmisManagerTask::get_configured_tx_power_from_db",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_host_tx_status": "crate::cmis::cmis_manager_task::CmisManagerTask::get_host_tx_status",
+      "cmis/cmis_manager_task.py:CmisManagerTask.get_port_admin_status": "crate::cmis::cmis_manager_task::CmisManagerTask::get_port_admin_status",
+      "cmis/cmis_manager_task.py:CmisManagerTask.configure_tx_output_power": "crate::cmis::cmis_manager_task::CmisManagerTask::configure_tx_output_power",
+      "cmis/cmis_manager_task.py:CmisManagerTask.validate_frequency_and_grid": "crate::cmis::cmis_manager_task::CmisManagerTask::validate_frequency_and_grid",
+      "cmis/cmis_manager_task.py:CmisManagerTask.configure_laser_frequency": "crate::cmis::cmis_manager_task::CmisManagerTask::configure_laser_frequency",
+      "cmis/cmis_manager_task.py:CmisManagerTask.post_port_active_apsel_to_db": "crate::cmis::cmis_manager_task::CmisManagerTask::post_port_active_apsel_to_db",
+      "cmis/cmis_manager_task.py:CmisManagerTask.wait_for_port_config_done": "crate::cmis::cmis_manager_task::CmisManagerTask::wait_for_port_config_done",
+      "cmis/cmis_manager_task.py:CmisManagerTask.update_cmis_state_expiration_time": "crate::cmis::cmis_manager_task::CmisManagerTask::update_cmis_state_expiration_time",
+      "cmis/cmis_manager_task.py:CmisManagerTask.is_timer_expired": "crate::cmis::cmis_manager_task::CmisManagerTask::is_timer_expired",
+      "cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_inserted_state": "crate::cmis::cmis_manager_task::CmisManagerTask::handle_cmis_inserted_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_dp_pre_init_check_state": "crate::cmis::cmis_manager_task::CmisManagerTask::handle_cmis_dp_pre_init_check_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_dp_deinit_state": "crate::cmis::cmis_manager_task::CmisManagerTask::handle_cmis_dp_deinit_state",
+      "cmis/cmis_manager_task.py:CmisManagerTask.process_cmis_state_machine": "crate::cmis::cmis_manager_task::CmisManagerTask::process_cmis_state_machine",
+      "cmis/cmis_manager_task.py:CmisManagerTask.process_single_lport": "crate::cmis::cmis_manager_task::CmisManagerTask::process_single_lport",
+      "cmis/cmis_manager_task.py:CmisManagerTask.task_worker": "crate::cmis::cmis_manager_task::CmisManagerTask::task_worker",
+      "cmis/cmis_manager_task.py:CmisManagerTask.run": "crate::cmis::cmis_manager_task::CmisManagerTask::run",
+      "cmis/cmis_manager_task.py:CmisManagerTask.join": "crate::cmis::cmis_manager_task::CmisManagerTask::join",
+      "dom/dom_mgr.py:DomInfoUpdateBase.__init__": "crate::dom::dom_mgr::DomInfoUpdateBase::new",
+      "dom/dom_mgr.py:DomInfoUpdateBase.log_debug": "crate::dom::dom_mgr::DomInfoUpdateBase::log_debug",
+      "dom/dom_mgr.py:DomInfoUpdateBase.log_info": "crate::dom::dom_mgr::DomInfoUpdateBase::log_info",
+      "dom/dom_mgr.py:DomInfoUpdateBase.log_notice": "crate::dom::dom_mgr::DomInfoUpdateBase::log_notice",
+      "dom/dom_mgr.py:DomInfoUpdateBase.log_warning": "crate::dom::dom_mgr::DomInfoUpdateBase::log_warning",
+      "dom/dom_mgr.py:DomInfoUpdateBase.log_error": "crate::dom::dom_mgr::DomInfoUpdateBase::log_error",
+      "dom/dom_mgr.py:DomInfoUpdateBase.on_port_config_change": "crate::dom::dom_mgr::DomInfoUpdateBase::on_port_config_change",
+      "dom/dom_mgr.py:DomInfoUpdateBase.on_remove_logical_port": "crate::dom::dom_mgr::DomInfoUpdateBase::on_remove_logical_port",
+      "dom/dom_mgr.py:DomInfoUpdateBase.get_dom_polling_from_config_db": "crate::dom::dom_mgr::DomInfoUpdateBase::get_dom_polling_from_config_db",
+      "dom/dom_mgr.py:DomInfoUpdateBase.is_port_dom_monitoring_disabled": "crate::dom::dom_mgr::DomInfoUpdateBase::is_port_dom_monitoring_disabled",
+      "dom/dom_mgr.py:DomInfoUpdateBase.task_worker": "crate::dom::dom_mgr::DomInfoUpdateBase::task_worker",
+      "dom/dom_mgr.py:DomInfoUpdateBase.run": "crate::dom::dom_mgr::DomInfoUpdateBase::run",
+      "dom/dom_mgr.py:DomInfoUpdateBase.join": "crate::dom::dom_mgr::DomInfoUpdateBase::join",
+      "dom/dom_mgr.py:DomInfoUpdateBase.update_log_level": "crate::dom::dom_mgr::DomInfoUpdateBase::update_log_level",
+      "dom/dom_mgr.py:DomInfoUpdateTask.__init__": "crate::dom::dom_mgr::DomInfoUpdateTask::new",
+      "dom/dom_mgr.py:DomInfoUpdateTask.is_port_in_cmis_initialization_process": "crate::dom::dom_mgr::DomInfoUpdateTask::is_port_in_cmis_initialization_process",
+      "dom/dom_mgr.py:DomInfoUpdateTask.is_port_dom_monitoring_disabled": "crate::dom::dom_mgr::DomInfoUpdateTask::is_port_dom_monitoring_disabled",
+      "dom/dom_mgr.py:DomInfoUpdateTask.post_port_sfp_firmware_info_to_db": "crate::dom::dom_mgr::DomInfoUpdateTask::post_port_sfp_firmware_info_to_db",
+      "dom/dom_mgr.py:DomInfoUpdateTask.post_port_pm_info_to_db": "crate::dom::dom_mgr::DomInfoUpdateTask::post_port_pm_info_to_db",
+      "dom/dom_mgr.py:DomInfoUpdateTask.check_port_update": "crate::dom::dom_mgr::DomInfoUpdateTask::check_port_update",
+      "dom/dom_mgr.py:DomInfoUpdateTask.task_worker": "crate::dom::dom_mgr::DomInfoUpdateTask::task_worker",
+      "dom/dom_mgr.py:DomInfoUpdateTask.on_port_update_event": "crate::dom::dom_mgr::DomInfoUpdateTask::on_port_update_event",
+      "dom/dom_mgr.py:DomInfoUpdateTask.update_port_db_diagnostics_on_link_change": "crate::dom::dom_mgr::DomInfoUpdateTask::update_port_db_diagnostics_on_link_change",
+      "dom/dom_mgr.py:DomInfoUpdateTask.on_remove_logical_port": "crate::dom::dom_mgr::DomInfoUpdateTask::on_remove_logical_port",
+      "dom/dom_mgr.py:DomThermalInfoUpdateTask.__init__": "crate::dom::dom_mgr::DomThermalInfoUpdateTask::new",
+      "dom/dom_mgr.py:DomThermalInfoUpdateTask.task_worker": "crate::dom::dom_mgr::DomThermalInfoUpdateTask::task_worker",
+      "dom/utilities/db/utils.py:DBUtils.__init__": "crate::dom::utilities::db::utils::DBUtils::new",
+      "dom/utilities/db/utils.py:DBUtils.post_diagnostic_values_to_db": "crate::dom::utilities::db::utils::DBUtils::post_diagnostic_values_to_db",
+      "dom/utilities/db/utils.py:DBUtils._validate_and_get_physical_port": "crate::dom::utilities::db::utils::DBUtils::validate_and_get_physical_port",
+      "dom/utilities/db/utils.py:DBUtils._update_flag_metadata_tables": "crate::dom::utilities::db::utils::DBUtils::update_flag_metadata_tables",
+      "dom/utilities/db/utils.py:DBUtils.beautify_info_dict": "crate::dom::utilities::db::utils::DBUtils::beautify_info_dict",
+      "dom/utilities/db/utils.py:DBUtils.get_current_time": "crate::dom::utilities::db::utils::DBUtils::get_current_time",
+      "dom/utilities/db/utils.py:DBUtils._initialize_metadata_tables": "crate::dom::utilities::db::utils::DBUtils::initialize_metadata_tables",
+      "dom/utilities/db/utils.py:DBUtils._update_flag_metadata": "crate::dom::utilities::db::utils::DBUtils::update_flag_metadata",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils.__init__": "crate::dom::utilities::dom_sensor::utils::DOMUtils::new",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_temperature": "crate::dom::utilities::dom_sensor::utils::DOMUtils::get_transceiver_dom_temperature",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_sensor_real_value": "crate::dom::utilities::dom_sensor::utils::DOMUtils::get_transceiver_dom_sensor_real_value",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_flags": "crate::dom::utilities::dom_sensor::utils::DOMUtils::get_transceiver_dom_flags",
+      "dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_thresholds": "crate::dom::utilities::dom_sensor::utils::DOMUtils::get_transceiver_dom_thresholds",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.__init__": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::new",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_temperature_info_to_db": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::post_port_dom_temperature_info_to_db",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_sensor_info_to_db": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::post_port_dom_sensor_info_to_db",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_flags_to_db": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::post_port_dom_flags_to_db",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_thresholds_to_db": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::post_port_dom_thresholds_to_db",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils._strip_unit": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::strip_unit",
+      "dom/utilities/dom_sensor/db_utils.py:DOMDBUtils._beautify_dom_info_dict": "crate::dom::utilities::dom_sensor::db_utils::DOMDBUtils::beautify_dom_info_dict",
+      "dom/utilities/status/utils.py:StatusUtils.__init__": "crate::dom::utilities::status::utils::StatusUtils::new",
+      "dom/utilities/status/utils.py:StatusUtils.get_transceiver_status": "crate::dom::utilities::status::utils::StatusUtils::get_transceiver_status",
+      "dom/utilities/status/utils.py:StatusUtils.get_transceiver_status_flags": "crate::dom::utilities::status::utils::StatusUtils::get_transceiver_status_flags",
+      "dom/utilities/status/db_utils.py:StatusDBUtils.__init__": "crate::dom::utilities::status::db_utils::StatusDBUtils::new",
+      "dom/utilities/status/db_utils.py:StatusDBUtils.post_port_transceiver_hw_status_to_db": "crate::dom::utilities::status::db_utils::StatusDBUtils::post_port_transceiver_hw_status_to_db",
+      "dom/utilities/status/db_utils.py:StatusDBUtils.post_port_transceiver_hw_status_flags_to_db": "crate::dom::utilities::status::db_utils::StatusDBUtils::post_port_transceiver_hw_status_flags_to_db",
+      "dom/utilities/vdm/utils.py:VDMUtils.__init__": "crate::dom::utilities::vdm::utils::VDMUtils::new",
+      "dom/utilities/vdm/utils.py:VDMUtils.is_transceiver_vdm_supported": "crate::dom::utilities::vdm::utils::VDMUtils::is_transceiver_vdm_supported",
+      "dom/utilities/vdm/utils.py:VDMUtils.is_vdm_statistic_supported": "crate::dom::utilities::vdm::utils::VDMUtils::is_vdm_statistic_supported",
+      "dom/utilities/vdm/utils.py:VDMUtils.get_vdm_real_values_basic": "crate::dom::utilities::vdm::utils::VDMUtils::get_vdm_real_values_basic",
+      "dom/utilities/vdm/utils.py:VDMUtils.get_vdm_real_values_statistic": "crate::dom::utilities::vdm::utils::VDMUtils::get_vdm_real_values_statistic",
+      "dom/utilities/vdm/utils.py:VDMUtils.get_vdm_flags": "crate::dom::utilities::vdm::utils::VDMUtils::get_vdm_flags",
+      "dom/utilities/vdm/utils.py:VDMUtils.get_vdm_thresholds": "crate::dom::utilities::vdm::utils::VDMUtils::get_vdm_thresholds",
+      "dom/utilities/vdm/utils.py:VDMUtils.vdm_freeze_context": "crate::dom::utilities::vdm::utils::VDMUtils::vdm_freeze_context",
+      "dom/utilities/vdm/utils.py:VDMUtils._vdm_action_and_confirm": "crate::dom::utilities::vdm::utils::VDMUtils::vdm_action_and_confirm",
+      "dom/utilities/vdm/utils.py:VDMUtils._freeze_vdm_stats_and_confirm": "crate::dom::utilities::vdm::utils::VDMUtils::freeze_vdm_stats_and_confirm",
+      "dom/utilities/vdm/utils.py:VDMUtils._unfreeze_vdm_stats_and_confirm": "crate::dom::utilities::vdm::utils::VDMUtils::unfreeze_vdm_stats_and_confirm",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils.__init__": "crate::dom::utilities::vdm::db_utils::VDMDBUtils::new",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_real_values_from_dict_to_db": "crate::dom::utilities::vdm::db_utils::VDMDBUtils::post_port_vdm_real_values_from_dict_to_db",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_flags_to_db": "crate::dom::utilities::vdm::db_utils::VDMDBUtils::post_port_vdm_flags_to_db",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_thresholds_to_db": "crate::dom::utilities::vdm::db_utils::VDMDBUtils::post_port_vdm_thresholds_to_db",
+      "dom/utilities/vdm/db_utils.py:VDMDBUtils._post_port_vdm_thresholds_or_flags_to_db": "crate::dom::utilities::vdm::db_utils::VDMDBUtils::post_port_vdm_thresholds_or_flags_to_db",
+      "xcvrd_utilities/common.py:get_syslog_identifier_common": "crate::xcvrd_utilities::common::get_syslog_identifier_common",
+      "xcvrd_utilities/common.py:get_helper_logger": "crate::xcvrd_utilities::common::get_helper_logger",
+      "xcvrd_utilities/common.py:HelperLoggerProxy.__getattr__": "crate::xcvrd_utilities::common::HelperLoggerProxy::getattr__",
+      "xcvrd_utilities/common.py:init_globals": "crate::xcvrd_utilities::common::init_globals",
+      "xcvrd_utilities/common.py:get_namespace_from_asic_id": "crate::xcvrd_utilities::common::get_namespace_from_asic_id",
+      "xcvrd_utilities/common.py:log_exception_traceback": "crate::xcvrd_utilities::common::log_exception_traceback",
+      "xcvrd_utilities/common.py:update_port_transceiver_status_table_sw": "crate::xcvrd_utilities::common::update_port_transceiver_status_table_sw",
+      "xcvrd_utilities/common.py:is_copper": "crate::xcvrd_utilities::common::is_copper",
+      "xcvrd_utilities/common.py:_wrapper_get_presence": "crate::xcvrd_utilities::common::wrapper_get_presence",
+      "xcvrd_utilities/common.py:is_fast_reboot_enabled": "crate::xcvrd_utilities::common::is_fast_reboot_enabled",
+      "xcvrd_utilities/common.py:is_syncd_warm_restore_complete": "crate::xcvrd_utilities::common::is_syncd_warm_restore_complete",
+      "xcvrd_utilities/common.py:is_cmis_api": "crate::xcvrd_utilities::common::is_cmis_api",
+      "xcvrd_utilities/common.py:get_interface_speed": "crate::xcvrd_utilities::common::get_interface_speed",
+      "xcvrd_utilities/common.py:get_cmis_application_desired": "crate::xcvrd_utilities::common::get_cmis_application_desired",
+      "xcvrd_utilities/common.py:get_cmis_state_from_state_db": "crate::xcvrd_utilities::common::get_cmis_state_from_state_db",
+      "xcvrd_utilities/common.py:get_physical_port_name": "crate::xcvrd_utilities::common::get_physical_port_name",
+      "xcvrd_utilities/common.py:get_physical_port_name_dict": "crate::xcvrd_utilities::common::get_physical_port_name_dict",
+      "xcvrd_utilities/common.py:_wrapper_is_flat_memory": "crate::xcvrd_utilities::common::wrapper_is_flat_memory",
+      "xcvrd_utilities/common.py:_wrapper_get_transceiver_firmware_info": "crate::xcvrd_utilities::common::wrapper_get_transceiver_firmware_info",
+      "xcvrd_utilities/common.py:_wrapper_get_transceiver_pm": "crate::xcvrd_utilities::common::wrapper_get_transceiver_pm",
+      "xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db": "crate::xcvrd_utilities::common::del_port_sfp_dom_info_from_db",
+      "xcvrd_utilities/common.py:check_port_in_range": "crate::xcvrd_utilities::common::check_port_in_range",
+      "xcvrd_utilities/sfp_status_helper.py:is_error_block_eeprom_reading": "crate::xcvrd_utilities::sfp_status_helper::is_error_block_eeprom_reading",
+      "xcvrd_utilities/sfp_status_helper.py:has_vendor_specific_error": "crate::xcvrd_utilities::sfp_status_helper::has_vendor_specific_error",
+      "xcvrd_utilities/sfp_status_helper.py:fetch_generic_error_description": "crate::xcvrd_utilities::sfp_status_helper::fetch_generic_error_description",
+      "xcvrd_utilities/sfp_status_helper.py:detect_port_in_error_status": "crate::xcvrd_utilities::sfp_status_helper::detect_port_in_error_status",
+      "xcvrd_utilities/port_event_helper.py:PortChangeEvent.__init__": "crate::xcvrd_utilities::port_event_helper::PortChangeEvent::new",
+      "xcvrd_utilities/port_event_helper.py:PortChangeEvent.__str__": "crate::xcvrd_utilities::port_event_helper::PortChangeEvent::str__",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver.__init__": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver::new",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver.apply_filter_to_fvp": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver::apply_filter_to_fvp",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver.refresh_role_map": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver::refresh_role_map",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver.subscribe_port_update_event": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver::subscribe_port_update_event",
+      "xcvrd_utilities/port_event_helper.py:PortChangeObserver.handle_port_update_event": "crate::xcvrd_utilities::port_event_helper::PortChangeObserver::handle_port_update_event",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.__init__": "crate::xcvrd_utilities::port_event_helper::PortMapping::new",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.handle_port_change_event": "crate::xcvrd_utilities::port_event_helper::PortMapping::handle_port_change_event",
+      "xcvrd_utilities/port_event_helper.py:PortMapping._handle_port_add": "crate::xcvrd_utilities::port_event_helper::PortMapping::handle_port_add",
+      "xcvrd_utilities/port_event_helper.py:PortMapping._handle_port_remove": "crate::xcvrd_utilities::port_event_helper::PortMapping::handle_port_remove",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.get_asic_id_for_logical_port": "crate::xcvrd_utilities::port_event_helper::PortMapping::get_asic_id_for_logical_port",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.is_logical_port": "crate::xcvrd_utilities::port_event_helper::PortMapping::is_logical_port",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.get_logical_to_physical": "crate::xcvrd_utilities::port_event_helper::PortMapping::get_logical_to_physical",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.get_physical_to_logical": "crate::xcvrd_utilities::port_event_helper::PortMapping::get_physical_to_logical",
+      "xcvrd_utilities/port_event_helper.py:PortMapping.logical_port_name_to_physical_port_list": "crate::xcvrd_utilities::port_event_helper::PortMapping::logical_port_name_to_physical_port_list",
+      "xcvrd_utilities/port_event_helper.py:subscribe_port_config_change": "crate::xcvrd_utilities::port_event_helper::subscribe_port_config_change",
+      "xcvrd_utilities/port_event_helper.py:handle_port_config_change": "crate::xcvrd_utilities::port_event_helper::handle_port_config_change",
+      "xcvrd_utilities/port_event_helper.py:read_port_config_change": "crate::xcvrd_utilities::port_event_helper::read_port_config_change",
+      "xcvrd_utilities/port_event_helper.py:get_port_mapping": "crate::xcvrd_utilities::port_event_helper::get_port_mapping",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.__init__": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::new",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_intf_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_intf_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_flag_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_change_count_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_flag_change_count_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_set_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_flag_set_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_clear_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_flag_clear_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_threshold_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_threshold_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_temperature_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_dom_temperature_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_flag_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_change_count_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_flag_change_count_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_set_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_flag_set_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_clear_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_flag_clear_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_sw_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_status_sw_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_threshold_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_threshold_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_real_value_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_real_value_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_flag_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_change_count_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_flag_change_count_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_set_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_flag_set_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_clear_time_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_vdm_flag_clear_time_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_pm_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_pm_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_firmware_info_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_firmware_info_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_app_port_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_app_port_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_db": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_state_db",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_cfg_port_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_cfg_port_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_port_tbl": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_state_port_tbl",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_db_port_table_val_by_key": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_state_db_port_table_val_by_key",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.is_npu_si_settings_update_required": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::is_npu_si_settings_update_required",
+      "xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_gearbox_line_lanes_dict": "crate::xcvrd_utilities::xcvr_table_helper::XcvrTableHelper::get_gearbox_line_lanes_dict",
+      "xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.parse": "crate::xcvrd_utilities::media_settings_parser::MediaSettingsParserBase::parse",
+      "xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.get_media_settings": "crate::xcvrd_utilities::media_settings_parser::MediaSettingsParserBase::get_media_settings",
+      "xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase._get_lane_values_str": "crate::xcvrd_utilities::media_settings_parser::MediaSettingsParserBase::get_lane_values_str",
+      "xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.to_db_value": "crate::xcvrd_utilities::media_settings_parser::MediaSettingsParserBase::to_db_value",
+      "xcvrd_utilities/media_settings_parser.py:GlobalMediaSettingsParser.parse": "crate::xcvrd_utilities::media_settings_parser::GlobalMediaSettingsParser::parse",
+      "xcvrd_utilities/media_settings_parser.py:PortMediaSettingsParser.parse": "crate::xcvrd_utilities::media_settings_parser::PortMediaSettingsParser::parse",
+      "xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.is_port_selected": "crate::xcvrd_utilities::media_settings_parser::CustomMediaSettingsParser::is_port_selected",
+      "xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser._get_lane_values": "crate::xcvrd_utilities::media_settings_parser::CustomMediaSettingsParser::get_lane_values",
+      "xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.to_db_value": "crate::xcvrd_utilities::media_settings_parser::CustomMediaSettingsParser::to_db_value",
+      "xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.parse": "crate::xcvrd_utilities::media_settings_parser::CustomMediaSettingsParser::parse",
+      "xcvrd_utilities/media_settings_parser.py:load_media_settings": "crate::xcvrd_utilities::media_settings_parser::load_media_settings",
+      "xcvrd_utilities/media_settings_parser.py:media_settings_present": "crate::xcvrd_utilities::media_settings_parser::media_settings_present",
+      "xcvrd_utilities/media_settings_parser.py:get_lane_speed_key": "crate::xcvrd_utilities::media_settings_parser::get_lane_speed_key",
+      "xcvrd_utilities/media_settings_parser.py:get_media_settings_key": "crate::xcvrd_utilities::media_settings_parser::get_media_settings_key",
+      "xcvrd_utilities/media_settings_parser.py:is_si_per_speed_supported": "crate::xcvrd_utilities::media_settings_parser::is_si_per_speed_supported",
+      "xcvrd_utilities/media_settings_parser.py:get_media_settings_for_speed": "crate::xcvrd_utilities::media_settings_parser::get_media_settings_for_speed",
+      "xcvrd_utilities/media_settings_parser.py:get_media_settings_value": "crate::xcvrd_utilities::media_settings_parser::get_media_settings_value",
+      "xcvrd_utilities/media_settings_parser.py:get_custom_media_settings_value": "crate::xcvrd_utilities::media_settings_parser::get_custom_media_settings_value",
+      "xcvrd_utilities/media_settings_parser.py:get_speed_lane_count_and_subport": "crate::xcvrd_utilities::media_settings_parser::get_speed_lane_count_and_subport",
+      "xcvrd_utilities/media_settings_parser.py:notify_media_setting": "crate::xcvrd_utilities::media_settings_parser::notify_media_setting",
+      "xcvrd_utilities/optics_si_parser.py:_match_optics_si_key": "crate::xcvrd_utilities::optics_si_parser::match_optics_si_key",
+      "xcvrd_utilities/optics_si_parser.py:_get_global_media_settings": "crate::xcvrd_utilities::optics_si_parser::get_global_media_settings",
+      "xcvrd_utilities/optics_si_parser.py:_get_port_media_settings": "crate::xcvrd_utilities::optics_si_parser::get_port_media_settings",
+      "xcvrd_utilities/optics_si_parser.py:get_optics_si_settings_value": "crate::xcvrd_utilities::optics_si_parser::get_optics_si_settings_value",
+      "xcvrd_utilities/optics_si_parser.py:get_module_vendor_key": "crate::xcvrd_utilities::optics_si_parser::get_module_vendor_key",
+      "xcvrd_utilities/optics_si_parser.py:fetch_optics_si_setting": "crate::xcvrd_utilities::optics_si_parser::fetch_optics_si_setting",
+      "xcvrd_utilities/optics_si_parser.py:load_optics_si_settings": "crate::xcvrd_utilities::optics_si_parser::load_optics_si_settings",
+      "xcvrd_utilities/optics_si_parser.py:optics_si_present": "crate::xcvrd_utilities::optics_si_parser::optics_si_present",
+      "xcvrd_utilities/utils.py:XCVRDUtils.__init__": "crate::xcvrd_utilities::utils::XCVRDUtils::new",
+      "xcvrd_utilities/utils.py:XCVRDUtils.get_transceiver_presence": "crate::xcvrd_utilities::utils::XCVRDUtils::get_transceiver_presence",
+      "xcvrd_utilities/utils.py:XCVRDUtils.is_transceiver_flat_memory": "crate::xcvrd_utilities::utils::XCVRDUtils::is_transceiver_flat_memory",
+      "xcvrd_utilities/utils.py:XCVRDUtils.is_transceiver_lpmode_on": "crate::xcvrd_utilities::utils::XCVRDUtils::is_transceiver_lpmode_on"
+    },
+    "tests": {
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_SffManagerTask_task_run_with_exception": "crate::sff_mgr::tests::test_SffManagerTask_task_run_with_exception",
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_CmisManagerTask_task_run_with_exception": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_run_with_exception",
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_CmisManagerTask_get_xcvr_api_exception": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_xcvr_api_exception",
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_DomInfoUpdateTask_task_run_with_exception": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_run_with_exception",
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_SfpStateUpdateTask_task_run_with_exception": "crate::xcvrd::tests::test_SfpStateUpdateTask_task_run_with_exception",
+      "tests/test_xcvrd.py:TestXcvrdThreadException.test_DaemonXcvrd_run_with_exception": "crate::xcvrd::tests::test_DaemonXcvrd_run_with_exception",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_cmis_api": "crate::xcvrd_utilities::common::tests::test_is_cmis_api",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_state_db_port_table_val_by_key": "crate::xcvrd_utilities::xcvr_table_helper::tests::test_get_state_db_port_table_val_by_key",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_npu_si_settings_update_required": "crate::xcvrd_utilities::xcvr_table_helper::tests::test_is_npu_si_settings_update_required",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_firmware_info_to_db": "crate::dom::dom_mgr::tests::test_post_port_sfp_firmware_info_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_firmware_info_to_db_lport_list_None": "crate::dom::dom_mgr::tests::test_post_port_sfp_firmware_info_to_db_lport_list_None",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_valid_cases": "crate::xcvrd_utilities::common::tests::test_is_syncd_warm_restore_complete_valid_cases",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_invalid_restore_count": "crate::xcvrd_utilities::common::tests::test_is_syncd_warm_restore_complete_invalid_restore_count",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_with_namespace": "crate::xcvrd_utilities::common::tests::test_is_syncd_warm_restore_complete_with_namespace",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_sensor_info_to_db": "crate::dom::utilities::dom_sensor::db_utils::tests::test_post_port_dom_sensor_info_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_temperature_info_to_db": "crate::dom::utilities::dom_sensor::db_utils::tests::test_post_port_dom_temperature_info_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_flags_to_db": "crate::dom::utilities::dom_sensor::db_utils::tests::test_post_port_dom_flags_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_update_flag_metadata_tables": "crate::dom::utilities::db::utils::tests::test_update_flag_metadata_tables",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_thresholds_to_db": "crate::dom::utilities::dom_sensor::db_utils::tests::test_post_port_dom_thresholds_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_vdm_thresholds_to_db": "crate::dom::utilities::vdm::db_utils::tests::test_post_port_vdm_thresholds_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_vdm_real_values_from_dict_to_db": "crate::dom::utilities::vdm::db_utils::tests::test_post_port_vdm_real_values_from_dict_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_transceiver_hw_status_to_db": "crate::dom::utilities::status::db_utils::tests::test_post_port_transceiver_hw_status_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_transceiver_hw_status_flags_to_db": "crate::dom::utilities::status::db_utils::tests::test_post_port_transceiver_hw_status_flags_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_pm_info_to_db": "crate::dom::dom_mgr::tests::test_post_port_pm_info_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_del_port_sfp_dom_info_from_db": "crate::xcvrd_utilities::common::tests::test_del_port_sfp_dom_info_from_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_cmis_state_from_state_db": "crate::xcvrd_utilities::common::tests::test_get_cmis_state_from_state_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_to_db": "crate::xcvrd::tests::test_post_port_sfp_info_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_to_db_with_sfp_not_present": "crate::xcvrd::tests::test_post_port_sfp_info_to_db_with_sfp_not_present",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_and_dom_thr_to_db_once": "crate::xcvrd::tests::test_post_port_sfp_info_and_dom_thr_to_db_once",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_init_port_sfp_status_sw_tbl": "crate::xcvrd::tests::test_init_port_sfp_status_sw_tbl",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_init_port_sfp_status_sw_tbl_no_physical_port_found": "crate::xcvrd::tests::test_init_port_sfp_status_sw_tbl_no_physical_port_found",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_missing_file": "crate::xcvrd_utilities::media_settings_parser::tests::test_load_media_settings_missing_file",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_settings_missing_file": "crate::xcvrd_utilities::optics_si_parser::tests::test_load_optical_si_settings_missing_file",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_media_settings_key": "crate::xcvrd_utilities::media_settings_parser::tests::test_get_media_settings_key",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_speed_lane_count_and_subport": "crate::xcvrd_utilities::media_settings_parser::tests::test_get_speed_lane_count_and_subport",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_si_per_speed_supported": "crate::xcvrd_utilities::media_settings_parser::tests::test_is_si_per_speed_supported",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_media_settings_value": "crate::xcvrd_utilities::media_settings_parser::tests::test_get_media_settings_value",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_copper_exception": "crate::xcvrd_utilities::common::tests::test_is_copper_exception",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_with_comma": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting_with_comma",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_custom_only": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting_custom_only",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_empty_serialized_payload": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting_empty_serialized_payload",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_mixed_settings": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting_mixed_settings",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_with_gearbox": "crate::xcvrd_utilities::media_settings_parser::tests::test_notify_media_setting_with_gearbox",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_to_db_value": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_to_db_value",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_get_lane_values": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_get_lane_values",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_is_port_selected": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_is_port_selected",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_custom_media_settings_value": "crate::xcvrd_utilities::media_settings_parser::tests::test_get_custom_media_settings_value",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_mixed_with_port_and_global": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_mixed_with_port_and_global",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_medium_lane_key": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_medium_lane_key",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_parser_empty_or_invalid_settings": "crate::xcvrd_utilities::media_settings_parser::tests::test_custom_media_settings_parser_empty_or_invalid_settings",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_media_settings_to_db_value": "crate::xcvrd_utilities::media_settings_parser::tests::test_media_settings_to_db_value",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting": "crate::xcvrd_utilities::optics_si_parser::tests::test_fetch_optics_si_setting",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_with_comma": "crate::xcvrd_utilities::optics_si_parser::tests::test_fetch_optics_si_setting_with_comma",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_with_port": "crate::xcvrd_utilities::optics_si_parser::tests::test_fetch_optics_si_setting_with_port",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_negative": "crate::xcvrd_utilities::optics_si_parser::tests::test_fetch_optics_si_setting_negative",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_module_vendor_key": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_module_vendor_key",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_detect_port_in_error_status": "crate::xcvrd_utilities::sfp_status_helper::tests::test_detect_port_in_error_status",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_error_sfp_status": "crate::xcvrd_utilities::sfp_status_helper::tests::test_is_error_sfp_status",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_handle_front_panel_filter": "crate::xcvrd_utilities::port_event_helper::tests::test_handle_front_panel_filter",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_handle_port_update_event": "crate::xcvrd_utilities::port_event_helper::tests::test_handle_port_update_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_handle_port_config_change": "crate::xcvrd_utilities::port_event_helper::tests::test_handle_port_config_change",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_port_mapping": "crate::xcvrd_utilities::port_event_helper::tests::test_get_port_mapping",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_wait_for_port_config_done": "crate::xcvrd::tests::test_DaemonXcvrd_wait_for_port_config_done",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_initialize_port_init_control_fields_in_port_table": "crate::xcvrd::tests::test_DaemonXcvrd_initialize_port_init_control_fields_in_port_table",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_initialize_sfp_obj_dict": "crate::xcvrd::tests::test_initialize_sfp_obj_dict",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_remove_stale_transceiver_info": "crate::xcvrd::tests::test_remove_stale_transceiver_info",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_run": "crate::xcvrd::tests::test_DaemonXcvrd_run",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_handle_port_change_event": "crate::sff_mgr::tests::test_SffManagerTask_handle_port_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_active_lanes_for_lport": "crate::sff_mgr::tests::test_SffManagerTask_get_active_lanes_for_lport",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_active_lanes_for_lport_with_invalid_input": "crate::sff_mgr::tests::test_SffManagerTask_get_active_lanes_for_lport_with_invalid_input",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_host_tx_status": "crate::sff_mgr::tests::test_SffManagerTask_get_host_tx_status",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_admin_status": "crate::sff_mgr::tests::test_SffManagerTask_get_admin_status",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_xcvr_api_none_in_task_worker": "crate::sff_mgr::tests::test_SffManagerTask_xcvr_api_none_in_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_enable_high_power_class": "crate::sff_mgr::tests::test_SffManagerTask_enable_high_power_class",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_task_worker": "crate::sff_mgr::tests::test_SffManagerTask_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_fast_reboot_enabled_for_lport": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_fast_reboot_enabled_for_lport",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_fast_reboot_enabled_for_lport_default_namespace": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_fast_reboot_enabled_for_lport_default_namespace",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_handle_port_change_event": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_handle_port_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_configured_freq": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_configured_freq",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_configured_tx_power_from_db": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_configured_tx_power_from_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_process_single_lport_tx_power_config_failure": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_process_single_lport_tx_power_config_failure",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_dp_deinit_low_pwr_deinits_and_disables_all_lanes": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_dp_deinit_low_pwr_deinits_and_disables_all_lanes",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_run_stop": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_run_stop",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_decommission_required",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_uses_active_appsel_not_staged": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_decommission_required_uses_active_appsel_not_staged",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_invalid_active_appsel": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_decommission_required_invalid_active_appsel",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_missing_active_appsel_lane": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_decommission_required_missing_active_appsel_lane",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_desired_app_map",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_mixed_mode": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_desired_app_map_mixed_mode",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_no_matching_app": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_desired_app_map_no_matching_app",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_uses_gearbox_lane_count": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_desired_app_map_uses_gearbox_lane_count",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_sibling_port_configs",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs_no_cfg_port_tbl": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_sibling_port_configs_no_cfg_port_tbl",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs_uses_gearbox_lane_count": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_sibling_port_configs_uses_gearbox_lane_count",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_cmis_application_update_required": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_is_cmis_application_update_required",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_interface_speed": "crate::xcvrd_utilities::common::tests::test_get_interface_speed",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_cmis_host_lanes_mask": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_cmis_host_lanes_mask",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_XcvrTableHelper_get_gearbox_line_lanes_dict": "crate::xcvrd_utilities::xcvr_table_helper::tests::test_XcvrTableHelper_get_gearbox_line_lanes_dict",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_host_lane_count": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_get_host_lane_count",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_gearbox_integration_end_to_end": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_gearbox_integration_end_to_end",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_gearbox_caching_integration": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_gearbox_caching_integration",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_post_port_active_apsel_to_db_error_cases": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_post_port_active_apsel_to_db_error_cases",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_post_port_active_apsel_to_db": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_post_port_active_apsel_to_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_test_is_timer_expired": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_test_is_timer_expired",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_fastboot": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_worker_fastboot",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_host_tx_ready_false_to_true": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_worker_host_tx_ready_false_to_true",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_decommission": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_task_worker_decommission",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_get_dom_polling_from_config_db": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_get_dom_polling_from_config_db",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_is_port_in_cmis_initialization_process": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_is_port_in_cmis_initialization_process",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_beautify_dom_info_dict": "crate::dom::utilities::db::utils::tests::test_beautify_dom_info_dict",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_beautify_info_dict": "crate::dom::utilities::db::utils::tests::test_beautify_info_dict",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomThermalInfoUpdateTask_task_worker": "crate::dom::dom_mgr::tests::test_DomThermalInfoUpdateTask_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_handle_port_change_event": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_handle_port_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_run_stop": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_run_stop",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_vdm_failure": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_worker_vdm_failure",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_stop_event_during_port_update_wait": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_worker_stop_event_during_port_update_wait",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_vdm_freeze_conditions": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_task_worker_vdm_freeze_conditions",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_update_port_db_diagnostics_on_link_change": "crate::xcvrd::tests::test_update_port_db_diagnostics_on_link_change",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_handle_port_change_event": "crate::xcvrd::tests::test_SfpStateUpdateTask_handle_port_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_task_run_stop": "crate::xcvrd::tests::test_SfpStateUpdateTask_task_run_stop",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_retry_eeprom_reading": "crate::xcvrd::tests::test_SfpStateUpdateTask_retry_eeprom_reading",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_mapping_event_from_change_event": "crate::xcvrd::tests::test_SfpStateUpdateTask_mapping_event_from_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport": "crate::xcvrd::tests::test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport_invalid_asic": "crate::xcvrd::tests::test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport_invalid_asic",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_task_worker": "crate::xcvrd::tests::test_SfpStateUpdateTask_task_worker",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_on_add_logical_port": "crate::xcvrd::tests::test_SfpStateUpdateTask_on_add_logical_port",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_insert_events": "crate::xcvrd::tests::test_sfp_insert_events",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_remove_events": "crate::xcvrd::tests::test_sfp_remove_events",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_presence": "crate::xcvrd_utilities::common::tests::test_wrapper_get_presence",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_replaceable": "crate::xcvrd::tests::test_wrapper_is_replaceable",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_info": "crate::xcvrd::tests::test_wrapper_get_transceiver_info",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_transceiver_vdm_supported": "crate::dom::utilities::vdm::db_utils::tests::test_wrapper_is_transceiver_vdm_supported",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_vdm_action_and_confirm": "crate::dom::utilities::vdm::db_utils::tests::test_vdm_action_and_confirm",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_vdm_action_and_confirm_exception": "crate::dom::utilities::vdm::db_utils::tests::test_vdm_action_and_confirm_exception",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_thresholds": "crate::dom::utilities::vdm::db_utils::tests::test_get_vdm_thresholds",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_vdm_statistic_supported": "crate::dom::utilities::vdm::db_utils::tests::test_is_vdm_statistic_supported",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_real_values_basic": "crate::dom::utilities::vdm::db_utils::tests::test_get_vdm_real_values_basic",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_real_values_statistic": "crate::dom::utilities::vdm::db_utils::tests::test_get_vdm_real_values_statistic",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_flags": "crate::dom::utilities::vdm::db_utils::tests::test_get_vdm_flags",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_firmware_info": "crate::xcvrd::tests::test_wrapper_get_transceiver_firmware_info",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_temperature": "crate::dom::utilities::dom_sensor::db_utils::tests::test_get_transceiver_dom_temperature",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_sensor_real_value": "crate::dom::utilities::dom_sensor::db_utils::tests::test_get_transceiver_dom_sensor_real_value",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_flags": "crate::dom::utilities::dom_sensor::db_utils::tests::test_get_transceiver_dom_flags",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_thresholds": "crate::dom::utilities::dom_sensor::db_utils::tests::test_get_transceiver_dom_thresholds",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_status": "crate::dom::utilities::status::db_utils::tests::test_get_transceiver_status",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_status_flags": "crate::dom::utilities::status::db_utils::tests::test_get_transceiver_status_flags",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_pm": "crate::xcvrd::tests::test_wrapper_get_transceiver_pm",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_change_event": "crate::xcvrd::tests::test_wrapper_get_transceiver_change_event",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_sfp_type": "crate::xcvrd::tests::test_wrapper_get_sfp_type",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_sfp_error_description": "crate::xcvrd::tests::test_wrapper_get_sfp_error_description",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_flat_memory": "crate::xcvrd::tests::test_wrapper_is_flat_memory",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_flat_memory_no_xcvr_api": "crate::xcvrd::tests::test_wrapper_is_flat_memory_no_xcvr_api",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_check_port_in_range": "crate::xcvrd_utilities::common::tests::test_check_port_in_range",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_media_settings_parser_base_get_lane_values_str": "crate::xcvrd_utilities::media_settings_parser::tests::test_media_settings_parser_base_get_lane_values_str",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_init_deinit_fastboot_enabled": "crate::xcvrd::tests::test_DaemonXcvrd_init_deinit_fastboot_enabled",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_init_deinit_cold": "crate::xcvrd::tests::test_DaemonXcvrd_init_deinit_cold",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_signal_handler": "crate::xcvrd::tests::test_DaemonXcvrd_signal_handler",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_update_loggers_log_level": "crate::xcvrd::tests::test_DaemonXcvrd_update_loggers_log_level",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_update_loggers_log_level_empty_threads": "crate::xcvrd::tests::test_DaemonXcvrd_update_loggers_log_level_empty_threads",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_file_from_platform_folder": "crate::xcvrd_utilities::optics_si_parser::tests::test_load_optical_si_file_from_platform_folder",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_file_from_hwsku_folder": "crate::xcvrd_utilities::optics_si_parser::tests::test_load_optical_si_file_from_hwsku_folder",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_file_from_platform_folder": "crate::xcvrd_utilities::media_settings_parser::tests::test_load_media_settings_file_from_platform_folder",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_file_from_hwsku_folder": "crate::xcvrd_utilities::media_settings_parser::tests::test_load_media_settings_file_from_hwsku_folder",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_validate_frequency_and_grid": "crate::cmis::cmis_manager_task::tests::test_CmisManagerTask_validate_frequency_and_grid",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_xcvrd_utils_get_transceiver_presence": "crate::xcvrd_utilities::utils::tests::test_xcvrd_utils_get_transceiver_presence",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_transceiver_flat_memory": "crate::xcvrd_utilities::utils::tests::test_is_transceiver_flat_memory",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_is_transceiver_lpmode_on": "crate::xcvrd_utilities::utils::tests::test_is_transceiver_lpmode_on",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_removal_from_dict": "crate::xcvrd::tests::test_sfp_removal_from_dict",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_check_port_update": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_check_port_update",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_scheduling_uses_loop_start_time": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_scheduling_uses_loop_start_time",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_dom_update_interval_parameter": "crate::dom::dom_mgr::tests::test_DomInfoUpdateTask_dom_update_interval_parameter",
+      "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_dom_update_interval_parameter": "crate::xcvrd::tests::test_DaemonXcvrd_dom_update_interval_parameter",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_match_optics_si_key_regex_error": "crate::xcvrd_utilities::optics_si_parser::tests::test_match_optics_si_key_regex_error",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_match_optics_si_key_fallback_string_match": "crate::xcvrd_utilities::optics_si_parser::tests::test_match_optics_si_key_fallback_string_match",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_get_port_media_settings_speed_key_missing": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_port_media_settings_speed_key_missing",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_api_none": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_module_vendor_key_api_none",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_vendor_name_none": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_module_vendor_key_vendor_name_none",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_vendor_pn_none": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_module_vendor_key_vendor_pn_none",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_get_port_media_settings_no_values_with_empty_default": "crate::xcvrd_utilities::optics_si_parser::tests::test_get_port_media_settings_no_values_with_empty_default",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_load_optics_si_settings_no_file": "crate::xcvrd_utilities::optics_si_parser::tests::test_load_optics_si_settings_no_file",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_optics_si_present_empty_dict": "crate::xcvrd_utilities::optics_si_parser::tests::test_optics_si_present_empty_dict",
+      "tests/test_xcvrd.py:TestOpticSiParser.test_optics_si_present_with_data": "crate::xcvrd_utilities::optics_si_parser::tests::test_optics_si_present_with_data"
+    },
+    "mocks": {
+      "tests/mock_platform.py:MockChassis": "crate::mock::MockChassis",
+      "tests/mock_platform.py:MockSfp": "crate::mock::MockSfp",
+      "tests/mock_swsscommon.py:Table": "crate::mock::MockTable",
+      "tests/mock_swsscommon.py:DBConnector": "crate::mock::MockStateDb"
+    }
+  },
+  "fragments": {
+    "part_a": [
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.__init__@49",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.check_config_error@606",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.check_datapath_init_pending@634",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.check_datapath_state@660",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.check_module_state@591",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.clear_decomm_pending@315",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.configure_laser_frequency@751",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.configure_tx_output_power@718",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.force_cmis_reinit@583",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_asic_id@82",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_deinit_duration_secs@192",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_init_duration_secs@189",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_tx_turnoff_duration_secs@195",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_dp_tx_turnon_duration_secs@198",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_host_lanes_mask@238",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_max_host_lanes_mask@229",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_media_lanes_mask@276",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_module_power_down_duration_secs@204",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_cmis_module_power_up_duration_secs@201",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_configured_laser_freq_from_db@688",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_configured_tx_power_from_db@697",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_desired_app_map@457",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_host_lane_count@207",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_host_tx_status@706",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_port_admin_status@712",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.get_sibling_port_configs@390",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_dp_deinit_state@1025",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_dp_pre_init_check_state@956",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.handle_cmis_inserted_state@853",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.initialize_fast_reboot_status@67",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_cmis_application_update_required@530",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_failed@366",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_lead_lport@342",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_decomm_pending@354",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_decommission_required@488",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_fast_reboot_enabled_for_lport@85",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.is_timer_expired@834",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.join@1382",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.log_debug@73",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.log_error@79",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.log_notice@76",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.on_port_update_event@100",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.post_port_active_apsel_to_db@756",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.process_cmis_state_machine@1066",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.process_single_lport@1256",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.run@1357",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.set_decomm_pending@325",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.task_worker@1333",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.update_cmis_state_expiration_time@822",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.update_port_transceiver_status_table_sw_cmis_state@90",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.validate_frequency_and_grid@726",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask.wait_for_port_config_done@801",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/cmis/cmis_manager_task.py:CmisManagerTask@41",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.__init__@43",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.get_dom_polling_from_config_db@76",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.is_port_dom_monitoring_disabled@112",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.join@129",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.log_debug@53",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.log_error@65",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.log_info@56",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.log_notice@59",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.log_warning@62",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.on_port_config_change@68",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.on_remove_logical_port@73",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.run@118",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.task_worker@115",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase.update_log_level@135",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateBase@39",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.__init__@150",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.check_port_update@267",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.is_port_dom_monitoring_disabled@198",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.is_port_in_cmis_initialization_process@182",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.on_port_update_event@424",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.on_remove_logical_port@495",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.post_port_pm_info_to_db@238",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.post_port_sfp_firmware_info_to_db@203",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.task_worker@284",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask.update_port_db_diagnostics_on_link_change@442",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomInfoUpdateTask@141",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomThermalInfoUpdateTask.__init__@529",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomThermalInfoUpdateTask.task_worker@535",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/dom_mgr.py:DomThermalInfoUpdateTask@526",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils.__init__@12",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils._initialize_metadata_tables@173",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils._update_flag_metadata@191",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils._update_flag_metadata_tables@107",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils._validate_and_get_physical_port@62",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils.beautify_info_dict@156",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils.get_current_time@161",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils.post_diagnostic_values_to_db@19",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/db/utils.py:DBUtils@5",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.__init__@21",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils._beautify_dom_info_dict@127",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils._strip_unit@120",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_flags_to_db@53",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_sensor_info_to_db@40",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_temperature_info_to_db@27",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils.post_port_dom_thresholds_to_db@107",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/db_utils.py:DOMDBUtils@7",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils.__init__@6",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_flags@24",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_sensor_real_value@18",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_temperature@10",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils.get_transceiver_dom_thresholds@30",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/dom_sensor/utils.py:DOMUtils@1",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/db_utils.py:StatusDBUtils.__init__@15",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/db_utils.py:StatusDBUtils.post_port_transceiver_hw_status_flags_to_db@41",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/db_utils.py:StatusDBUtils.post_port_transceiver_hw_status_to_db@21",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/db_utils.py:StatusDBUtils@6",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/utils.py:StatusUtils.__init__@6",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/utils.py:StatusUtils.get_transceiver_status@10",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/utils.py:StatusUtils.get_transceiver_status_flags@19",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/status/utils.py:StatusUtils@1",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils.__init__@19",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils._post_port_vdm_thresholds_or_flags_to_db@67",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_flags_to_db@58",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_real_values_from_dict_to_db@25",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils.post_port_vdm_thresholds_to_db@62",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/db_utils.py:VDMDBUtils@8",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.__init__@13",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils._freeze_vdm_stats_and_confirm@103",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils._unfreeze_vdm_stats_and_confirm@119",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils._vdm_action_and_confirm@68",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.get_vdm_flags@43",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.get_vdm_real_values_basic@29",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.get_vdm_real_values_statistic@36",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.get_vdm_thresholds@50",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.is_transceiver_vdm_supported@17",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.is_vdm_statistic_supported@23",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils.vdm_freeze_context@57",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/dom/utilities/vdm/utils.py:VDMUtils@8",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.__init__@26",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.log_debug@41",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.log_error@38",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.log_info@29",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.log_notice@32",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent.log_warning@35",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffLoggerForPortUpdateEvent@23",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.__init__@89",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.calculate_tx_disable_delta_array@256",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.convert_bool_array_to_bit_mask@277",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.enable_high_power_class@295",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.get_active_lanes_for_lport@116",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.get_admin_status@222",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.get_host_tx_status@212",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.join@250",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.log_error@113",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.log_notice@107",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.log_warning@110",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.on_port_update_event@153",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.run@232",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask.task_worker@328",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/sff_mgr.py:SffManagerTask@45",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.__init__@891",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.deinit@1095",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.init@1034",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.initialize_port_init_control_fields_in_port_table@954",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.initialize_sfp_obj_dict@975",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.remove_stale_transceiver_info@999",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.run@1154",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.signal_handler@915",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.update_loggers_log_level@903",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd.wait_for_port_config_done@929",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:DaemonXcvrd@890",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.__init__@261",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask._init_port_sfp_status_sw_tbl@366",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask._mapping_event_from_change_event@299",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask._post_port_sfp_info_and_dom_thr_to_db_once@324",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.init@394",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.initialize_warm_fast_reboot_status@285",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.is_warm_fast_reboot_for_lport@292",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.join@728",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.on_add_logical_port@781",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.on_port_config_change@734",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.on_remove_logical_port@742",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.raise_exception@721",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.retry_eeprom_reading@849",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.run@706",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.task_worker@405",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask.update_log_level@879",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:SfpStateUpdateTask@259",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_get_sfp_error_description@167",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_get_sfp_type@154",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_get_transceiver_change_event@141",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_get_transceiver_info@114",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_is_replaceable@105",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:_wrapper_soak_sfp_insert_event@127",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:main@1257",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:post_port_sfp_info_to_db@178",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd.py:waiting_time_compensation_with_sleep@248",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:HelperLoggerProxy.__getattr__@72",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:HelperLoggerProxy@71",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:_wrapper_get_presence@124",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:_wrapper_get_transceiver_firmware_info@316",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:_wrapper_get_transceiver_pm@325",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:_wrapper_is_flat_memory@303",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:check_port_in_range@353",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db@338",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_cmis_application_desired@231",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_cmis_state_from_state_db@262",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_helper_logger@59",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_interface_speed@196",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_namespace_from_asic_id@85",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_physical_port_name@271",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_physical_port_name_dict@278",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:get_syslog_identifier_common@48",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:init_globals@79",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:is_cmis_api@192",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:is_copper@115",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:is_fast_reboot_enabled@148",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:is_syncd_warm_restore_complete@156",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:log_exception_traceback@102",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/common.py:update_port_transceiver_status_table_sw@110",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser._get_lane_values@222",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.is_port_selected@180",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.parse@276",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser.to_db_value@241",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:CustomMediaSettingsParser@174",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:GlobalMediaSettingsParser.parse@125",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:GlobalMediaSettingsParser@124",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase._get_lane_values_str@66",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.get_media_settings@53",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.parse@42",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase.to_db_value@89",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:MediaSettingsParserBase@40",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:PortMediaSettingsParser.parse@155",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:PortMediaSettingsParser@154",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_custom_media_settings_value@507",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_lane_speed_key@322",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_media_settings_for_speed@424",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_media_settings_key@354",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_media_settings_value@455",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:get_speed_lane_count_and_subport@540",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:is_si_per_speed_supported@420",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:load_media_settings@296",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:media_settings_present@316",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/media_settings_parser.py:notify_media_setting@554",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:_get_global_media_settings@41",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:_get_port_media_settings@91",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:_match_optics_si_key@14",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:fetch_optics_si_setting@179",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:get_module_vendor_key@161",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:get_optics_si_settings_value@139",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:load_optics_si_settings@195",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/optics_si_parser.py:optics_si_present@214",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeEvent.__init__@19",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeEvent.__str__@34",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeEvent@13",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver.__init__@52",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver.apply_filter_to_fvp@78",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver.handle_port_update_event@116",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver.refresh_role_map@84",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver.subscribe_port_update_event@94",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortChangeObserver@46",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.__init__@213",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping._handle_port_add@235",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping._handle_port_remove@251",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.get_asic_id_for_logical_port@260",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.get_logical_to_physical@266",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.get_physical_to_logical@270",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.handle_port_change_event@229",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.is_logical_port@263",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping.logical_port_name_to_physical_port_list@274",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:PortMapping@212",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:get_port_mapping@346",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:handle_port_config_change@294",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:read_port_config_change@307",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/port_event_helper.py:subscribe_port_config_change@283",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/sfp_status_helper.py:detect_port_in_error_status@30",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/sfp_status_helper.py:fetch_generic_error_description@20",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/sfp_status_helper.py:has_vendor_specific_error@16",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/sfp_status_helper.py:is_error_block_eeprom_reading@12",
+        "verified": true,
+        "kind": "function"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/utils.py:XCVRDUtils.__init__@6",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/utils.py:XCVRDUtils.get_transceiver_presence@10",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/utils.py:XCVRDUtils.is_transceiver_flat_memory@17",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/utils.py:XCVRDUtils.is_transceiver_lpmode_on@27",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/utils.py:XCVRDUtils@1",
+        "verified": true,
+        "kind": "class"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.__init__@56",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_app_port_tbl@177",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_cfg_port_tbl@183",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_change_count_tbl@120",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_clear_time_tbl@126",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_set_time_tbl@123",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_flag_tbl@117",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_tbl@114",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_temperature_tbl@132",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_dom_threshold_tbl@129",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_firmware_info_tbl@174",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_gearbox_line_lanes_dict@249",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_intf_tbl@111",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_pm_tbl@171",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_db@180",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_db_port_table_val_by_key@189",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_state_port_tbl@186",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_change_count_tbl@141",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_clear_time_tbl@147",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_set_time_tbl@144",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_flag_tbl@138",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_sw_tbl@150",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_status_tbl@135",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_change_count_tbl@162",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_clear_time_tbl@168",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_set_time_tbl@165",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_flag_tbl@159",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_real_value_tbl@156",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.get_vdm_threshold_tbl@153",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper.is_npu_si_settings_update_required@229",
+        "verified": true,
+        "kind": "method"
+      },
+      {
+        "unit": "xcvrd/xcvrd_utilities/xcvr_table_helper.py:XcvrTableHelper@55",
+        "verified": true,
+        "kind": "class"
+      }
+    ],
+    "part_b": [
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_SffManagerTask_task_run_with_exception@396",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_CmisManagerTask_task_run_with_exception@415",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_CmisManagerTask_get_xcvr_api_exception@463",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_DomInfoUpdateTask_task_run_with_exception@517",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_SfpStateUpdateTask_task_run_with_exception@540",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdThreadException.test_DaemonXcvrd_run_with_exception@579",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_cmis_api@609",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_state_db_port_table_val_by_key@614",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_npu_si_settings_update_required@634",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_firmware_info_to_db@647",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_firmware_info_to_db_lport_list_None@683",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_valid_cases@717",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_invalid_restore_count@726",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_syncd_warm_restore_complete_with_namespace@747",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_sensor_info_to_db@760",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_temperature_info_to_db@843",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_flags_to_db@901",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_update_flag_metadata_tables@994",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_dom_thresholds_to_db@1049",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_vdm_thresholds_to_db@1118",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_vdm_real_values_from_dict_to_db@1191",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_transceiver_hw_status_to_db@1239",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_transceiver_hw_status_flags_to_db@1308",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_pm_info_to_db@1390",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_del_port_sfp_dom_info_from_db@1404",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_cmis_state_from_state_db@1419",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_to_db@1468",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_to_db_with_sfp_not_present@1478",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_post_port_sfp_info_and_dom_thr_to_db_once@1511",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_init_port_sfp_status_sw_tbl@1527",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_init_port_sfp_status_sw_tbl_no_physical_port_found@1541",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_missing_file@1564",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_settings_missing_file@1568",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_media_settings_key@1573",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_speed_lane_count_and_subport@1666",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_si_per_speed_supported@1673",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_media_settings_value@1808",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_copper_exception@1814",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting@1827",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_with_comma@1874",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_custom_only@1883",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_empty_serialized_payload@1930",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_mixed_settings@1971",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_notify_media_setting_with_gearbox@2017",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_to_db_value@2107",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_get_lane_values@2111",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_is_port_selected@2123",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_custom_media_settings_value@2136",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_mixed_with_port_and_global@2179",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_medium_lane_key@2201",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_custom_media_settings_parser_empty_or_invalid_settings@2216",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_media_settings_to_db_value@2259",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting@2324",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_with_comma@2329",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_with_port@2335",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_fetch_optics_si_setting_negative@2341",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_module_vendor_key@2355",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_detect_port_in_error_status@2364",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_error_sfp_status@2376",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_handle_front_panel_filter@2388",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_handle_port_update_event@2439",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_handle_port_config_change@2592",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_port_mapping@2622",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_wait_for_port_config_done@2652",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_initialize_port_init_control_fields_in_port_table@2662",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_initialize_sfp_obj_dict@2681",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_remove_stale_transceiver_info@2731",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_run@2768",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_handle_port_change_event@2781",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_active_lanes_for_lport@2820",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_active_lanes_for_lport_with_invalid_input@2874",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_host_tx_status@2895",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_get_admin_status@2909",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_xcvr_api_none_in_task_worker@2925",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_enable_high_power_class@2963",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SffManagerTask_task_worker@3008",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state@3152",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_fast_reboot_enabled_for_lport@3171",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_fast_reboot_enabled_for_lport_default_namespace@3183",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_handle_port_change_event@3194",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_configured_freq@3234",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_configured_tx_power_from_db@3246",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask@3261",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_process_single_lport_tx_power_config_failure@3324",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_dp_deinit_low_pwr_deinits_and_disables_all_lanes@3401",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_run_stop@3453",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required@3478",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_uses_active_appsel_not_staged@3492",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_invalid_active_appsel@3513",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_decommission_required_missing_active_appsel_lane@3536",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map@3559",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_mixed_mode@3602",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_no_matching_app@3642",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_desired_app_map_uses_gearbox_lane_count@3661",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs@3690",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs_no_cfg_port_tbl@3737",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_sibling_port_configs_uses_gearbox_lane_count@3748",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_is_cmis_application_update_required@3809",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_interface_speed@3847",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_cmis_host_lanes_mask@3860",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_XcvrTableHelper_get_gearbox_line_lanes_dict@3952",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_get_host_lane_count@3995",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_gearbox_integration_end_to_end@4004",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_gearbox_caching_integration@4045",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_post_port_active_apsel_to_db_error_cases@4068",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_post_port_active_apsel_to_db@4092",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_test_is_timer_expired@4231",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker@4252",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_fastboot@4532",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_host_tx_ready_false_to_true@4672",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_task_worker_decommission@4885",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_get_dom_polling_from_config_db@4959",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_is_port_in_cmis_initialization_process@4994",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_beautify_dom_info_dict@5008",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_beautify_info_dict@5031",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomThermalInfoUpdateTask_task_worker@5050",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_handle_port_change_event@5079",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_run_stop@5104",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker@5124",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_vdm_failure@5190",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_stop_event_during_port_update_wait@5271",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_task_worker_vdm_freeze_conditions@5340",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_update_port_db_diagnostics_on_link_change@5480",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_handle_port_change_event@5528",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_task_run_stop@5574",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_retry_eeprom_reading@5597",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_mapping_event_from_change_event@5630",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport@5653",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport_invalid_asic@5670",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_task_worker@5694",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_SfpStateUpdateTask_on_add_logical_port@5792",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_insert_events@5875",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_remove_events@5887",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_presence@5902",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_replaceable@5921",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_info@5936",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_transceiver_vdm_supported@5962",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_vdm_action_and_confirm@5977",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_vdm_action_and_confirm_exception@5990",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_thresholds@5998",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_vdm_statistic_supported@6011",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_real_values_basic@6027",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_real_values_statistic@6043",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_vdm_flags@6059",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_firmware_info@6074",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_temperature@6087",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_sensor_real_value@6097",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_flags@6110",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_dom_thresholds@6123",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_status@6136",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_get_transceiver_status_flags@6149",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_pm@6163",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_transceiver_change_event@6178",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_sfp_type@6189",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_get_sfp_error_description@6200",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_flat_memory@6211",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_wrapper_is_flat_memory_no_xcvr_api@6225",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_check_port_in_range@6233",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_media_settings_parser_base_get_lane_values_str@6247",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_init_deinit_fastboot_enabled@6314",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_init_deinit_cold@6360",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_signal_handler@6399",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_update_loggers_log_level@6407",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_update_loggers_log_level_empty_threads@6452",
+        "verified": true,
+        "kind": "needs-new-test"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_file_from_platform_folder@6475",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_optical_si_file_from_hwsku_folder@6479",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_file_from_platform_folder@6483",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_load_media_settings_file_from_hwsku_folder@6487",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_CmisManagerTask_validate_frequency_and_grid@6498",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_xcvrd_utils_get_transceiver_presence@6508",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_transceiver_flat_memory@6521",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_is_transceiver_lpmode_on@6549",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_sfp_removal_from_dict@6591",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_check_port_update@6679",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_scheduling_uses_loop_start_time@6765",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DomInfoUpdateTask_dom_update_interval_parameter@6883",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestXcvrdScript.test_DaemonXcvrd_dom_update_interval_parameter@6910",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_match_optics_si_key_regex_error@6945",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_match_optics_si_key_fallback_string_match@6962",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_get_port_media_settings_speed_key_missing@6983",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_api_none@7003",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_vendor_name_none@7014",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_get_module_vendor_key_vendor_pn_none@7027",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_get_port_media_settings_no_values_with_empty_default@7041",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_load_optics_si_settings_no_file@7068",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_optics_si_present_empty_dict@7078",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "tests/test_xcvrd.py:TestOpticSiParser.test_optics_si_present_with_data@7092",
+        "verified": true,
+        "kind": "translate-directly"
+      },
+      {
+        "unit": "crate::daemon::tests::stringify_nul_trim_and_pybool_rendering",
+        "verified": true,
+        "kind": "needs-new-test",
+        "origin": "new-rust"
+      },
+      {
+        "unit": "crate::mock::tests::mock_table_roundtrip",
+        "verified": true,
+        "kind": "needs-new-test",
+        "origin": "new-rust"
+      },
+      {
+        "unit": "crate::mock::tests::mock_sfp_identity",
+        "verified": true,
+        "kind": "needs-new-test",
+        "origin": "new-rust"
+      },
+      {
+        "unit": "crate::hal::tests::change_event_maps_presence",
+        "verified": true,
+        "kind": "needs-new-test",
+        "origin": "new-rust"
+      },
+      {
+        "unit": "crate::db::tests::serde_json_to_statedb_fieldvalues",
+        "verified": true,
+        "kind": "needs-new-test",
+        "origin": "new-rust"
+      }
+    ],
+    "counts": {
+      "part_a": 308,
+      "part_b_python": 187,
+      "part_b_new_rust": 5
+    }
+  },
+  "skeleton": {
+    "root": "pipeline/crate/xcvrd-rs",
+    "seams": {
+      "hal": "src/hal.rs (traits Sfp+Chassis over platform-bridge)",
+      "db": "src/db.rs (traits Table+StateDb over swss-common)",
+      "mock": "src/mock.rs (#[cfg(test)] MockSfp/MockChassis/MockTable/MockStateDb)"
+    },
+    "modules": [
+      "src/cmis/cmis_manager_task.rs",
+      "src/cmis/mod.rs",
+      "src/daemon.rs",
+      "src/db.rs",
+      "src/dom/dom_mgr.rs",
+      "src/dom/mod.rs",
+      "src/dom/utilities/db/mod.rs",
+      "src/dom/utilities/db/utils.rs",
+      "src/dom/utilities/dom_sensor/db_utils.rs",
+      "src/dom/utilities/dom_sensor/mod.rs",
+      "src/dom/utilities/dom_sensor/utils.rs",
+      "src/dom/utilities/mod.rs",
+      "src/dom/utilities/status/db_utils.rs",
+      "src/dom/utilities/status/mod.rs",
+      "src/dom/utilities/status/utils.rs",
+      "src/dom/utilities/vdm/db_utils.rs",
+      "src/dom/utilities/vdm/mod.rs",
+      "src/dom/utilities/vdm/utils.rs",
+      "src/env.rs",
+      "src/hal.rs",
+      "src/lib.rs",
+      "src/main.rs",
+      "src/mock.rs",
+      "src/sff_mgr.rs",
+      "src/xcvrd.rs",
+      "src/xcvrd_utilities/common.rs",
+      "src/xcvrd_utilities/media_settings_parser.rs",
+      "src/xcvrd_utilities/mod.rs",
+      "src/xcvrd_utilities/optics_si_parser.rs",
+      "src/xcvrd_utilities/port_event_helper.rs",
+      "src/xcvrd_utilities/sfp_status_helper.rs",
+      "src/xcvrd_utilities/utils.rs",
+      "src/xcvrd_utilities/xcvr_table_helper.rs"
+    ],
+    "compiles": true,
+    "unit_tests_run": true,
+    "unit_test_summary": "cargo test: 20 passed (sanity+mock), 187 ignored (Part-B stubs), 0 failed"
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Skeleton (deploy smoke)",
+      "goal": "Rust crate compiles and the binary is injected into pmon and stays RUNNING under supervisor. Deploy-smoke gate only: the suite's clean-baseline requires TRANSCEIVER_INFO repopulation, so no pytest passes on a bare skeleton -- the harness special-cases M0 to check supervisor RUNNING.",
+      "status": "done-in-bootstrap",
+      "deps": [],
+      "e2e_tests": [],
+      "steps_part_a": [
+        "Implement xcvrd.py:DaemonXcvrd (verified @L890) -> crate::xcvrd",
+        "Implement xcvrd.py:init@1034 (verified @L394) -> crate::xcvrd",
+        "Implement xcvrd.py:run@1154 (verified @L706) -> crate::xcvrd",
+        "Implement xcvrd.py:deinit@1095 (verified @L1095) -> crate::xcvrd",
+        "Wire Rust-native target daemon.rs:run",
+        "Wire Rust-native target env.rs:open_platform/open_state_db/open_config_db",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (2) into crate::xcvrd::tests: test_DaemonXcvrd_run, test_DaemonXcvrd_dom_update_interval_parameter",
+        "Needs-new-test (Python-runtime-specific, author fresh Rust test): test_DaemonXcvrd_run_with_exception, test_DaemonXcvrd_signal_handler, test_DaemonXcvrd_update_loggers_log_level, test_DaemonXcvrd_update_loggers_log_level_empty_threads",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M1",
+      "title": "Presence + identity + liveness",
+      "goal": "On insertion read identity via the platform bridge and publish the full TRANSCEIVER_INFO row (vendor/model/OUI/serial/type/connector/cmis_rev/app_advert/is_replaceable...) and set TRANSCEIVER_STATUS_SW.status='1'; on removal clear/mark status='0' and restore on re-plug; recover EEPROM identity via the read-retry loop; purge stale TRANSCEIVER_INFO for absent modules at daemon init; and keep STATE_DB live (liveness guard).",
+      "status": "done-in-bootstrap",
+      "deps": [
+        "M0"
+      ],
+      "e2e_tests": [
+        "test_health",
+        "test_presence",
+        "test_stale_info",
+        "test_info_content",
+        "test_read_retry"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd.py:SfpStateUpdateTask@259 (verified @L259) -> crate::xcvrd",
+        "Implement xcvrd.py:post_port_sfp_info_to_db@178 (verified @L178) -> crate::xcvrd",
+        "Implement xcvrd.py:_wrapper_get_transceiver_info@114 (verified @L114) -> crate::xcvrd",
+        "Implement xcvrd.py:remove_stale_transceiver_info@999 (verified @L999) -> crate::xcvrd",
+        "Implement xcvrd_utilities/common.py:update_port_transceiver_status_table_sw@110 (verified @L110) -> crate::xcvrd_utilities::common",
+        "Implement region/branch xcvrd.py:change_event_loop@492 (Scoper anchor within enclosing fn)",
+        "Implement region/branch xcvrd.py:CMIS_info_branch@211 (Scoper anchor within enclosing fn)",
+        "Implement region/branch xcvrd.py:retry_eeprom_loop (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (18) into crate::xcvrd::tests: test_post_port_sfp_info_to_db, test_post_port_sfp_info_to_db_with_sfp_not_present, test_post_port_sfp_info_and_dom_thr_to_db_once, test_init_port_sfp_status_sw_tbl, test_init_port_sfp_status_sw_tbl_no_physical_port_found, test_remove_stale_transceiver_info, test_SfpStateUpdateTask_handle_port_change_event, test_SfpStateUpdateTask_task_run_stop, test_SfpStateUpdateTask_retry_eeprom_reading, test_SfpStateUpdateTask_mapping_event_from_change_event, test_SfpStateUpdateTask_task_worker, test_sfp_insert_events, test_sfp_remove_events, test_wrapper_is_replaceable, test_wrapper_get_transceiver_info, test_wrapper_get_transceiver_change_event, test_wrapper_get_sfp_type, test_wrapper_get_sfp_error_description",
+        "Translate-directly (1) into crate::xcvrd_utilities::common::tests: test_wrapper_get_presence",
+        "Needs-new-test (Python-runtime-specific, author fresh Rust test): test_SfpStateUpdateTask_task_run_with_exception",
+        "Add NEW Rust unit tests (bridge/mock seams): mock_sfp_identity_to_info_row, stringify_nul_trim_and_pybool_rendering, status_sw_init_ready_transitions",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "DOM sensors + interaction trace",
+      "goal": "Run the periodic DOM poll loop (DomInfoUpdateTask) to read live module monitors and publish TRANSCEIVER_DOM_SENSOR (temp/voltage/txN-rxN power+bias, units stripped) and cache TRANSCEIVER_DOM_THRESHOLD at insert; stamp last_update_time in the exact UTC strftime; and exercise real EEPROM reads so the emulator Monitor interaction-trace shows the expected cadence.",
+      "status": "todo",
+      "deps": [
+        "M1"
+      ],
+      "e2e_tests": [
+        "test_dom",
+        "test_last_update_time",
+        "test_interaction_trace"
+      ],
+      "steps_part_a": [
+        "Implement dom/dom_mgr.py:DomInfoUpdateTask@141 (verified @L141) -> crate::dom::dom_mgr",
+        "Implement dom/utilities/dom_sensor/db_utils.py:post_port_dom_sensor_info_to_db@40 (verified @L40) -> crate::dom::utilities::dom_sensor::db_utils",
+        "Implement dom/dom_mgr.py:poll@356 (verified @L419) -> crate::dom::dom_mgr",
+        "Implement dom/utilities/dom_sensor/db_utils.py:post_port_dom_thresholds_to_db@107 (verified @L107) -> crate::dom::utilities::dom_sensor::db_utils",
+        "Implement dom/utilities/db/utils.py:get_current_time@161 (verified @L161) -> crate::dom::utilities::db::utils",
+        "Implement dom/utilities/db/utils.py:last_update_time@53 (verified @L53) -> crate::dom::utilities::db::utils",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (7) into crate::dom::dom_mgr::tests: test_DomInfoUpdateTask_handle_port_change_event, test_DomInfoUpdateTask_task_run_stop, test_DomInfoUpdateTask_task_worker, test_DomInfoUpdateTask_task_worker_stop_event_during_port_update_wait, test_DomInfoUpdateTask_check_port_update, test_DomInfoUpdateTask_scheduling_uses_loop_start_time, test_DomInfoUpdateTask_dom_update_interval_parameter",
+        "Translate-directly (2) into crate::dom::utilities::db::utils::tests: test_beautify_dom_info_dict, test_beautify_info_dict",
+        "Translate-directly (6) into crate::dom::utilities::dom_sensor::db_utils::tests: test_post_port_dom_sensor_info_to_db, test_post_port_dom_temperature_info_to_db, test_post_port_dom_thresholds_to_db, test_get_transceiver_dom_temperature, test_get_transceiver_dom_sensor_real_value, test_get_transceiver_dom_thresholds",
+        "Needs-new-test (Python-runtime-specific, author fresh Rust test): test_DomInfoUpdateTask_task_run_with_exception",
+        "Add NEW Rust unit tests (bridge/mock seams): dom_sensor_real_values_to_db_row, last_update_time_strftime_format",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Rich status + DOM/status flags",
+      "goal": "During the DOM poll publish the rich TRANSCEIVER_STATUS row (module_state, DP1..8State, config/dpinit/dpdeinit per host-lane, txN/rxN status) and the latched TRANSCEIVER_DOM_FLAG and TRANSCEIVER_STATUS_FLAG tables with their CHANGE_COUNT/SET_TIME/CLEAR_TIME metadata trio (count init 0, times 'never', updated only on value change); re-capture flags off each poll so a link flap re-reads the flag tables.",
+      "status": "todo",
+      "deps": [
+        "M2"
+      ],
+      "e2e_tests": [
+        "test_transceiver_status",
+        "test_status_flag",
+        "test_dom_flag_meta",
+        "test_link_change_flags"
+      ],
+      "steps_part_a": [
+        "Implement dom/utilities/status/db_utils.py:post_port_transceiver_hw_status_to_db@21 (verified @L21) -> crate::dom::utilities::status::db_utils",
+        "Implement dom/utilities/status/db_utils.py:post_port_transceiver_hw_status_flags_to_db@41 (verified @L41) -> crate::dom::utilities::status::db_utils",
+        "Implement dom/utilities/dom_sensor/db_utils.py:post_port_dom_flags_to_db@53 (verified @L53) -> crate::dom::utilities::dom_sensor::db_utils",
+        "Implement dom/utilities/db/utils.py:_update_flag_metadata_tables@107 (verified @L107) -> crate::dom::utilities::db::utils",
+        "Implement dom/dom_mgr.py:poll@368 (verified @L419) -> crate::dom::dom_mgr",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (1) into crate::dom::utilities::db::utils::tests: test_update_flag_metadata_tables",
+        "Translate-directly (2) into crate::dom::utilities::dom_sensor::db_utils::tests: test_post_port_dom_flags_to_db, test_get_transceiver_dom_flags",
+        "Translate-directly (4) into crate::dom::utilities::status::db_utils::tests: test_post_port_transceiver_hw_status_to_db, test_post_port_transceiver_hw_status_flags_to_db, test_get_transceiver_status, test_get_transceiver_status_flags",
+        "Translate-directly (1) into crate::xcvrd::tests: test_update_port_db_diagnostics_on_link_change",
+        "Add NEW Rust unit tests (bridge/mock seams): flag_metadata_first_write_inits_count_set_clear_time, hw_status_flags_projection",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Status_SW errors + removal teardown",
+      "goal": "Decode injected change-event error bitmaps via sfp_status_helper into TRANSCEIVER_STATUS_SW.error (blocking error removes the DOM tables but keeps INFO; non-blocking keeps DOM; plug-in recovery clears); and on physical removal delete the full hardware-table set (INFO, DOM_SENSOR, DOM_FLAG+trio, STATUS, STATUS_FLAG+trio, FIRMWARE_INFO, PM, VDM*) while preserving TRANSCEIVER_STATUS_SW updated to status='0'.",
+      "status": "todo",
+      "deps": [
+        "M3"
+      ],
+      "e2e_tests": [
+        "test_status_error",
+        "test_removal_tables"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db@338 (verified @L338) -> crate::xcvrd_utilities::common",
+        "Implement region/branch xcvrd.py:change_event_error_branch@622-666 (Scoper anchor within enclosing fn)",
+        "Implement region/branch xcvrd.py:removed_branch@585-620 (Scoper anchor within enclosing fn)",
+        "Wire Rust-native target xcvrd_utilities/sfp_status_helper.py",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (1) into crate::xcvrd_utilities::common::tests: test_del_port_sfp_dom_info_from_db",
+        "Translate-directly (2) into crate::xcvrd_utilities::sfp_status_helper::tests: test_detect_port_in_error_status, test_is_error_sfp_status",
+        "Add NEW Rust unit tests (bridge/mock seams): blocking_error_suppresses_status_sw_write, removal_deletes_info_and_dom_rows",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "CMIS datapath state machine",
+      "goal": "Run CmisManagerTask's ~1s datapath state machine and write TRANSCEIVER_STATUS_SW.cmis_state through every transition (INSERTED -> ... -> READY, or FAILED after CMIS_MAX_RETRIES); tear down and re-provision the datapath on reconfiguration; and short-circuit flat-memory modules straight to READY.",
+      "status": "todo",
+      "deps": [
+        "M4"
+      ],
+      "e2e_tests": [
+        "test_cmis_state_progression",
+        "test_cmis_datapath",
+        "test_cmis_failed",
+        "test_cmis_reconfig",
+        "test_flat_memory"
+      ],
+      "steps_part_a": [
+        "Implement cmis/cmis_manager_task.py:CmisManagerTask@41 (verified @L41) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:update_port_transceiver_status_table_sw_cmis_state@90 (verified @L90) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:process_cmis_state_machine (verified @L1066) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:process_single_lport@1256 (verified @L1256) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:CMIS_MAX_RETRIES (verified @L43) -> crate::cmis::cmis_manager_task",
+        "Implement region/branch xcvrd_utilities/common.py:CMIS_states@23-39 (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (6) into crate::cmis::cmis_manager_task::tests: test_CmisManagerTask_update_port_transceiver_status_table_sw_cmis_state, test_CmisManagerTask_handle_port_change_event, test_CmisManagerTask_dp_deinit_low_pwr_deinits_and_disables_all_lanes, test_CmisManagerTask_task_run_stop, test_CmisManagerTask_test_is_timer_expired, test_CmisManagerTask_task_worker",
+        "Translate-directly (2) into crate::xcvrd_utilities::common::tests: test_is_cmis_api, test_get_cmis_state_from_state_db",
+        "Needs-new-test (Python-runtime-specific, author fresh Rust test): test_CmisManagerTask_task_run_with_exception, test_CmisManagerTask_get_xcvr_api_exception",
+        "Add NEW Rust unit tests (bridge/mock seams): cmis_state_machine_progression_scripted_sfp, get_cmis_state_from_state_db_roundtrip",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "App-select / lane-count / host_tx_ready",
+      "goal": "Compute the desired application map and host/media lane masks, drive app-select during CMIS bring-up, react to host_tx_ready, honor the forced-Tx-disabled path, and publish TRANSCEIVER_INFO.host_lane_count/media_lane_count and active_apsel_hostlane1..8.",
+      "status": "todo",
+      "deps": [
+        "M5"
+      ],
+      "e2e_tests": [
+        "test_app_select",
+        "test_host_tx_ready",
+        "test_cmis_forced_tx"
+      ],
+      "steps_part_a": [
+        "Implement cmis/cmis_manager_task.py:get_desired_app_map@457 (verified @L457) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:get_cmis_host_lanes_mask@238-315 (verified @L238) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:post_port_active_apsel_to_db@756 (verified @L756) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:host_tx_ready (verified @L136) -> crate::cmis::cmis_manager_task",
+        "Implement cmis/cmis_manager_task.py:forced_tx_disabled (verified @L129) -> crate::cmis::cmis_manager_task",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (21) into crate::cmis::cmis_manager_task::tests: test_CmisManagerTask_process_single_lport_invalid_host_lanes_mask, test_CmisManagerTask_is_decommission_required, test_CmisManagerTask_is_decommission_required_uses_active_appsel_not_staged, test_CmisManagerTask_is_decommission_required_invalid_active_appsel, test_CmisManagerTask_is_decommission_required_missing_active_appsel_lane, test_CmisManagerTask_get_desired_app_map, test_CmisManagerTask_get_desired_app_map_mixed_mode, test_CmisManagerTask_get_desired_app_map_no_matching_app, test_CmisManagerTask_get_desired_app_map_uses_gearbox_lane_count, test_CmisManagerTask_get_sibling_port_configs, test_CmisManagerTask_get_sibling_port_configs_no_cfg_port_tbl, test_CmisManagerTask_get_sibling_port_configs_uses_gearbox_lane_count, test_CmisManagerTask_is_cmis_application_update_required, test_CmisManagerTask_get_cmis_host_lanes_mask, test_CmisManagerTask_get_host_lane_count, test_CmisManagerTask_gearbox_integration_end_to_end, test_CmisManagerTask_gearbox_caching_integration, test_CmisManagerTask_post_port_active_apsel_to_db_error_cases, test_CmisManagerTask_post_port_active_apsel_to_db, test_CmisManagerTask_task_worker_host_tx_ready_false_to_true, test_CmisManagerTask_task_worker_decommission",
+        "Translate-directly (1) into crate::xcvrd_utilities::xcvr_table_helper::tests: test_XcvrTableHelper_get_gearbox_line_lanes_dict",
+        "Add NEW Rust unit tests (bridge/mock seams): desired_app_map_table_driven, host_tx_ready_false_to_true_triggers_reinit",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "lpmode / reset control",
+      "goal": "Handle sfputil/daemon lpmode and reset: drive the CMIS ModuleGlobalControls (and SFF low-power) writes at 00h:26, reflect module low-power/reset state in the module state machine, and skip the VDM-statistic freeze while a module is in low-power mode.",
+      "status": "todo",
+      "deps": [
+        "M6"
+      ],
+      "e2e_tests": [
+        "test_lpmode_reset",
+        "test_daemon_control",
+        "test_dom_lpmode"
+      ],
+      "steps_part_a": [
+        "Implement region/branch xcvrd_utilities/utils.py:XCVRDUtils.lpmode (Scoper anchor within enclosing fn)",
+        "Implement region/branch cmis/cmis_manager_task.py:ModuleGlobalControls (Scoper anchor within enclosing fn)",
+        "Implement region/branch dom/utilities/vdm/utils.py:freeze_skip_in_lpmode (Scoper anchor within enclosing fn)",
+        "Wire Rust-native target hal.rs:set_lpmode/reset",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (3) into crate::xcvrd_utilities::utils::tests: test_xcvrd_utils_get_transceiver_presence, test_is_transceiver_flat_memory, test_is_transceiver_lpmode_on",
+        "Add NEW Rust unit tests (bridge/mock seams): set_lpmode_via_mock_sfp, is_transceiver_lpmode_on_reads_flat_memory",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M8",
+      "title": "VDM real/threshold/flags",
+      "goal": "Publish TRANSCEIVER_VDM_REAL_VALUE and per-type {HALARM,LALARM,HWARN,LWARN}_THRESHOLD and _FLAG tables (each flag with its metadata trio) via the VDM freeze/unfreeze cycle, set TRANSCEIVER_INFO.vdm_supported, and expose the min/max/avg VDM-statistic observables.",
+      "status": "todo",
+      "deps": [
+        "M7"
+      ],
+      "e2e_tests": [
+        "test_vdm",
+        "test_vdm_statistic"
+      ],
+      "steps_part_a": [
+        "Implement dom/utilities/vdm/db_utils.py:post_port_vdm_real_values_from_dict_to_db@25 (verified @L25) -> crate::dom::utilities::vdm::db_utils",
+        "Implement dom/utilities/vdm/db_utils.py:post_port_vdm_thresholds_to_db@62 (verified @L62) -> crate::dom::utilities::vdm::db_utils",
+        "Implement dom/utilities/vdm/db_utils.py:post_port_vdm_flags_to_db@58 (verified @L58) -> crate::dom::utilities::vdm::db_utils",
+        "Implement dom/utilities/vdm/utils.py:freeze (verified @L60) -> crate::dom::utilities::vdm::utils",
+        "Implement region/branch dom/dom_mgr.py:vdm_poll@381-417 (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (2) into crate::dom::dom_mgr::tests: test_DomInfoUpdateTask_task_worker_vdm_failure, test_DomInfoUpdateTask_task_worker_vdm_freeze_conditions",
+        "Translate-directly (10) into crate::dom::utilities::vdm::db_utils::tests: test_post_port_vdm_thresholds_to_db, test_post_port_vdm_real_values_from_dict_to_db, test_wrapper_is_transceiver_vdm_supported, test_vdm_action_and_confirm, test_vdm_action_and_confirm_exception, test_get_vdm_thresholds, test_is_vdm_statistic_supported, test_get_vdm_real_values_basic, test_get_vdm_real_values_statistic, test_get_vdm_flags",
+        "Add NEW Rust unit tests (bridge/mock seams): vdm_thresholds_to_db_rows, vdm_freeze_skipped_in_lpmode",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M9",
+      "title": "Coherent PM + firmware info",
+      "goal": "For coherent modules publish TRANSCEIVER_PM (prefec_ber/cd/dgd/osnr/tx-rx power averages) via the VDM-freeze path and drive coherent tx-power/laser-frequency tuning (TRANSCEIVER_INFO.supported_max_laser_freq); and publish TRANSCEIVER_FIRMWARE_INFO (active/inactive firmware) from the DOM poll.",
+      "status": "todo",
+      "deps": [
+        "M8"
+      ],
+      "e2e_tests": [
+        "test_pm",
+        "test_coherent_tuning",
+        "test_firmware_info"
+      ],
+      "steps_part_a": [
+        "Implement dom/dom_mgr.py:post_port_pm_info_to_db@238 (verified @L238) -> crate::dom::dom_mgr",
+        "Implement dom/dom_mgr.py:post_port_sfp_firmware_info_to_db@203 (verified @L203) -> crate::dom::dom_mgr",
+        "Implement region/branch cmis/cmis_manager_task.py:coherent_tuning@688-756 (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (4) into crate::cmis::cmis_manager_task::tests: test_CmisManagerTask_get_configured_freq, test_CmisManagerTask_get_configured_tx_power_from_db, test_CmisManagerTask_process_single_lport_tx_power_config_failure, test_CmisManagerTask_validate_frequency_and_grid",
+        "Translate-directly (3) into crate::dom::dom_mgr::tests: test_post_port_sfp_firmware_info_to_db, test_post_port_sfp_firmware_info_to_db_lport_list_None, test_post_port_pm_info_to_db",
+        "Translate-directly (1) into crate::xcvrd::tests: test_wrapper_get_transceiver_firmware_info",
+        "Add NEW Rust unit tests (bridge/mock seams): pm_info_to_db_projection, laser_freq_grid_validation_cases",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "Media / optics-SI settings",
+      "goal": "Apply NPU/ASIC-side media SerDes settings from media_settings.json and optics_si_settings.json to APPL_DB PORT_TABLE via notify_media_setting, and drive the STATE_DB PORT_TABLE.NPU_SI_SETTINGS_SYNC_STATUS lifecycle.",
+      "status": "todo",
+      "deps": [
+        "M6"
+      ],
+      "e2e_tests": [
+        "test_media_settings",
+        "test_optics_si"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd_utilities/media_settings_parser.py:notify_media_setting (verified @L554) -> crate::xcvrd_utilities::media_settings_parser",
+        "Implement xcvrd.py:notify_media_setting@348,583 (verified @L348) -> crate::xcvrd",
+        "Implement xcvrd.py:NPU_SI_SETTINGS_SYNC_STATUS@805 (verified @L799) -> crate::xcvrd",
+        "Wire Rust-native target xcvrd_utilities/optics_si_parser.py",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (1) into crate::xcvrd_utilities::common::tests: test_is_copper_exception",
+        "Translate-directly (22) into crate::xcvrd_utilities::media_settings_parser::tests: test_load_media_settings_missing_file, test_get_media_settings_key, test_get_speed_lane_count_and_subport, test_is_si_per_speed_supported, test_get_media_settings_value, test_notify_media_setting, test_notify_media_setting_with_comma, test_notify_media_setting_custom_only, test_notify_media_setting_empty_serialized_payload, test_notify_media_setting_mixed_settings, test_notify_media_setting_with_gearbox, test_custom_media_settings_to_db_value, test_custom_media_settings_get_lane_values, test_custom_media_settings_is_port_selected, test_get_custom_media_settings_value, test_custom_media_settings_mixed_with_port_and_global, test_custom_media_settings_medium_lane_key, test_custom_media_settings_parser_empty_or_invalid_settings, test_media_settings_to_db_value, test_media_settings_parser_base_get_lane_values_str, test_load_media_settings_file_from_platform_folder, test_load_media_settings_file_from_hwsku_folder",
+        "Translate-directly (18) into crate::xcvrd_utilities::optics_si_parser::tests: test_load_optical_si_settings_missing_file, test_fetch_optics_si_setting, test_fetch_optics_si_setting_with_comma, test_fetch_optics_si_setting_with_port, test_fetch_optics_si_setting_negative, test_get_module_vendor_key, test_load_optical_si_file_from_platform_folder, test_load_optical_si_file_from_hwsku_folder, test_match_optics_si_key_regex_error, test_match_optics_si_key_fallback_string_match, test_get_port_media_settings_speed_key_missing, test_get_module_vendor_key_api_none, test_get_module_vendor_key_vendor_name_none, test_get_module_vendor_key_vendor_pn_none, test_get_port_media_settings_no_values_with_empty_default, test_load_optics_si_settings_no_file, test_optics_si_present_empty_dict, test_optics_si_present_with_data",
+        "Add NEW Rust unit tests (bridge/mock seams): media_settings_parse_and_notify_from_fixture, optics_si_key_regex_and_fallback",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "SFF (non-CMIS) control",
+      "goal": "Run SffManagerTask for non-CMIS SFF-8636/8472 modules: deterministic link bring-up driving tx_disable, low-power-disable, and high-power-class enable through APPL_DB PORT_TABLE and the platform module writes.",
+      "status": "todo",
+      "deps": [
+        "M3"
+      ],
+      "e2e_tests": [
+        "test_sff_control",
+        "test_sff8636"
+      ],
+      "steps_part_a": [
+        "Implement sff_mgr.py:SffManagerTask@45 (verified @L45) -> crate::sff_mgr",
+        "Implement sff_mgr.py:SffLoggerForPortUpdateEvent (verified @L23) -> crate::sff_mgr",
+        "Implement region/branch xcvrd_utilities/xcvr_table_helper.py:APPL_DB_PORT_TABLE@100 (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (8) into crate::sff_mgr::tests: test_SffManagerTask_handle_port_change_event, test_SffManagerTask_get_active_lanes_for_lport, test_SffManagerTask_get_active_lanes_for_lport_with_invalid_input, test_SffManagerTask_get_host_tx_status, test_SffManagerTask_get_admin_status, test_SffManagerTask_xcvr_api_none_in_task_worker, test_SffManagerTask_enable_high_power_class, test_SffManagerTask_task_worker",
+        "Needs-new-test (Python-runtime-specific, author fresh Rust test): test_SffManagerTask_task_run_with_exception",
+        "Add NEW Rust unit tests (bridge/mock seams): sff_manager_host_tx_disable_enable_sequence",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "DOM gating / polling knob",
+      "goal": "Gate DOM/status/VDM updates while a port is in CMIS datapath initialization, and honor the CONFIG_DB dom_polling=disabled knob that halts DOM updates for a port.",
+      "status": "todo",
+      "deps": [
+        "M5"
+      ],
+      "e2e_tests": [
+        "test_dom_gating",
+        "test_dom_polling"
+      ],
+      "steps_part_a": [
+        "Implement dom/dom_mgr.py:is_port_in_cmis_initialization_process@182 (verified @L182) -> crate::dom::dom_mgr",
+        "Implement dom/dom_mgr.py:get_dom_polling_from_config_db@76 (verified @L76) -> crate::dom::dom_mgr",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (2) into crate::dom::dom_mgr::tests: test_DomInfoUpdateTask_get_dom_polling_from_config_db, test_DomInfoUpdateTask_is_port_in_cmis_initialization_process",
+        "Add NEW Rust unit tests (bridge/mock seams): dom_polling_disabled_skips_write, port_in_cmis_init_gates_dom",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M13",
+      "title": "Warm / fast-reboot lifecycle",
+      "goal": "Detect warm-restart/fast-reboot state and preserve live datapaths across re-init: skip the CMIS datapath re-provision on fast reboot, skip media-settings on warm reboot, and take the deinit table-teardown skip so an active datapath is not disrupted.",
+      "status": "todo",
+      "deps": [
+        "M10"
+      ],
+      "e2e_tests": [
+        "test_warm_reboot",
+        "test_fast_reboot_dp_skip"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd_utilities/common.py:is_syncd_warm_restore_complete@148-186 (verified @L156) -> crate::xcvrd_utilities::common",
+        "Implement xcvrd_utilities/common.py:is_fast_reboot_enabled (verified @L148) -> crate::xcvrd_utilities::common",
+        "Implement region/branch xcvrd.py:deinit_skip@1144 (Scoper anchor within enclosing fn)",
+        "Implement region/branch cmis/cmis_manager_task.py:fast_reboot_dp_skip (Scoper anchor within enclosing fn)",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (3) into crate::cmis::cmis_manager_task::tests: test_CmisManagerTask_is_fast_reboot_enabled_for_lport, test_CmisManagerTask_is_fast_reboot_enabled_for_lport_default_namespace, test_CmisManagerTask_task_worker_fastboot",
+        "Translate-directly (4) into crate::xcvrd::tests: test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport, test_SfpStateUpdateTask_is_warm_fast_reboot_for_lport_invalid_asic, test_DaemonXcvrd_init_deinit_fastboot_enabled, test_DaemonXcvrd_init_deinit_cold",
+        "Translate-directly (3) into crate::xcvrd_utilities::common::tests: test_is_syncd_warm_restore_complete_valid_cases, test_is_syncd_warm_restore_complete_invalid_restore_count, test_is_syncd_warm_restore_complete_with_namespace",
+        "Add NEW Rust unit tests (bridge/mock seams): warm_restore_complete_gates_deinit, fast_reboot_skips_dp_deinit",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M14",
+      "title": "Multiport + logical-port isolation",
+      "goal": "Handle concurrent presence/DOM/status/CMIS/VDM/PM across many ports with per-module isolation (no cross-talk via sfp_obj_dict/per-port loops), and handle CONFIG_DB logical-port add/remove with full per-port table teardown and repopulation.",
+      "status": "todo",
+      "deps": [
+        "M9"
+      ],
+      "e2e_tests": [
+        "test_multiport",
+        "test_logical_port"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd.py:sfp_obj_dict (verified @L990) -> crate::xcvrd",
+        "Implement xcvrd_utilities/port_event_helper.py:PortMapping (verified @L212) -> crate::xcvrd_utilities::port_event_helper",
+        "Implement xcvrd_utilities/port_event_helper.py:PortChangeObserver (verified @L46) -> crate::xcvrd_utilities::port_event_helper",
+        "Implement xcvrd_utilities/port_event_helper.py:get_port_mapping@346 (verified @L346) -> crate::xcvrd_utilities::port_event_helper",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Translate-directly (1) into crate::dom::dom_mgr::tests: test_DomThermalInfoUpdateTask_task_worker",
+        "Translate-directly (8) into crate::xcvrd::tests: test_DaemonXcvrd_wait_for_port_config_done, test_DaemonXcvrd_initialize_port_init_control_fields_in_port_table, test_initialize_sfp_obj_dict, test_SfpStateUpdateTask_on_add_logical_port, test_wrapper_get_transceiver_pm, test_wrapper_is_flat_memory, test_wrapper_is_flat_memory_no_xcvr_api, test_sfp_removal_from_dict",
+        "Translate-directly (2) into crate::xcvrd_utilities::common::tests: test_get_interface_speed, test_check_port_in_range",
+        "Translate-directly (4) into crate::xcvrd_utilities::port_event_helper::tests: test_handle_front_panel_filter, test_handle_port_update_event, test_handle_port_config_change, test_get_port_mapping",
+        "Translate-directly (2) into crate::xcvrd_utilities::xcvr_table_helper::tests: test_get_state_db_port_table_val_by_key, test_is_npu_si_settings_update_required",
+        "Add NEW Rust unit tests (bridge/mock seams): port_config_change_updates_mapping, gearbox_line_lanes_dict_from_state_db",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    },
+    {
+      "id": "M15",
+      "title": "Golden conformance (full suite)",
+      "goal": "Reproduce the reference STATE_DB projection of {INFO, STATUS_SW, DOM_THRESHOLD, STATUS, DOM_FLAG} for every golden scenario and pass the ENTIRE suite with no marker filter (all slow tests), re-running every prior milestone's e2e modules.",
+      "status": "todo",
+      "deps": [
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14"
+      ],
+      "e2e_tests": [
+        "test_golden"
+      ],
+      "steps_part_a": [
+        "Implement xcvrd.py:DaemonXcvrd (verified @L890) -> crate::xcvrd",
+        "Wire Rust-native target golden/steady_state/Ethernet100.json",
+        "Wire Rust-native target golden/activated_datapath/Ethernet4.json",
+        "Wire Rust-native target golden/dom_flag/Ethernet4.json",
+        "Keep it compilable: `bash tools/build_check.sh` green after each step."
+      ],
+      "steps_part_b": [
+        "Add NEW Rust unit tests (bridge/mock seams): full_ported_suite_un_ignored, golden_statedb_projection_diff_zero",
+        "Un-ignore the ported `#[ignore]` stubs as behaviors land; `bash tools/unit_test.sh` green."
+      ]
+    }
+  ]
+}

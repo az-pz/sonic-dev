@@ -1,0 +1,45 @@
+[package]
+name = "xcvrd-rs"
+version = "0.1.0"
+edition = "2021"
+
+# The Rust xcvrd daemon that replaces the Python xcvrd under the pmon supervisor. Both
+# environment bindings are wired in as ordinary dependencies:
+#   - platform-bridge : the Python sonic_platform HAL (xcvr-emu) via PyO3
+#   - swss-common     : STATE_DB (Redis) via the official sonic-net Rust bindings
+#
+# src/main.rs is the daemon entrypoint (parses the command-line args, then runs the serve
+# loop under the supervisor). src/env.rs opens the platform / STATE_DB / CONFIG_DB handles.
+# examples/ are runnable demonstrations of each binding and the combined
+# read-transceiver-then-publish pattern; they are built/run with `cargo build --examples`
+# and are NOT part of the deployed daemon.
+
+[lib]
+name = "xcvrd_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xcvrd-rs"
+path = "src/main.rs"
+
+[dependencies]
+platform-bridge = { path = "../platform-bridge" }
+# Pinned for reproducibility; keep in sync with tools/dut/Dockerfile.build's
+# SWSS_COMMON_REV (that clone supplies the c-api headers bindgen parses).
+swss-common = { git = "https://github.com/sonic-net/sonic-swss-common", rev = "7faca59cd30367692a8c5406ad5d7c0b5341c7ef" }
+# preserve_order: serde_json objects keep Python dict insertion order, which the
+# media/optics-SI parsers depend on (first-key `is_si_per_speed_supported`, first
+# regex-match wins in `get_media_settings`, and the custom-SI `to_db_value` emits
+# attributes in insertion order).
+serde_json = { version = "1", features = ["preserve_order"] }
+# fancy-regex adds look-around support (used by production media_settings.json keys
+# and the `test_notify_media_setting` copper-exclusion fixture) that the std `regex`
+# crate rejects. Used through the `re_*` helpers in `xcvrd_utilities::common`.
+fancy-regex = "0.13"
+# Same pyo3 the platform-bridge links (unified to one crate in the graph). Used ONLY
+# to invoke the Python CMIS threshold decode directly and marshal it JSON-safely — the
+# platform-bridge's json.dumps->serde round-trip drops any DOM_THRESHOLD row whose
+# power fields decode to mw_to_dbm(0) = -inf (JSON cannot represent -Infinity). The
+# CMIS decode itself stays in Python; we only stringify non-finite floats before
+# marshalling. Keep the version in sync with platform-bridge/Cargo.toml.
+pyo3 = { version = "0.22", features = ["auto-initialize"] }

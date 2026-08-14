@@ -1,0 +1,389 @@
+{
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Skeleton (deploy smoke)",
+      "goal": "Rust crate compiles and the binary is injected into pmon and stays RUNNING under supervisor. Deploy-smoke gate only: the suite's clean-baseline requires TRANSCEIVER_INFO repopulation, so no pytest passes on a bare skeleton -- the harness special-cases M0 to check supervisor RUNNING.",
+      "test_modules": [],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:DaemonXcvrd",
+        "xcvrd.py:init@1034",
+        "xcvrd.py:run@1154",
+        "xcvrd.py:deinit@1095",
+        "daemon.rs:run",
+        "env.rs:open_platform/open_state_db/open_config_db"
+      ],
+      "deps": []
+    },
+    {
+      "id": "M1",
+      "title": "Presence + identity + liveness",
+      "goal": "On insertion read identity via the platform bridge and publish the full TRANSCEIVER_INFO row (vendor/model/OUI/serial/type/connector/cmis_rev/app_advert/is_replaceable...) and set TRANSCEIVER_STATUS_SW.status='1'; on removal clear/mark status='0' and restore on re-plug; recover EEPROM identity via the read-retry loop; purge stale TRANSCEIVER_INFO for absent modules at daemon init; and keep STATE_DB live (liveness guard).",
+      "test_modules": [
+        "test_health",
+        "test_presence",
+        "test_stale_info",
+        "test_info_content",
+        "test_read_retry"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:SfpStateUpdateTask@259",
+        "xcvrd.py:post_port_sfp_info_to_db@178",
+        "xcvrd.py:change_event_loop@492",
+        "xcvrd.py:CMIS_info_branch@211",
+        "xcvrd.py:_wrapper_get_transceiver_info@114",
+        "xcvrd.py:remove_stale_transceiver_info@999",
+        "xcvrd.py:retry_eeprom_loop",
+        "xcvrd_utilities/common.py:update_port_transceiver_status_table_sw@110"
+      ],
+      "deps": [
+        "M0"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "DOM sensors + interaction trace",
+      "goal": "Run the periodic DOM poll loop (DomInfoUpdateTask) to read live module monitors and publish TRANSCEIVER_DOM_SENSOR (temp/voltage/txN-rxN power+bias, units stripped) and cache TRANSCEIVER_DOM_THRESHOLD at insert; stamp last_update_time in the exact UTC strftime; and exercise real EEPROM reads so the emulator Monitor interaction-trace shows the expected cadence.",
+      "test_modules": [
+        "test_dom",
+        "test_last_update_time",
+        "test_interaction_trace"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/dom_mgr.py:DomInfoUpdateTask@141",
+        "dom/utilities/dom_sensor/db_utils.py:post_port_dom_sensor_info_to_db@40",
+        "dom/dom_mgr.py:poll@356",
+        "dom/utilities/dom_sensor/db_utils.py:post_port_dom_thresholds_to_db@107",
+        "dom/utilities/db/utils.py:get_current_time@161",
+        "dom/utilities/db/utils.py:last_update_time@53"
+      ],
+      "deps": [
+        "M1"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Rich status + DOM/status flags",
+      "goal": "During the DOM poll publish the rich TRANSCEIVER_STATUS row (module_state, DP1..8State, config/dpinit/dpdeinit per host-lane, txN/rxN status) and the latched TRANSCEIVER_DOM_FLAG and TRANSCEIVER_STATUS_FLAG tables with their CHANGE_COUNT/SET_TIME/CLEAR_TIME metadata trio (count init 0, times 'never', updated only on value change); re-capture flags off each poll so a link flap re-reads the flag tables.",
+      "test_modules": [
+        "test_transceiver_status",
+        "test_status_flag",
+        "test_dom_flag_meta",
+        "test_link_change_flags"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/utilities/status/db_utils.py:post_port_transceiver_hw_status_to_db@21",
+        "dom/utilities/status/db_utils.py:post_port_transceiver_hw_status_flags_to_db@41",
+        "dom/utilities/dom_sensor/db_utils.py:post_port_dom_flags_to_db@53",
+        "dom/utilities/db/utils.py:_update_flag_metadata_tables@107",
+        "dom/dom_mgr.py:poll@368"
+      ],
+      "deps": [
+        "M2"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Status_SW errors + removal teardown",
+      "goal": "Decode injected change-event error bitmaps via sfp_status_helper into TRANSCEIVER_STATUS_SW.error (blocking error removes the DOM tables but keeps INFO; non-blocking keeps DOM; plug-in recovery clears); and on physical removal delete the full hardware-table set (INFO, DOM_SENSOR, DOM_FLAG+trio, STATUS, STATUS_FLAG+trio, FIRMWARE_INFO, PM, VDM*) while preserving TRANSCEIVER_STATUS_SW updated to status='0'.",
+      "test_modules": [
+        "test_status_error",
+        "test_removal_tables"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:change_event_error_branch@622-666",
+        "xcvrd_utilities/sfp_status_helper.py",
+        "xcvrd.py:removed_branch@585-620",
+        "xcvrd_utilities/common.py:del_port_sfp_dom_info_from_db@338"
+      ],
+      "deps": [
+        "M3"
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "CMIS datapath state machine",
+      "goal": "Run CmisManagerTask's ~1s datapath state machine and write TRANSCEIVER_STATUS_SW.cmis_state through every transition (INSERTED -> ... -> READY, or FAILED after CMIS_MAX_RETRIES); tear down and re-provision the datapath on reconfiguration; and short-circuit flat-memory modules straight to READY.",
+      "test_modules": [
+        "test_cmis_state_progression",
+        "test_cmis_datapath",
+        "test_cmis_failed",
+        "test_cmis_reconfig",
+        "test_flat_memory"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "cmis/cmis_manager_task.py:CmisManagerTask@41",
+        "xcvrd_utilities/common.py:CMIS_states@23-39",
+        "cmis/cmis_manager_task.py:update_port_transceiver_status_table_sw_cmis_state@90",
+        "cmis/cmis_manager_task.py:process_cmis_state_machine",
+        "cmis/cmis_manager_task.py:process_single_lport@1256",
+        "cmis/cmis_manager_task.py:CMIS_MAX_RETRIES"
+      ],
+      "deps": [
+        "M4"
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "App-select / lane-count / host_tx_ready",
+      "goal": "Compute the desired application map and host/media lane masks, drive app-select during CMIS bring-up, react to host_tx_ready, honor the forced-Tx-disabled path, and publish TRANSCEIVER_INFO.host_lane_count/media_lane_count and active_apsel_hostlane1..8.",
+      "test_modules": [
+        "test_app_select",
+        "test_host_tx_ready",
+        "test_cmis_forced_tx"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "cmis/cmis_manager_task.py:get_desired_app_map@457",
+        "cmis/cmis_manager_task.py:get_cmis_host_lanes_mask@238-315",
+        "cmis/cmis_manager_task.py:post_port_active_apsel_to_db@756",
+        "cmis/cmis_manager_task.py:host_tx_ready",
+        "cmis/cmis_manager_task.py:forced_tx_disabled"
+      ],
+      "deps": [
+        "M5"
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "lpmode / reset control",
+      "goal": "Handle sfputil/daemon lpmode and reset: drive the CMIS ModuleGlobalControls (and SFF low-power) writes at 00h:26, reflect module low-power/reset state in the module state machine, and skip the VDM-statistic freeze while a module is in low-power mode.",
+      "test_modules": [
+        "test_lpmode_reset",
+        "test_daemon_control",
+        "test_dom_lpmode"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/utils.py:XCVRDUtils.lpmode",
+        "cmis/cmis_manager_task.py:ModuleGlobalControls",
+        "hal.rs:set_lpmode/reset",
+        "dom/utilities/vdm/utils.py:freeze_skip_in_lpmode"
+      ],
+      "deps": [
+        "M6"
+      ]
+    },
+    {
+      "id": "M8",
+      "title": "VDM real/threshold/flags",
+      "goal": "Publish TRANSCEIVER_VDM_REAL_VALUE and per-type {HALARM,LALARM,HWARN,LWARN}_THRESHOLD and _FLAG tables (each flag with its metadata trio) via the VDM freeze/unfreeze cycle, set TRANSCEIVER_INFO.vdm_supported, and expose the min/max/avg VDM-statistic observables.",
+      "test_modules": [
+        "test_vdm",
+        "test_vdm_statistic"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/utilities/vdm/db_utils.py:post_port_vdm_real_values_from_dict_to_db@25",
+        "dom/utilities/vdm/db_utils.py:post_port_vdm_thresholds_to_db@62",
+        "dom/utilities/vdm/db_utils.py:post_port_vdm_flags_to_db@58",
+        "dom/utilities/vdm/utils.py:freeze",
+        "dom/dom_mgr.py:vdm_poll@381-417"
+      ],
+      "deps": [
+        "M7"
+      ]
+    },
+    {
+      "id": "M9",
+      "title": "Coherent PM + firmware info",
+      "goal": "For coherent modules publish TRANSCEIVER_PM (prefec_ber/cd/dgd/osnr/tx-rx power averages) via the VDM-freeze path and drive coherent tx-power/laser-frequency tuning (TRANSCEIVER_INFO.supported_max_laser_freq); and publish TRANSCEIVER_FIRMWARE_INFO (active/inactive firmware) from the DOM poll.",
+      "test_modules": [
+        "test_pm",
+        "test_coherent_tuning",
+        "test_firmware_info"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/dom_mgr.py:post_port_pm_info_to_db@238",
+        "cmis/cmis_manager_task.py:coherent_tuning@688-756",
+        "dom/dom_mgr.py:post_port_sfp_firmware_info_to_db@203"
+      ],
+      "deps": [
+        "M8"
+      ]
+    },
+    {
+      "id": "M10",
+      "title": "Media / optics-SI settings",
+      "goal": "Apply NPU/ASIC-side media SerDes settings from media_settings.json and optics_si_settings.json to APPL_DB PORT_TABLE via notify_media_setting, and drive the STATE_DB PORT_TABLE.NPU_SI_SETTINGS_SYNC_STATUS lifecycle.",
+      "test_modules": [
+        "test_media_settings",
+        "test_optics_si"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/media_settings_parser.py:notify_media_setting",
+        "xcvrd.py:notify_media_setting@348,583",
+        "xcvrd_utilities/optics_si_parser.py",
+        "xcvrd.py:NPU_SI_SETTINGS_SYNC_STATUS@805"
+      ],
+      "deps": [
+        "M6"
+      ]
+    },
+    {
+      "id": "M11",
+      "title": "SFF (non-CMIS) control",
+      "goal": "Run SffManagerTask for non-CMIS SFF-8636/8472 modules: deterministic link bring-up driving tx_disable, low-power-disable, and high-power-class enable through APPL_DB PORT_TABLE and the platform module writes.",
+      "test_modules": [
+        "test_sff_control",
+        "test_sff8636"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "sff_mgr.py:SffManagerTask@45",
+        "sff_mgr.py:SffLoggerForPortUpdateEvent",
+        "xcvrd_utilities/xcvr_table_helper.py:APPL_DB_PORT_TABLE@100"
+      ],
+      "deps": [
+        "M3"
+      ]
+    },
+    {
+      "id": "M12",
+      "title": "DOM gating / polling knob",
+      "goal": "Gate DOM/status/VDM updates while a port is in CMIS datapath initialization, and honor the CONFIG_DB dom_polling=disabled knob that halts DOM updates for a port.",
+      "test_modules": [
+        "test_dom_gating",
+        "test_dom_polling"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "dom/dom_mgr.py:is_port_in_cmis_initialization_process@182",
+        "dom/dom_mgr.py:get_dom_polling_from_config_db@76"
+      ],
+      "deps": [
+        "M5"
+      ]
+    },
+    {
+      "id": "M13",
+      "title": "Warm / fast-reboot lifecycle",
+      "goal": "Detect warm-restart/fast-reboot state and preserve live datapaths across re-init: skip the CMIS datapath re-provision on fast reboot, skip media-settings on warm reboot, and take the deinit table-teardown skip so an active datapath is not disrupted.",
+      "test_modules": [
+        "test_warm_reboot",
+        "test_fast_reboot_dp_skip"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd_utilities/common.py:is_syncd_warm_restore_complete@148-186",
+        "xcvrd_utilities/common.py:is_fast_reboot_enabled",
+        "xcvrd.py:deinit_skip@1144",
+        "cmis/cmis_manager_task.py:fast_reboot_dp_skip"
+      ],
+      "deps": [
+        "M10"
+      ]
+    },
+    {
+      "id": "M14",
+      "title": "Multiport + logical-port isolation",
+      "goal": "Handle concurrent presence/DOM/status/CMIS/VDM/PM across many ports with per-module isolation (no cross-talk via sfp_obj_dict/per-port loops), and handle CONFIG_DB logical-port add/remove with full per-port table teardown and repopulation.",
+      "test_modules": [
+        "test_multiport",
+        "test_logical_port"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:sfp_obj_dict",
+        "xcvrd_utilities/port_event_helper.py:PortMapping",
+        "xcvrd_utilities/port_event_helper.py:PortChangeObserver",
+        "xcvrd_utilities/port_event_helper.py:get_port_mapping@346"
+      ],
+      "deps": [
+        "M9"
+      ]
+    },
+    {
+      "id": "M15",
+      "title": "Golden conformance (full suite)",
+      "goal": "Reproduce the reference STATE_DB projection of {INFO, STATUS_SW, DOM_THRESHOLD, STATUS, DOM_FLAG} for every golden scenario and pass the ENTIRE suite with no marker filter (all slow tests), re-running every prior milestone's e2e modules.",
+      "test_modules": [
+        "test_golden"
+      ],
+      "marker": "",
+      "origin": "scoper",
+      "unit_only": false,
+      "source_refs": [
+        "xcvrd.py:DaemonXcvrd",
+        "golden/steady_state/Ethernet100.json",
+        "golden/activated_datapath/Ethernet4.json",
+        "golden/dom_flag/Ethernet4.json"
+      ],
+      "deps": [
+        "M10",
+        "M11",
+        "M12",
+        "M13",
+        "M14"
+      ]
+    },
+    {
+      "id": "M16",
+      "title": "Retry deferred tests",
+      "goal": "Fix and re-enable the previously-skipped e2e tests so they pass: [\"test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture\"]. Implement the daemon functionality they exercise; they have been re-enabled in the cumulative gate for this milestone. If they still cannot pass, they will be skipped permanently.",
+      "test_modules": [],
+      "marker": "",
+      "origin": "retry",
+      "unit_only": false,
+      "source_refs": [
+        "test_link_change_flags.py::test_link_change_triggers_fast_flag_recapture"
+      ],
+      "deps": [
+        "M15"
+      ]
+    },
+     {
+      "id": "M17",
+      "title": "Finalize and Clean up",
+      "goal": "Translate the same arguments as the Python implementation in Rust, it should accept the same exact input arguments for initialization. Finalize the Rust translation and clean up code and extra comments about the milestones.",
+      "test_modules": [],
+      "marker": "",
+      "origin": "user",
+      "unit_only": false,
+      "source_refs": [
+        "all"
+      ],
+      "deps": [
+        "M16"
+      ]
+    }
+  ]
+}
