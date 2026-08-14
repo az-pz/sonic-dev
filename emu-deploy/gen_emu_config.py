@@ -131,6 +131,18 @@ SPECIAL = {
 if os.environ.get("EMU_NO_SPECIAL") == "1":
     SPECIAL = {}
 
+# Indices with NO transceiver, i.e. ports the DUT does not use. On the vms-kvm-t0
+# vlab-01 minigraph only 28 of the 32 physical ports are configured: Ethernet4-96
+# are Vlan1000 members and Ethernet112-124 are the T1 uplinks, while Ethernet0,
+# Ethernet100, Ethernet104 and Ethernet108 have no CONFIG_DB PORT entry at all
+# (no admin_status). Presenting modules there made the emulator disagree with the
+# testbed: the transceiver inventory (dut_info/vlab-01.json) and the connection
+# graph both cover exactly those 28 in-use ports, so the 4 extra modules showed up
+# as "Present" where the eeprom suite's absent-port check expects "Not present".
+# Leaving them unplugged makes the emulator mirror the topology it runs on.
+# Port index mapping is Ethernet(4*idx): 0 -> Ethernet0, 25 -> Ethernet100, etc.
+ABSENT = {0, 25, 26, 27}
+
 # Emit the special indices for consumers that must stay in sync with this table
 # (inject_conn_graph). Done AFTER the EMU_NO_SPECIAL override so a uniform
 # testbed correctly reports "no special modules". Exits before writing any file.
@@ -140,10 +152,18 @@ if LIST_SPECIAL:
 
 with open(out, "w") as f:
     f.write("transceivers:\n")
+    # idx0 always defines the &defaults anchor the other entries alias, so it is
+    # emitted even when it carries no module -- only its `present` flag changes.
     f.write("  0:\n")
-    f.write("    present: true\n")
+    f.write("    present: {}\n".format("false" if 0 in ABSENT else "true"))
     f.write(defaults_block(anchor=True))
     for i in range(1, N):
+        if i in ABSENT:
+            f.write("  # idx{}: no transceiver (port not used by the DUT topology)\n".format(i))
+            f.write("  {}:\n".format(i))
+            f.write("    present: false\n")
+            f.write("    defaults: *defaults\n")
+            continue
         special = SPECIAL.get(i)
         if special is None:
             f.write("  {}:\n".format(i))

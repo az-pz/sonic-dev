@@ -1,5 +1,7 @@
 {
   "defaults": {
-    "cmis_revision": "5.2"
+    "cmis_revision": "5.2",
+    "eeprom_dump_timeout_sec": 5,
+    "vdm_supported": false
   }
 }
