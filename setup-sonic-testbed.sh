@@ -772,6 +772,42 @@ _rust_run() {
 transceiver_tests_rust()     { _rust_run "${1:-}" transceiver_tests     "${@:2}"; }
 transceiver_tests_all_rust() { _rust_run "${1:-}" transceiver_tests_all "${@:2}"; }
 
+# ---------------------------------------------------------------------------
+# xcvrd_tests_rust <folder> [-- pytest args] : run the xcvrd-tests black-box
+#   suite against an injected Rust xcvrd, then ALWAYS restore the Python one.
+#
+#   This is the highest-signal Rust gate available: every one of xcvrd-tests'
+#   ~105 tests reads xcvrd's own STATE_DB output, whereas transceiver_tests_all
+#   spends most of its run in sonic_platform code the Rust port does not replace.
+#
+#   The emulator prestep is hoisted OUT of xcvrd_tests and run BEFORE the inject
+#   on purpose. xcvrd_tests re-deploys the emulator when the special modules are
+#   missing, and that deploy restarts pmon ("restarting pmon so it regenerates
+#   supervisord") -- doing it after the inject would throw away the clean STATE_DB
+#   baseline and the post-start settle that _rust_build_and_inject just
+#   established, right before the tests read STATE_DB. Ordering it first also
+#   means the ~3 min deploy happens while the stock Python daemon is still in
+#   place, so a failure there costs nothing to unwind.
+#
+#     ./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4
+#     ./setup-sonic-testbed.sh xcvrd_tests_rust <folder> -- -m "not slow"
+#     DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh xcvrd_tests_rust <folder>
+# ---------------------------------------------------------------------------
+xcvrd_tests_rust() {
+  local folder="${1:-}"
+  [ -n "$folder" ] || die "xcvrd_tests_rust needs a recodeAgent pipeline folder, e.g.
+    ./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4
+    ./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4 -- -m \"not slow\""
+  # Validate before any DUT work so a typo'd path fails instantly.
+  [ -d "$folder" ] || die "rust pipeline folder not found: $folder"
+  [ -d "$folder/crate" ] || die "no crate/ workspace under $folder — is this a recodeAgent pipeline folder? (expected $folder/crate/Cargo.toml)"
+
+  # Emulator first (see above), while the Python xcvrd is still running.
+  _xcvrd_tests_prestep
+  # SKIP_EMU_PRESTEP stops xcvrd_tests from re-running the prestep post-inject.
+  SKIP_EMU_PRESTEP=1 _rust_run "$folder" xcvrd_tests "${@:2}"
+}
+
 # _rust_ship_ctl: copy the DUT control script to the DUT (host -> mgmt -> vlab).
 _rust_ship_ctl() {
   local sshp="sshpass -p $DUT_PASS"
@@ -1375,6 +1411,7 @@ emulator_revert||emu|Undo the native emulator deploy and restore the stock platf
 emulator_e2e||emu|emulator + transceiver_emu_test in one go
 transceiver_tests_rust|<folder> [-v]|rust|Build+inject a Rust xcvrd from a recodeAgent folder, run the subset, always restore Python
 transceiver_tests_all_rust|<folder> [-v]|rust|Same as transceiver_tests_rust but the FULL validated set
+xcvrd_tests_rust|<folder> [-- pytest args]|rust|Run the xcvrd-tests black-box suite against an injected Rust xcvrd
 transceiver_tests_noop|[-v]|rust|NEGATIVE CONTROL: inject a no-op xcvrd; STATE_DB tests SHOULD fail
 transceiver_tests_all_noop|[-v]|rust|NEGATIVE CONTROL over the full set
 xcvrd_status||rust|Report the xcvrd running in pmon: PYTHON vs injected RUST (read-only)
@@ -1449,6 +1486,8 @@ ${b}EXAMPLES${n}
   ./setup-sonic-testbed.sh run_pytest platform_tests/api/test_sfp.py -k lpmode
   ./setup-sonic-testbed.sh run_pytest --rust recodeAgent/results/result_4 \\
       platform_tests/test_xcvr_info_in_db.py                ${d}# one test vs Rust xcvrd${n}
+  ./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4
+                                                            ${d}# best Rust gate: 105 xcvrd tests${n}
   DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh transceiver_tests_all_rust \\
       recodeAgent/results/result_4                          ${d}# faster DOM cadence${n}
   ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
@@ -1502,8 +1541,8 @@ _setup_sonic_testbed() {
   fi
 
   case "$phase" in
-    transceiver_tests_rust|transceiver_tests_all_rust)
-      # Position 2 is the recodeAgent pipeline folder; after that only -v.
+    transceiver_tests_rust|transceiver_tests_all_rust|xcvrd_tests_rust)
+      # Position 2 is the recodeAgent pipeline folder; after that, flags.
       if [ "$COMP_CWORD" -eq 2 ]; then
         local dirs
         dirs="$(compgen -d -- "$cur")"
@@ -1514,6 +1553,9 @@ _setup_sonic_testbed() {
           dirs="$dirs $(compgen -d -- recodeAgent/pipeline_run 2>/dev/null)"
         fi
         COMPREPLY=($(compgen -W "$dirs" -- "$cur"))
+      elif [ "$phase" = "xcvrd_tests_rust" ]; then
+        # Everything after `--` is forwarded to pytest on the DUT.
+        COMPREPLY=($(compgen -W "-- -k -m -x -q --collect-only" -- "$cur"))
       else
         COMPREPLY=($(compgen -W "-v --verbose" -- "$cur"))
       fi
