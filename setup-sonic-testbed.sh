@@ -88,6 +88,17 @@ XCVR_EMU_URL_HTTPS="${XCVR_EMU_URL_HTTPS:-https://github.com/gsoosk/xcvr-emu.git
 XCVR_EMU_BRANCH="${XCVR_EMU_BRANCH:-sonic-dev}"                    # branch to build the emulator from
 XCVR_EMU_DIR="${XCVR_EMU_DIR:-$HOME/xcvr-emu}"                     # cloned on the VM on demand
 EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS modules (0..N-1)
+# Special (non-uniform) modules: SFF-8636 / coherent 400G-ZR / flat-memory /
+# multi-application. They exist for the xcvrd-tests suite, but the sonic-mgmt
+# platform + transceiver suites assume every port is a uniform, fully-featured
+# CMIS module and fail on them. Default to a UNIFORM testbed so those suites are
+# green, and let xcvrd_tests re-deploy with the special modules it needs (see the
+# prestep in xcvrd_tests). Exported so gen_emu_config.py sees it both when
+# build_bundle.sh generates emu_config.yaml and when inject_conn_graph asks
+# --list-special which ports to keep out of the connection graph -- that way the
+# graph exclusions always match the modules actually deployed.
+EMU_NO_SPECIAL="${EMU_NO_SPECIAL:-1}"                             # 1 = uniform CMIS only; 0 = provision the special modules
+export EMU_NO_SPECIAL
 EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-1}"                             # 1 = enable the bridge error-injection hook for xcvrd_tests (this is a test/dev testbed); set 0 for a clean virtual platform
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
 EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
@@ -882,15 +893,22 @@ inject_conn_graph() {
   # unaffected: it talks to the emulator gRPC and STATE_DB directly and never
   # reads this graph, so the special modules stay fully covered there.
   #
-  # The index list comes from gen_emu_config.py --list-special, so this can never
-  # drift from the emulator config (and EMU_NO_SPECIAL=1 excludes nothing).
-  # Port<->index mapping is Ethernet(4*idx), verified on the DUT: Ethernet40 is
-  # the SFF-8636 module and Ethernet44 advertises 400GBASE-ZR.
+  # The index list comes from the DEPLOYED-specials marker the emulator phase
+  # writes, so the exclusions always describe the modules actually on the DUT.
+  # Falling back to gen_emu_config.py --list-special (which only reflects the
+  # current EMU_NO_SPECIAL) would be wrong whenever another phase re-deployed in
+  # a different mode -- e.g. xcvrd_tests provisions the special modules, and a
+  # later run inheriting EMU_NO_SPECIAL=1 would be told "no specials" and leave
+  # them in the graph. Port<->index mapping is Ethernet(4*idx), verified on the
+  # DUT: Ethernet40 is the SFF-8636 module and Ethernet44 advertises 400GBASE-ZR.
   # ------------------------------------------------------------------------
   local gen="$SCRIPT_DIR/emu-deploy/gen_emu_config.py"
   local special_idx="" special_ports=""
-  if [ -f "$gen" ]; then
+  if special_idx="$(_emu_deployed_specials)"; then
+    log "  special modules deployed on $DUT: [${special_idx:-none}]"
+  elif [ -f "$gen" ]; then
     special_idx="$(python3 "$gen" --list-special 2>/dev/null)" || special_idx=""
+    warn "no deployed-specials marker on $DUT (emulator not deployed yet?) — falling back to EMU_NO_SPECIAL=${EMU_NO_SPECIAL:-unset} => [${special_idx:-none}]"
   else
     warn "gen_emu_config.py not found at $gen -- cannot exclude special-module ports"
   fi
@@ -1031,6 +1049,51 @@ PY'; then
 #   Nothing is written into the cloned SONiC repos; the emulator lives only in
 #   its own (disposable) container + the pmon writable layer.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Deployed-specials marker.
+#
+# The connection graph must exclude the special (non-uniform) module ports, but
+# "which ports are special" is a property of what is ACTUALLY DEPLOYED, not of
+# the EMU_NO_SPECIAL value that happens to be set when a test phase runs. Those
+# two disagree as soon as one phase re-deploys in a different mode -- xcvrd_tests
+# provisions the special modules, so a later transceiver_tests_all inheriting the
+# default EMU_NO_SPECIAL=1 would ask gen_emu_config.py for the special list, be
+# told "none", leave those ports in the graph, and resurrect exactly the failures
+# the graph exclusion was added to remove.
+#
+# So the emulator deploy records what it deployed, on the DUT (the thing that
+# actually holds the modules), and the graph reads that back. The file always has
+# a `SPECIALS=` line so an empty list (a uniform testbed) is distinguishable from
+# "no marker" (never deployed / unreachable), which must fall back rather than be
+# read as "no specials".
+# ---------------------------------------------------------------------------
+EMU_SPECIALS_MARKER="${EMU_SPECIALS_MARKER:-/home/admin/.emu_specials}"
+
+_emu_write_specials_marker() {
+  local gen="$SCRIPT_DIR/emu-deploy/gen_emu_config.py" idx=""
+  [ -f "$gen" ] && idx="$(python3 "$gen" --list-special 2>/dev/null)"
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  if docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+       "$sshp ssh $sshopt admin@$DUT_IP 'printf \"SPECIALS=%s\n\" \"$idx\" > $EMU_SPECIALS_MARKER'" >/dev/null 2>&1; then
+    log "  recorded deployed special modules: [${idx:-none}]"
+  else
+    warn "could not record the deployed-specials marker on $DUT — the connection graph will fall back to EMU_NO_SPECIAL"
+  fi
+}
+
+# Echo the deployed special indices; return non-zero when no marker is readable.
+_emu_deployed_specials() {
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10'
+  local out
+  out="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+        "$sshp ssh $sshopt admin@$DUT_IP 'cat $EMU_SPECIALS_MARKER 2>/dev/null'" 2>/dev/null \
+        | tr -d '\r' | grep '^SPECIALS=')" || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "${out#SPECIALS=}"
+}
+
 ensure_emu_assets() {
   [ -d "$BRIDGE_DIR" ] || die "bridge not found at $BRIDGE_DIR — run this from a full sonic-develop checkout (git clone) so platform/ and emu-deploy/ sit next to the script, not a lone scp'd copy."
   [ -d "$EMU_DEPLOY_DIR" ] || die "emu-deploy toolkit not found at $EMU_DEPLOY_DIR — run from a full sonic-develop checkout."
@@ -1077,6 +1140,7 @@ emulator() {
   EMU_TEST_HOOKS="$EMU_TEST_HOOKS" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
+  _emu_write_specials_marker
   ok "emulator deployed (native) — host sfputil + pmon xcvrd both use the emulator; STATE_DB populated; transceiver inventory installed in mgmt"
 }
 
@@ -1148,13 +1212,46 @@ hotplug_test() {
 #     ./setup-sonic-testbed.sh xcvrd_tests -- -m "not slow"
 #   Requires the emulator deployed (run `emulator`); presence tests also need the
 #   emulator image built from XCVR_EMU_BRANCH=fix/read-honor-presence.
+#
+#   PRESTEP: this suite NEEDS the special (non-uniform) modules --
+#   tests/test_sff8636.py, test_pm.py, test_flat_memory.py and
+#   test_app_select.py each depend on one -- but the testbed defaults to uniform
+#   CMIS so the sonic-mgmt suites stay green (see EMU_NO_SPECIAL). So re-deploy
+#   the emulator with EMU_NO_SPECIAL=0 first. It is skipped when the special
+#   modules are already present, so back-to-back runs don't pay for a redeploy;
+#   SKIP_EMU_PRESTEP=1 forces it off entirely.
 # ---------------------------------------------------------------------------
+_xcvrd_tests_prestep() {
+  if [ "${SKIP_EMU_PRESTEP:-0}" = "1" ]; then
+    log "SKIP_EMU_PRESTEP=1 -> not re-deploying the emulator (assuming special modules are present)"
+    return 0
+  fi
+  # Cheap idempotency check: idx10 (Ethernet40) is the SFF-8636 module, so a
+  # non-CMIS type there means the special modules are already deployed. Probing
+  # STATE_DB is far cheaper than an unconditional redeploy (~minutes).
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local t
+  t="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+        "$sshp ssh $sshopt admin@$DUT_IP 'redis-cli -n 6 hget \"TRANSCEIVER_INFO|Ethernet40\" type'" 2>/dev/null \
+        | tr -d '\r')"
+  case "$t" in
+    *QSFP28*)
+      log "Special modules already deployed (Ethernet40=$t) — skipping emulator re-deploy"
+      return 0 ;;
+  esac
+  log "xcvrd-tests needs the special modules — re-deploying the emulator with EMU_NO_SPECIAL=0"
+  EMU_NO_SPECIAL=0 emulator || die "emulator re-deploy (EMU_NO_SPECIAL=0) FAILED — xcvrd-tests would skip/fail the special-module tests"
+}
+
 xcvrd_tests() {
   local src="$SCRIPT_DIR/xcvrd-tests"
   [ -d "$src" ] || die "xcvrd-tests folder not found at $src — run from a full sonic-develop checkout"
   local sshp="sshpass -p $DUT_PASS"
   local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
   local dut="admin@$DUT_IP"
+
+  _xcvrd_tests_prestep
 
   log "Packaging xcvrd-tests and shipping to $DUT"
   local tar=/tmp/xcvrd-tests.tar.gz
