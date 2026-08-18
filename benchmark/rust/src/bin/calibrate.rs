@@ -88,6 +88,35 @@ fn exercise(hal: &dyn Hal, tag: &str) -> Vec<(String, f64)> {
     out
 }
 
+/// The DB seam. Measured but NOT shared: `XcvrTableHelper::build` is private, so the
+/// Rust side is pinned to `MockDbTable` (which scans a Vec of pairs, mock.rs:90)
+/// while Python uses a dict. Both configs A and B therefore report identical DB
+/// numbers -- the A->B delta stays purely the platform edge -- and the Rust-vs-Python
+/// DB gap is a calibration term rather than a hidden bias.
+fn exercise_db(out: &mut Vec<(String, f64)>) {
+    use xcvrd_rs::db::DbTable;
+    println!("\nDB edge (MockDbTable -- NOT shared with Python):");
+    let tbl = xcvrd_rs::mock::MockDbTable::new("TRANSCEIVER_DOM_SENSOR");
+    let fvs: Vec<(String, String)> = (0..27)
+        .map(|i| (format!("field{i}"), format!("{}", 1.5 + i as f64)))
+        .collect();
+    tbl.set("Ethernet0", &fvs);
+    bench("db.set  [27 fields]", out, || tbl.set("Ethernet0", &fvs));
+    bench("db.get", out, || {
+        std::hint::black_box(tbl.get("Ethernet0"));
+    });
+    bench("db.hget", out, || {
+        std::hint::black_box(tbl.hget("Ethernet0", "field13"));
+    });
+    bench("db.hset", out, || tbl.hset("Ethernet0", "field13", "45.0"));
+    bench("db.get_size_for_key", out, || {
+        std::hint::black_box(tbl.get_size_for_key("Ethernet0"));
+    });
+    bench("db.getKeys", out, || {
+        std::hint::black_box(tbl.get_keys());
+    });
+}
+
 fn to_map(rows: &[(String, f64)]) -> serde_json::Value {
     let m: serde_json::Map<String, serde_json::Value> = rows
         .iter()
@@ -124,7 +153,8 @@ fn main() {
 
     if which == "a" || which == "both" {
         let hal = BenchHal::new(fx.clone(), num_sfps);
-        let a = exercise(&hal, "A  (BenchHal -- Rust-native, no Python)");
+        let mut a = exercise(&hal, "A  (BenchHal -- Rust-native, no Python)");
+        exercise_db(&mut a);
         results.insert("a".into(), to_map(&a));
         println!();
     }

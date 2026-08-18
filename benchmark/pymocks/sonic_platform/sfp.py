@@ -88,8 +88,11 @@ class Sfp(object):
         return True
 
     def read_eeprom(self, offset, num_bytes):
+        # List comprehension, not a generator: bytes() over a generator has to grow
+        # its buffer incrementally and measured ~9x the Rust edge, which would have
+        # been an artefact of this mock rather than of either daemon.
         eep = self._eeprom
-        return bytes(eep.get(offset + i, 0) for i in range(num_bytes))
+        return bytes([eep.get(offset + i, 0) for i in range(num_bytes)])
 
     def write_eeprom(self, offset, num_bytes, buf):
         # Signature is (offset, num_bytes, buf) -- the bridge passes the length
