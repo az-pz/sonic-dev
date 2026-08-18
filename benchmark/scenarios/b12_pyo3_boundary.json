@@ -1,0 +1,17 @@
+{
+  "id": "b12_pyo3_boundary",
+  "bench_id": "B12",
+  "description": "Per-call cost of the PyO3 boundary, by operation: config A (no Python) vs config B (real bridge) vs config P (Python calling the same mock directly).",
+  "metric": "ns/call per HAL operation; B-A is the crossing",
+  "instrument": "bin/calibrate.rs + python/calibrate.py",
+  "harness": "inprocess",
+  "status": "implemented",
+  "notes": "Measured: the crossing is 82x at the call level on the 27-field DOM getter (1043 -> 7627 ns) and 97.6% of it is json.dumps + serde_json parse, not the GIL - a re-entrant with_gil is 2ns and the bare Python call 187ns. So it scales with PAYLOAD SIZE. But at daemon level it is only ~3% of a DOM sweep, because real DB I/O costs ~48us per HAL call. Both numbers are true and neither alone is honest; report them together.",
+  "ports": 32,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "dom_info_update",
+  "action": "poll_once",
+  "iterations": 1,
+  "threads": 1,
+  "configs": ["a", "b", "p"]
+}

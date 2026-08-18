@@ -1,17 +1,29 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "xcvrd benchmark scenario (v1)",
-  "description": "A declarative workload consumed identically by the Rust and Python harnesses. A scenario fully determines the work both daemons perform, so a trace comparison is meaningful.",
+  "title": "xcvrd benchmark scenario (v2)",
+  "description": "A declarative workload. v2 adds the fields needed to carry the B1-B12 suite: a scenario now states WHICH HARNESS can run it (in-process vs live DUT) and whether it is implemented, because roughly half the suite needs a real daemon process, the emulator Monitor stream or supervisord and therefore cannot run in-process. Recording that honestly in the artifact is the point - an unrunnable scenario that looks runnable is worse than an absent one.",
   "type": "object",
-  "required": ["id", "description", "ports", "fixture", "task", "action"],
+  "required": [
+    "id",
+    "description",
+    "ports",
+    "fixture",
+    "task",
+    "action",
+    "bench_id",
+    "harness",
+    "status"
+  ],
   "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^s[0-9]{2}_[a-z0-9_]+$",
+      "pattern": "^[sb][0-9]{2}_[a-z0-9_]+$",
       "description": "Stable scenario id, e.g. s01_dom_sweep."
     },
-    "description": { "type": "string" },
+    "description": {
+      "type": "string"
+    },
     "ports": {
       "type": "integer",
       "minimum": 1,
@@ -20,7 +32,10 @@
     },
     "absent_ports": {
       "type": "array",
-      "items": { "type": "integer", "minimum": 0 },
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
       "default": [],
       "description": "Slot indices reporting get_presence()==false, mirroring unused DUT ports."
     },
@@ -30,12 +45,22 @@
     },
     "task": {
       "type": "string",
-      "enum": ["dom_info_update", "dom_thermal", "cmis_manager", "sff_manager"],
+      "enum": [
+        "dom_info_update",
+        "dom_thermal",
+        "cmis_manager",
+        "sff_manager",
+        "sfp_state_update"
+      ],
       "description": "Which daemon task is driven."
     },
     "action": {
       "type": "string",
-      "enum": ["poll_once", "init", "task_worker"],
+      "enum": [
+        "poll_once",
+        "init",
+        "task_worker"
+      ],
       "description": "Entry point. NOTE: poll_once exists on the Rust DomInfoUpdateTask but has no Python equivalent (Python's sweep is inline in task_worker), so poll_once scenarios need a documented Python shim and must not carry headline numbers. Prefer per-port granularity for direct comparison."
     },
     "iterations": {
@@ -51,16 +76,98 @@
       "description": "Concurrent tasks. Only threads==1 traces may be compared with --strict-order."
     },
     "dom_update_interval": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "default": null,
       "description": "Seconds; null uses the daemon default (60). Both daemons accept this knob with identical meaning."
     },
-    "skip_cmis_mgr": { "type": "boolean", "default": false },
+    "skip_cmis_mgr": {
+      "type": "boolean",
+      "default": false
+    },
     "excludes": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": [],
       "description": "Behaviours this scenario must NOT exercise, with justification. Used to keep known-divergent paths (e.g. result_4's deselected link-change fast flag recapture) out of the comparison."
+    },
+    "bench_id": {
+      "type": "string",
+      "pattern": "^B[0-9]{1,2}$",
+      "description": "Suite id (B1..B12)."
+    },
+    "harness": {
+      "type": "string",
+      "enum": [
+        "inprocess",
+        "dut"
+      ],
+      "description": "inprocess = benchmark/ (mocked plant, throwaway Redis, no daemon process). dut = the live testbed via xcvrd-tests, needed for anything measuring a PROCESS (RSS, threads, SIGTERM) or requiring the emulator Monitor stream."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "implemented",
+        "blocked"
+      ],
+      "description": "implemented = runnable now via tools/run_scenario.sh. blocked = defined but not runnable; blocked_by MUST say why."
+    },
+    "blocked_by": {
+      "type": "string",
+      "description": "Required when status==blocked. The specific missing capability, not a vague note."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Caveats a reader needs in order not to misread the number."
+    },
+    "metric": {
+      "type": "string"
+    },
+    "instrument": {
+      "type": "string"
+    },
+    "configs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "a",
+          "b",
+          "p"
+        ]
+      },
+      "description": "Which configs this scenario compares. a=Rust native edge, b=Rust via the real PyO3 bridge, p=the Python daemon."
+    },
+    "port_sweep": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "description": "Fan-out sweep values; when present, ports is only the default."
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "blocked_by"
+        ]
+      }
+    }
+  ]
 }

@@ -1,0 +1,21 @@
+{
+  "id": "b03_cmis_bringup",
+  "bench_id": "B3",
+  "description": "CMIS datapath bring-up: plug -> TRANSCEIVER_STATUS_SW.cmis_state == READY.",
+  "metric": "p50/p95 latency",
+  "instrument": "STATE_DB poll",
+  "harness": "dut",
+  "status": "blocked",
+  "blocked_by": "Needs CmisManagerTask. Note this harness currently SEEDS cmis_state=READY (bin/trace.rs, bench_dom.py) because the DOM sweep defers on non-terminal state; that seeding must be removed for this scenario or it measures nothing.",
+  "ports": 28,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "cmis_manager",
+  "action": "task_worker",
+  "iterations": 30,
+  "threads": 1,
+  "skip_cmis_mgr": false,
+  "configs": ["b", "p"],
+  "excludes": [
+    "inter_state_dwell: CMIS_INTER_STATE_DWELL_MS = 1000 (cmis_manager_task.rs:81) deliberately holds each datapath state for 1s, which the Python reference does not do. Bring-up will look ~6-8s slower by construction. Either build a dwell=0 variant or report bring-up excluding dwell and say so - otherwise this benchmarks an invented artefact."
+  ]
+}

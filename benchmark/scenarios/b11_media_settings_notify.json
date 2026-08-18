@@ -1,0 +1,18 @@
+{
+  "id": "b11_media_settings_notify",
+  "bench_id": "B11",
+  "description": "Media-settings notification latency on module insert.",
+  "metric": "insert -> notify latency",
+  "instrument": "STATE_DB",
+  "harness": "dut",
+  "status": "blocked",
+  "blocked_by": "Needs the media_settings_parser path plus CONFIG_DB notification wiring, neither of which this harness drives.",
+  "ports": 28,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "sfp_state_update",
+  "action": "task_worker",
+  "iterations": 30,
+  "threads": 1,
+  "configs": ["b", "p"],
+  "notes": "Targets a known inefficiency present in BOTH result_4 and result_5: fancy_regex::Regex::new() is recompiled per call in get_media_settings / match_optics_si_key (common.rs:303,313) rather than once. Cheap to fix, and this scenario is what would show it."
+}

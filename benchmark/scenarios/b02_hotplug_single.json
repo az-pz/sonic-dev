@@ -1,0 +1,17 @@
+{
+  "id": "b02_hotplug_single",
+  "bench_id": "B2",
+  "description": "Single-port hot plug and unplug: plug -> INFO populated, unplug -> INFO cleared and STATUS_SW.status == 0.",
+  "metric": "p50/p95/p99 latency per transition",
+  "instrument": "STATE_DB + emulator Monitor stream",
+  "harness": "dut",
+  "status": "blocked",
+  "blocked_by": "Needs SfpStateUpdateTask (change-event consumer). The mock plant can already stage events - Chassis.queue_change_event / BenchHal::queue_change_event exist for exactly this - but nothing consumes them until that task is wired in.",
+  "ports": 28,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "sfp_state_update",
+  "action": "task_worker",
+  "iterations": 30,
+  "threads": 1,
+  "configs": ["b", "p"]
+}

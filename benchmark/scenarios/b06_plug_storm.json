@@ -1,0 +1,17 @@
+{
+  "id": "b06_plug_storm",
+  "bench_id": "B6",
+  "description": "All ports plugged simultaneously. Stresses the change-event path and the burst write rate.",
+  "metric": "time until the last INFO row is populated; peak CPU",
+  "instrument": "STATE_DB + /proc sampler",
+  "harness": "dut",
+  "status": "blocked",
+  "blocked_by": "Same as B2 - needs SfpStateUpdateTask to consume staged change events.",
+  "ports": 28,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "sfp_state_update",
+  "action": "task_worker",
+  "iterations": 20,
+  "threads": 1,
+  "configs": ["b", "p"]
+}

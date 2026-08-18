@@ -1,0 +1,25 @@
+{
+  "id": "b04_dom_steady_state",
+  "bench_id": "B4",
+  "description": "DOM steady state at a 5s interval. The hottest recurring path and the harness's canonical scenario.",
+  "metric": "pass duration; reads per cycle per port; cadence jitter (sigma of inter-sweep interval)",
+  "instrument": "in-process timing + call trace; last_update_time on the DUT",
+  "harness": "inprocess",
+  "status": "implemented",
+  "notes": "Pass duration and reads/cycle/port run today via run_trace.sh --time and the call trace. CADENCE JITTER DOES NOT: it is a property of the scheduling loop (task_worker), and this harness drives a single pass (poll_once) so there is no inter-sweep interval to measure. Jitter needs task_worker driving, or the DUT.",
+  "ports": 28,
+  "fixture": "cmis_40g_lr4.json",
+  "task": "dom_info_update",
+  "action": "poll_once",
+  "iterations": 100,
+  "threads": 1,
+  "dom_update_interval": 5,
+  "configs": [
+    "a",
+    "b",
+    "p"
+  ],
+  "excludes": [
+    "link_change_fast_flag_recapture: result_4 permanently deselects test_link_change_triggers_fast_flag_recapture, so its link-change fast path is not behaviourally equivalent to the reference and must not be compared."
+  ]
+}

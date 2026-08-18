@@ -1,0 +1,19 @@
+{
+  "id": "b07_scaling_sweep",
+  "bench_id": "B7",
+  "description": "Fan-out sweep at N = 1, 4, 8, 16, 28, 32. The slope matters more than any single point: it separates per-port cost from fixed overhead.",
+  "metric": "sweep latency and per-port latency vs N",
+  "instrument": "in-process timing across all three configs",
+  "harness": "inprocess",
+  "status": "implemented",
+  "notes": "The most genuinely uncertain result in the suite, and the reason to run it early. In config B every HAL call marshals through json.dumps while holding the GIL (~7.6us measured), so all Python-touching threads serialise on it - a hard ceiling of roughly 130k HAL calls/sec regardless of thread count. Whether that inverts Rust's advantage under fan-out cannot be predicted, only measured.",
+  "ports": 32,
+  "port_sweep": [1, 4, 8, 16, 28, 32],
+  "fixture": "cmis_40g_lr4.json",
+  "task": "dom_info_update",
+  "action": "poll_once",
+  "iterations": 50,
+  "threads": 1,
+  "dom_update_interval": 5,
+  "configs": ["a", "b", "p"]
+}
