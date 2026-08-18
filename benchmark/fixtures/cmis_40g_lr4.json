@@ -98,6 +98,11 @@
   },
 
   "json_calls": {
+    "get_transceiver_info_firmware_versions": {
+      "active_firmware": "0.0",
+      "inactive_firmware": "0.0"
+    },
+    "is_transceiver_vdm_supported": false,
     "get_transceiver_status_flags": {
       "datapath_firmware_fault": false,
       "module_firmware_fault": false,

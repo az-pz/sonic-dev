@@ -45,10 +45,20 @@ class Sfp(object):
             self.__dict__[name] = self._make_json_call(name, payload)
 
     def _make_json_call(self, name, payload):
-        frozen = dict(payload)
+        # Only dicts are copied. Some of these getters return a scalar --
+        # is_transceiver_vdm_supported() is a bool -- and dict()ing that would raise.
+        # The Rust edge hands back a cloned serde_json::Value either way, so matching
+        # its shape here is what keeps the two plants equivalent.
+        if isinstance(payload, dict):
+            frozen = dict(payload)
 
-        def call():
-            return dict(frozen)
+            def call():
+                return dict(frozen)
+        else:
+            frozen = payload
+
+            def call():
+                return frozen
 
         call.__name__ = name
         return call
@@ -171,7 +181,10 @@ class TracingSfp(Sfp):
         inner = Sfp._make_json_call(self, name, payload)
 
         def call():
-            self._hal(name)
+            # Prefixed to match the Rust decorator, which records these through the
+            # SfpHandle::call_json escape hatch as "call_json:<method>". Same operation,
+            # so it must carry the same canonical name or the gate reports a false diff.
+            RECORDER.record(kind="hal", port=self.index, op="call_json:" + name)
             return inner()
 
         call.__name__ = name

@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "Minimal SONiC database_config.json for the benchmark harness.",
+    "",
+    "The Python daemon reaches STATE_DB through swsscommon.Table, which requires",
+    "SonicDBConfig to resolve db ids and separators. The Rust daemon does not need this",
+    "file -- RealDbTable addresses rows by explicit composite key over a DbConnector -- so",
+    "this exists purely to give the two daemons the SAME backing store.",
+    "",
+    "Ids and separators must match xcvrd-rs/src/env.rs (STATE_DB 6, CONFIG_DB 4, APPL_DB 0)",
+    "and RealDbTable's separator handling: '|' for STATE_DB/CONFIG_DB, ':' for APPL_DB.",
+    "Point swsscommon at this with SONIC_DB_CONFIG_FILE rather than installing it into",
+    "/var/run/redis/sonic-db/, so the harness needs no privileged paths."
+  ],
+  "INSTANCES": {
+    "redis": {
+      "hostname": "127.0.0.1",
+      "port": 6379,
+      "unix_socket_path": "/sock/redis.sock",
+      "persistence_for_warm_boot": "yes"
+    }
+  },
+  "DATABASES": {
+    "APPL_DB":   { "id": 0, "separator": ":", "instance": "redis" },
+    "CONFIG_DB": { "id": 4, "separator": "|", "instance": "redis" },
+    "STATE_DB":  { "id": 6, "separator": "|", "instance": "redis" }
+  },
+  "VERSION": "1.0"
+}

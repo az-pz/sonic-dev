@@ -1,3 +1,4 @@
 rust/target-crate
 rust/target/
 results/*/
+vendor/

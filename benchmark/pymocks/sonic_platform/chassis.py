@@ -22,7 +22,10 @@ class Chassis(object):
 
     def get_sfp(self, index):
         if TRACING:
-            RECORDER.record(kind="hal", port=-1, op="get_sfp")
+            # Recorded as "sfp" against the requested port, matching the Rust
+            # Hal::sfp decorator. Both are "hand me a handle for port N"; naming them
+            # differently would make the equivalence gate report a false difference.
+            RECORDER.record(kind="hal", port=index, op="sfp")
         # The bridge passes the daemon's physical index straight through
         # (platform-bridge/src/lib.rs:139). Tolerate both 0- and 1-based callers
         # rather than silently serving the wrong slot.
