@@ -1,0 +1,30 @@
+# Benchmark harness crate. Deliberately OUTSIDE the target crate:
+# recodeAgent/results/result_N are recorded pipeline artifacts and must stay
+# immutable, so the harness depends on the target through the `target-crate`
+# symlink (repointed by ../tools/select_target.sh) instead of adding a member to
+# its workspace.
+[package]
+name = "xcvrd-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Own workspace root, so Cargo does not walk up and try to join the repo (or the
+# target crate's) workspace.
+[workspace]
+
+[dependencies]
+xcvrd-rs = { path = "target-crate/xcvrd-rs" }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# MUST match the target crate's profile. Cargo ignores [profile] from a path
+# dependency and uses the root package's, so leaving this out would silently
+# benchmark the daemon at a different optimisation level than it ships with.
+# Target (recodeAgent/results/result_4/crate/Cargo.toml): opt-level = 2, no LTO,
+# default codegen-units, no panic=abort.
+[profile.release]
+opt-level = 2
+
+[lib]
+name = "xcvrd_bench"
+path = "src/lib.rs"

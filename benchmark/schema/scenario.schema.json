@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "xcvrd benchmark scenario (v1)",
+  "description": "A declarative workload consumed identically by the Rust and Python harnesses. A scenario fully determines the work both daemons perform, so a trace comparison is meaningful.",
+  "type": "object",
+  "required": ["id", "description", "ports", "fixture", "task", "action"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^s[0-9]{2}_[a-z0-9_]+$",
+      "description": "Stable scenario id, e.g. s01_dom_sweep."
+    },
+    "description": { "type": "string" },
+    "ports": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256,
+      "description": "Number of transceiver slots presented by the mock HAL. Fan-out sweeps vary this."
+    },
+    "absent_ports": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "default": [],
+      "description": "Slot indices reporting get_presence()==false, mirroring unused DUT ports."
+    },
+    "fixture": {
+      "type": "string",
+      "description": "Filename under fixtures/, e.g. cmis_40g_lr4.json. Loaded byte-identically by both harnesses."
+    },
+    "task": {
+      "type": "string",
+      "enum": ["dom_info_update", "dom_thermal", "cmis_manager", "sff_manager"],
+      "description": "Which daemon task is driven."
+    },
+    "action": {
+      "type": "string",
+      "enum": ["poll_once", "init", "task_worker"],
+      "description": "Entry point. NOTE: poll_once exists on the Rust DomInfoUpdateTask but has no Python equivalent (Python's sweep is inline in task_worker), so poll_once scenarios need a documented Python shim and must not carry headline numbers. Prefer per-port granularity for direct comparison."
+    },
+    "iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "How many times the action is invoked in one trace/measurement."
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Concurrent tasks. Only threads==1 traces may be compared with --strict-order."
+    },
+    "dom_update_interval": {
+      "type": ["integer", "null"],
+      "default": null,
+      "description": "Seconds; null uses the daemon default (60). Both daemons accept this knob with identical meaning."
+    },
+    "skip_cmis_mgr": { "type": "boolean", "default": false },
+    "excludes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Behaviours this scenario must NOT exercise, with justification. Used to keep known-divergent paths (e.g. result_4's deselected link-change fast flag recapture) out of the comparison."
+    }
+  }
+}

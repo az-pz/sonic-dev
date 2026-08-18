@@ -1,0 +1,119 @@
+{
+  "_comment": [
+    "Canned HAL payloads for the emulator's default CMIS module (vendor xcvr-emu,",
+    "PN EMU-40G-LR4, 40GBASE-LR4, 4 host / 4 media lanes) -- the uniform module the",
+    "testbed presents on all in-use ports when EMU_NO_SPECIAL=1.",
+    "",
+    "Loaded byte-identically by the Rust and Python harnesses so both daemons are fed",
+    "the same bytes. These are HAL-level payloads (what sonic_platform returns), NOT",
+    "STATE_DB rows -- the daemon under test is what turns one into the other, and that",
+    "transformation is precisely what is being benchmarked.",
+    "",
+    "dom_real_value carries 3 scalars + 8 lanes x 3 metrics = 27 fields, matching the",
+    "reference field-count assertion (get_size_for_key('Ethernet0') == 27). Lanes 5-8",
+    "read N/A on this 4-lane module, exactly as the emulator reports them.",
+    "",
+    "Refresh with tools/capture_fixture.sh against a live emulator rather than editing",
+    "by hand, so the fixture cannot silently drift from what the DUT actually serves."
+  ],
+
+  "presence": true,
+  "replaceable": true,
+  "reset_status": false,
+  "sfp_type": "QSFP_DD",
+  "error_description": null,
+  "lpmode": false,
+
+  "info": {
+    "type": "QSFP-DD Double Density 8X Pluggable Transceiver",
+    "type_abbrv_name": "QSFP-DD",
+    "manufacturer": "xcvr-emu",
+    "model": "EMU-40G-LR4",
+    "vendor_rev": "01",
+    "serial": "0123456789",
+    "vendor_oui": "01-02-03",
+    "vendor_date": "2024-12-14",
+    "connector": "MPO 1x16",
+    "encoding": "N/A",
+    "ext_identifier": "Power Class 8 (10.0W Max)",
+    "ext_rateselect_compliance": "N/A",
+    "cable_type": "Length Cable Assembly(m)",
+    "cable_length": "100.0",
+    "specification_compliance": "sm_media_interface",
+    "nominal_bit_rate": "0",
+    "application_advertisement": "XLAUI C2M (Annex 83B) - Host Assign (0x1) - 40GBASE-LR4 (Cl 87) - Media Assign (0x1)",
+    "media_interface_technology": "850 nm VCSEL",
+    "cmis_rev": "5.2",
+    "host_lane_count": "4",
+    "media_lane_count": "4",
+    "active_apsel_hostlane1": "1",
+    "active_apsel_hostlane2": "1",
+    "active_apsel_hostlane3": "1",
+    "active_apsel_hostlane4": "1",
+    "active_apsel_hostlane5": "N/A",
+    "active_apsel_hostlane6": "N/A",
+    "active_apsel_hostlane7": "N/A",
+    "active_apsel_hostlane8": "N/A",
+    "hardware_rev": "01",
+    "media_lane_assignment_option": "1",
+    "host_lane_assignment_option": "1",
+    "vdm_supported": false
+  },
+
+  "dom_real_value": {
+    "temperature": 45.0,
+    "voltage": 3.3,
+    "laser_temperature": 45.0,
+    "tx1power": -2.5, "tx2power": -2.5, "tx3power": -2.5, "tx4power": -2.5,
+    "tx5power": "N/A", "tx6power": "N/A", "tx7power": "N/A", "tx8power": "N/A",
+    "rx1power": -3.0, "rx2power": -3.0, "rx3power": -3.0, "rx4power": -3.0,
+    "rx5power": "N/A", "rx6power": "N/A", "rx7power": "N/A", "rx8power": "N/A",
+    "tx1bias": 6.0, "tx2bias": 6.0, "tx3bias": 6.0, "tx4bias": 6.0,
+    "tx5bias": "N/A", "tx6bias": "N/A", "tx7bias": "N/A", "tx8bias": "N/A"
+  },
+
+  "threshold_info": {
+    "temphighalarm": 75.0, "temphighwarning": 70.0,
+    "templowalarm": -5.0, "templowwarning": -10.0,
+    "vcchighalarm": 3.6, "vcchighwarning": 3.5,
+    "vcclowalarm": 3.0, "vcclowwarning": 3.1,
+    "txpowerhighalarm": 3.0, "txpowerhighwarning": 2.5,
+    "txpowerlowalarm": -3.0, "txpowerlowwarning": -2.2,
+    "rxpowerhighalarm": 3.0, "rxpowerhighwarning": 2.5,
+    "rxpowerlowalarm": -3.0, "rxpowerlowwarning": -2.2,
+    "txbiashighalarm": 13.0, "txbiashighwarning": 12.0,
+    "txbiaslowalarm": 6.0, "txbiaslowwarning": 7.0,
+    "lasertemphighalarm": 80.0, "lasertemphighwarning": 75.0,
+    "lasertemplowalarm": -10.0, "lasertemplowwarning": -5.0
+  },
+
+  "status": {
+    "status": "1",
+    "error": "N/A",
+    "module_state": "ModuleReady",
+    "module_fault_cause": "No Fault detected",
+    "datapath_firmware_fault": false,
+    "module_firmware_fault": false,
+    "module_state_changed": false
+  },
+
+  "json_calls": {
+    "get_transceiver_status_flags": {
+      "datapath_firmware_fault": false,
+      "module_firmware_fault": false,
+      "module_state_changed": false
+    },
+    "get_transceiver_dom_flags": {
+      "temphighalarm": false, "temphighwarning": false,
+      "templowalarm": false, "templowwarning": false,
+      "vcchighalarm": false, "vcchighwarning": false,
+      "vcclowalarm": false, "vcclowwarning": false
+    },
+    "get_transceiver_vdm_real_value": {},
+    "get_transceiver_pm": {}
+  },
+
+  "eeprom": {
+    "9": 0
+  }
+}

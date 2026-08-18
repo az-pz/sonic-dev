@@ -1,0 +1,16 @@
+{
+  "id": "s01_dom_sweep",
+  "description": "One DOM poll pass over N uniform CMIS ports with every seam mocked. The canonical equivalence scenario: it is the daemon's hottest steady-state path, it touches both seams (HAL reads -> DB writes), and it exercises no known-divergent behaviour.",
+  "ports": 28,
+  "absent_ports": [],
+  "fixture": "cmis_40g_lr4.json",
+  "task": "dom_info_update",
+  "action": "poll_once",
+  "iterations": 1,
+  "threads": 1,
+  "dom_update_interval": 5,
+  "skip_cmis_mgr": false,
+  "excludes": [
+    "link_change_fast_flag_recapture: result_4 permanently deselects test_link_change_triggers_fast_flag_recapture, so its link-change fast path is not behaviourally equivalent to the reference and must not be compared."
+  ]
+}
