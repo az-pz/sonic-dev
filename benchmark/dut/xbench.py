@@ -225,9 +225,20 @@ def b04_dom_cadence(db, x, args):
     (sigma) is the metric that separates a dedicated poll thread from a loop competing
     with other work.
     """
-    ports = sorted(db.keys("TRANSCEIVER_DOM_SENSOR|*"))[: args.ports or 8]
+    # Wait for the first publish before measuring. After an inject the daemon has just
+    # restarted and the default DOM interval is 60s, so starting immediately measures an
+    # empty table rather than the cadence. This wait is NOT part of the measurement.
+    deadline = time.time() + max(args.timeout, 120)
+    ports = []
+    while time.time() < deadline:
+        ports = sorted(db.keys("TRANSCEIVER_DOM_SENSOR|*"))[: args.ports or 8]
+        if ports:
+            break
+        time.sleep(1.0)
     if not ports:
-        return {"error": "no TRANSCEIVER_DOM_SENSOR rows; is xcvrd running?"}
+        return {"error": "no TRANSCEIVER_DOM_SENSOR rows appeared; is xcvrd running?"}
+    # Discard the partial interval we landed in: start counting from the next stamp.
+    time.sleep(1.0)
     seen = {p: [] for p in ports}
     end = time.time() + args.duration
     last = {}
