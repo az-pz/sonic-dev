@@ -13,6 +13,8 @@
 //! is what makes the Mock-vs-Bridge delta (the PyO3 + GIL tax) measurable with one
 //! piece of code.
 
+pub mod edges;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
