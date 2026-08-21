@@ -5,8 +5,7 @@
   "metric": "RSS, CPU%, thread count, fd count",
   "instrument": "1Hz /proc sampler inside pmon",
   "harness": "dut",
-  "status": "blocked",
-  "blocked_by": "Requires a long-lived daemon PROCESS. This harness runs the task in-process inside a test binary, so RSS/threads/fds measure the harness, not xcvrd. Belongs to the DUT harness.",
+  "status": "implemented",
   "ports": 28,
   "fixture": "cmis_40g_lr4.json",
   "task": "dom_info_update",
@@ -14,9 +13,13 @@
   "iterations": 1,
   "threads": 1,
   "dom_update_interval": 60,
-  "configs": ["b", "p"],
+  "configs": [
+    "b",
+    "p"
+  ],
   "excludes": [
     "rss_language_claim: the Rust binary embeds CPython (pyo3 auto-initialize) and imports sonic_platform_base, so expect RSS in the same order as Python, not 10x lower. Report the delta, do not frame it as a language win.",
     "noop_floor: subtract the inject-noop baseline (pmon + emulator + everything that is not xcvrd) before reporting any resource number."
-  ]
+  ],
+  "notes": "Implemented in the DUT harness (benchmark/dut/xbench.py): ./tools/run_dut_bench.sh B5 --variants rust,python"
 }

@@ -4,14 +4,18 @@
   "description": "Work profile per DOM cycle: HAL calls and DB commands per port. Machine-independent, so it is immune to host noise and KVM steal.",
   "metric": "HAL calls/port/cycle; Redis commands/sweep; page histogram",
   "instrument": "call trace + redis INFO commandstats",
-  "harness": "inprocess",
+  "harness": "both",
   "status": "implemented",
-  "notes": "This is the VALIDITY GATE, not a performance result, and it must pass before any timing is trusted. It has already earned that status twice: it caught an 11-vs-3 divergence in SFP handle acquisition (Rust rebuilds a handle per call site, Python reuses sfp_obj_dict), and the Redis counters exposed a 3.08x WRITE amplification - RealDbTable::set (db.rs:139-149) issues one HSET per field where swsscommon Table.set issues a single multi-field HSET, 4352 vs 1411 commands per sweep. Any gap here is a fidelity defect, not a performance datum.",
+  "notes": "This is the VALIDITY GATE, not a performance result, and it must pass before any timing is trusted. It has already earned that status twice: it caught an 11-vs-3 divergence in SFP handle acquisition (Rust rebuilds a handle per call site, Python reuses sfp_obj_dict), and the Redis counters exposed a 3.08x WRITE amplification - RealDbTable::set (db.rs:139-149) issues one HSET per field where swsscommon Table.set issues a single multi-field HSET, 4352 vs 1411 commands per sweep. Any gap here is a fidelity defect, not a performance datum. ALSO implemented on the DUT via the emulator Monitor stream (./tools/run_dut_bench.sh B9 --variants rust,python), which is the stronger form: it observes real EEPROM traffic rather than mocked HAL calls, and counts work rather than time so it is immune to KVM noise. That DUT run currently FAILS: rust 9410 reads/70s vs python 1232 (7.6x), page 0 6421 vs 353, and page 4 read 192 times by rust and never by the reference.",
   "ports": 32,
   "fixture": "cmis_40g_lr4.json",
   "task": "dom_info_update",
   "action": "poll_once",
   "iterations": 1,
   "threads": 1,
-  "configs": ["a", "b", "p"]
+  "configs": [
+    "a",
+    "b",
+    "p"
+  ]
 }

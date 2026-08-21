@@ -40,7 +40,7 @@ echo "[dut-bench] shipping harness -> $DUT_IP:$STAGE"
 tar czf /tmp/xbench.tar.gz -C "$BENCH" dut || exit 2
 docker cp /tmp/xbench.tar.gz mgmt:/tmp/xbench.tar.gz >/dev/null
 docker exec mgmt bash -lc "sshpass -p $DUT_PW scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /tmp/xbench.tar.gz admin@$DUT_IP:/tmp/" >/dev/null 2>&1
-dut "rm -rf $STAGE && mkdir -p $STAGE && tar xzf /tmp/xbench.tar.gz -C /tmp && cp /tmp/dut/* $STAGE/ && chmod +x $STAGE/*.sh $STAGE/*.py" >/dev/null
+dut "rm -rf $STAGE && mkdir -p $STAGE && tar xzf /tmp/xbench.tar.gz -C /tmp && cp -r /tmp/dut/* $STAGE/ && chmod +x $STAGE/*.sh $STAGE/*.py" >/dev/null
 
 if [[ ",$VARIANTS," == *,rust,* ]]; then
   if [ -f "$RUST_BIN" ]; then

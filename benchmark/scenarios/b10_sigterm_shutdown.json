@@ -5,14 +5,16 @@
   "metric": "p50/max shutdown latency",
   "instrument": "supervisorctl + /proc",
   "harness": "dut",
-  "status": "blocked",
-  "blocked_by": "Process-level by definition; there is no process to signal in an in-process harness.",
+  "status": "implemented",
   "ports": 28,
   "fixture": "cmis_40g_lr4.json",
   "task": "dom_info_update",
   "action": "task_worker",
   "iterations": 20,
   "threads": 1,
-  "configs": ["b", "p"],
-  "notes": "Expect a Rust win by construction rather than by optimisation: result_4 bounds shutdown with SHUTDOWN_JOIN_GRACE (2s) plus a hard backstop, engineered against that 10s limit. The reference has no such bound. Say so when reporting."
+  "configs": [
+    "b",
+    "p"
+  ],
+  "notes": "Expect a Rust win by construction rather than by optimisation: result_4 bounds shutdown with SHUTDOWN_JOIN_GRACE (2s) plus a hard backstop, engineered against that 10s limit. The reference has no such bound. Say so when reporting. Implemented in the DUT harness (benchmark/dut/xbench.py): ./tools/run_dut_bench.sh B10 --variants rust,python"
 }

@@ -35,3 +35,29 @@ esac
 ln -sfn "$abs" "$LINK"
 echo "[select] target-crate -> $(readlink -f "$LINK")"
 grep -m1 '^version' "$abs/xcvrd-rs/Cargo.toml" 2>/dev/null | sed 's/^/[select] xcvrd-rs /'
+
+# --- portability preflight -------------------------------------------------
+# The IN-PROCESS harness (rust/) links the target as a library and implements its
+# Hal / SfpHandle traits. Those are PRIVATE INTERNALS and differ per translation:
+# result_3/result_4 expose Hal + SfpHandle + DbTable, while result_5 exposes
+# Chassis + Sfp + StateDb + Table. So rust/ only builds against the former, and
+# against anything else cargo fails with "no `Hal` in `hal`".
+#
+# The only contract EVERY implementation honours is the deployed one: a process
+# that consumes the Python sonic_platform (Platform -> Chassis -> Sfp) and writes
+# STATE_DB. That is what benchmark/dut/ drives, which is why the DUT harness works
+# for any translation and the in-process harness does not.
+have_traits=1
+for t in "pub trait Hal" "pub trait SfpHandle"; do
+  grep -rq "$t" "$abs"/xcvrd-rs/src/*.rs 2>/dev/null || have_traits=0
+done
+if [ "$have_traits" = 1 ]; then
+  echo "[select] in-process harness: SUPPORTED (target exposes Hal + SfpHandle)"
+else
+  echo "[select] in-process harness: NOT SUPPORTED for this target."
+  echo "[select]   It exposes:" $(grep -rho "pub trait [A-Za-z]*" "$abs"/xcvrd-rs/src/*.rs 2>/dev/null | sed "s/pub trait //" | sort -u | tr "\n" " ")
+  echo "[select]   but rust/ requires Hal + SfpHandle (result_3/result_4 shape)."
+  echo "[select]   Use the DUT harness instead - it drives the daemon as a PROCESS and"
+  echo "[select]   assumes only sonic_platform + STATE_DB, so it works for any translation:"
+  echo "[select]     ./tools/run_dut_bench.sh B9 --variants rust,python"
+fi

@@ -5,13 +5,16 @@
   "metric": "time until the last INFO row is populated; peak CPU",
   "instrument": "STATE_DB + /proc sampler",
   "harness": "dut",
-  "status": "blocked",
-  "blocked_by": "Same as B2 - needs SfpStateUpdateTask to consume staged change events.",
+  "status": "implemented",
   "ports": 28,
   "fixture": "cmis_40g_lr4.json",
   "task": "sfp_state_update",
   "action": "task_worker",
   "iterations": 20,
   "threads": 1,
-  "configs": ["b", "p"]
+  "configs": [
+    "b",
+    "p"
+  ],
+  "notes": "Implemented in the DUT harness (benchmark/dut/xbench.py): ./tools/run_dut_bench.sh B6 --variants rust,python"
 }

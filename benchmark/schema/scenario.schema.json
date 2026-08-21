@@ -104,9 +104,10 @@
       "type": "string",
       "enum": [
         "inprocess",
-        "dut"
+        "dut",
+        "both"
       ],
-      "description": "inprocess = benchmark/ (mocked plant, throwaway Redis, no daemon process). dut = the live testbed via xcvrd-tests, needed for anything measuring a PROCESS (RSS, threads, SIGTERM) or requiring the emulator Monitor stream."
+      "description": "inprocess = benchmark/ (mocked plant, throwaway Redis, no daemon process). dut = the live testbed via xcvrd-tests, needed for anything measuring a PROCESS (RSS, threads, SIGTERM) or requiring the emulator Monitor stream. both = implemented in each, measuring the same quantity by different means."
     },
     "status": {
       "type": "string",

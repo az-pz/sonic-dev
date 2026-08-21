@@ -304,10 +304,185 @@ def b10_sigterm(db, x, args):
             "p50_s": ok[len(ok) // 2] if ok else None, "max_s": max(ok) if ok else None}
 
 
+# --------------------------------------------------- stimulus-driven scenarios
+# These need the emulator (plug/unplug) or the bridge's error hook, which is why
+# they cannot run in the in-process harness.
+
+def _pct(vals, p):
+    v = sorted(x for x in vals if x is not None)
+    return v[min(int(len(v) * p), len(v) - 1)] if v else None
+
+
+def _wait(pred, timeout, poll=POLL):
+    """Wait for a predicate, returning elapsed seconds or None on timeout."""
+    t0 = time.time()
+    end = t0 + timeout
+    while time.time() < end:
+        if pred():
+            return time.time() - t0
+        time.sleep(poll)
+    return None
+
+
+def b02_hotplug(db, x, args):
+    """B2 -- single-port hot plug and unplug latency."""
+    from emu import Emu
+    e = Emu()
+    present = e.present_indices()
+    if not present:
+        return {"error": "emulator reports no present modules"}
+    idx = args.port if args.port is not None else present[0]
+    port = "Ethernet%d" % (idx * 4)
+    plug, unplug = [], []
+    for _ in range(args.reps):
+        # unplug -> INFO row cleared
+        e.set_present(idx, False)
+        unplug.append(_wait(lambda: not db.keys("TRANSCEIVER_INFO|%s" % port), args.timeout))
+        # plug -> INFO row repopulated
+        e.set_present(idx, True)
+        plug.append(_wait(lambda: bool(db.keys("TRANSCEIVER_INFO|%s" % port)), args.timeout))
+    e.close()
+    return {"index": idx, "port": port,
+            "plug_s": {"p50": _pct(plug, .5), "p95": _pct(plug, .95), "raw": plug},
+            "unplug_s": {"p50": _pct(unplug, .5), "p95": _pct(unplug, .95), "raw": unplug}}
+
+
+def b03_cmis_bringup(db, x, args):
+    """B3 -- plug to cmis_state == READY.
+
+    NOTE result_4 holds each CMIS datapath state for CMIS_INTER_STATE_DWELL_MS = 1000
+    (cmis_manager_task.rs:81) where the Python reference does not, so bring-up is
+    slower BY CONSTRUCTION on that implementation. Report it, do not silently
+    attribute it to the rewrite.
+    """
+    from emu import Emu
+    e = Emu()
+    present = e.present_indices()
+    if not present:
+        return {"error": "emulator reports no present modules"}
+    idx = args.port if args.port is not None else present[0]
+    port = "Ethernet%d" % (idx * 4)
+    out = []
+    for _ in range(args.reps):
+        e.set_present(idx, False)
+        _wait(lambda: not db.keys("TRANSCEIVER_INFO|%s" % port), args.timeout)
+        e.set_present(idx, True)
+        out.append(_wait(
+            lambda: db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "cmis_state") == "READY",
+            args.timeout))
+    e.close()
+    return {"index": idx, "port": port,
+            "ready_s": {"p50": _pct(out, .5), "p95": _pct(out, .95), "raw": out},
+            "caveat": "result_4 adds a deliberate 1s dwell per CMIS state"}
+
+
+def b06_plug_storm(db, x, args):
+    """B6 -- unplug every module, then plug them all at once."""
+    from emu import Emu
+    e = Emu()
+    idxs = e.present_indices()
+    if not idxs:
+        return {"error": "emulator reports no present modules"}
+    for i in idxs:
+        e.set_present(i, False)
+    _wait(lambda: db.count("TRANSCEIVER_INFO") == 0, args.timeout)
+    t0 = time.time()
+    for i in idxs:
+        e.set_present(i, True)
+    first = _wait(lambda: db.count("TRANSCEIVER_INFO") > 0, args.timeout)
+    last = _wait(lambda: db.count("TRANSCEIVER_INFO") >= len(idxs), args.timeout)
+    e.close()
+    return {"modules": len(idxs), "first_info_s": first, "all_info_s": last,
+            "elapsed_s": round(time.time() - t0, 3),
+            "final_rows": db.count("TRANSCEIVER_INFO")}
+
+
+def b08_error_inject(db, x, args):
+    """B8 -- fault set and clear latency, via the bridge's STATE_DB error hook."""
+    import inject_err
+    if not inject_err.hooks_enabled():
+        return {"error": "bridge .test_hooks marker absent - error injection is inert; "
+                         "redeploy the platform with test hooks enabled"}
+    from emu import Emu
+    e = Emu()
+    present = e.present_indices()
+    idx = args.port if args.port is not None else (present[0] if present else 0)
+    port = "Ethernet%d" % (idx * 4)
+    e.close()
+    sets, clears = [], []
+    for _ in range(args.reps):
+        inject_err.set_error(idx)
+        sets.append(_wait(lambda: bool(db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error")),
+                          args.timeout))
+        inject_err.clear_error(idx)
+        clears.append(_wait(
+            lambda: not db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error"), args.timeout))
+    inject_err.clear_all()
+    return {"index": idx, "port": port,
+            "set_s": {"p50": _pct(sets, .5), "raw": sets},
+            "clear_s": {"p50": _pct(clears, .5), "raw": clears}}
+
+
+def b09_read_amplification(db, x, args):
+    """B9 -- EEPROM work per DOM cycle, from the emulator's Monitor stream.
+
+    THE VALIDITY GATE, and the highest-signal measurement available on the DUT:
+    it counts work rather than time, so it is immune to KVM steal and host load. A
+    gap between implementations here is a fidelity defect, not a performance datum,
+    and every timing number should be distrusted until it is explained.
+    """
+    from emu import Monitor
+    m = Monitor().start_and_wait()
+    time.sleep(args.duration)
+    m.stop()
+    s = m.summary()
+    per = s["per_port"]
+    ports = len(per) or 1
+    return {"window_s": args.duration, "total_events": s["total"],
+            "reads": sum(v["reads"] for v in per.values()),
+            "writes": sum(v["writes"] for v in per.values()),
+            "ports_touched": len(per),
+            "events_per_port": round(s["total"] / ports, 1),
+            "page_histogram": s["page_histogram"]}
+
+
+def b11_media_settings(db, x, args):
+    """B11 -- media-settings notification latency on insert.
+
+    Exposes a known inefficiency in BOTH result_4 and result_5: fancy_regex::Regex::new()
+    is recompiled per call in get_media_settings / match_optics_si_key (common.rs:303,313)
+    rather than compiled once.
+    """
+    from emu import Emu
+    e = Emu()
+    present = e.present_indices()
+    if not present:
+        return {"error": "emulator reports no present modules"}
+    idx = args.port if args.port is not None else present[0]
+    port = "Ethernet%d" % (idx * 4)
+    out = []
+    for _ in range(args.reps):
+        e.set_present(idx, False)
+        _wait(lambda: not db.keys("TRANSCEIVER_INFO|%s" % port), args.timeout)
+        e.set_present(idx, True)
+        out.append(_wait(
+            lambda: bool(db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "media_settings_sync_status"))
+                    or bool(db.keys("TRANSCEIVER_INFO|%s" % port)), args.timeout))
+    e.close()
+    return {"index": idx, "port": port,
+            "notify_s": {"p50": _pct(out, .5), "p95": _pct(out, .95), "raw": out}}
+
+
 SCENARIOS = {
     "B1": ("b01_cold_start_info", b01_cold_start),
     "B4": ("b04_dom_steady_state", b04_dom_cadence),
+    "B2": ("b02_hotplug_single", b02_hotplug),
+    "B3": ("b03_cmis_bringup", b03_cmis_bringup),
     "B5": ("b05_idle_soak", b05_idle_soak),
+    "B6": ("b06_plug_storm", b06_plug_storm),
+    "B8": ("b08_error_inject", b08_error_inject),
+    "B9": ("b09_read_amplification", b09_read_amplification),
+    "B11": ("b11_media_settings_notify", b11_media_settings),
     "B10": ("b10_sigterm_shutdown", b10_sigterm),
 }
 
@@ -321,6 +496,8 @@ def main():
     ap.add_argument("--ports", type=int, default=0, help="0 = whatever the DUT presents")
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--timeout", type=float, default=180.0)
+    ap.add_argument("--port", type=int, default=None,
+                    help="physical module index to stimulate (default: first present)")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
 
@@ -341,7 +518,8 @@ def main():
         x.start(); x.wait_running()
 
     recs = []
-    for rep in range(a.reps if key != "B10" else 1):
+    inner_looped = {"B10", "B2", "B3", "B8", "B11"}
+    for rep in range(1 if key in inner_looped else a.reps):
         t0 = time.time()
         res = fn(db, x, a)
         recs.append({"scenario": key, "name": name, "variant": variant, "rep": rep,

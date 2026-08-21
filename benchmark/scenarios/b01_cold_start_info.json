@@ -5,13 +5,16 @@
   "metric": "p50/p95 latency, boot -> INFO row present for all ports",
   "instrument": "STATE_DB poll @100ms",
   "harness": "dut",
-  "status": "blocked",
-  "blocked_by": "TRANSCEIVER_INFO is posted by SfpStateUpdateTask, which this harness does not drive - it wires only DomInfoUpdateTask. Needs the SFP task added to bin/trace.rs and bench_dom.py. On the DUT this is also confounded by two artefacts that must be neutralised first: RUST_SETTLE_SECS (default 15) and the daemon's self-re-exec for --enable_sff_mgr (daemon.rs:190), which puts two process starts inside any boot measurement.",
+  "status": "implemented",
   "ports": 28,
   "fixture": "cmis_40g_lr4.json",
   "task": "sfp_state_update",
   "action": "init",
   "iterations": 1,
   "threads": 1,
-  "configs": ["b", "p"]
+  "configs": [
+    "b",
+    "p"
+  ],
+  "notes": "Implemented in the DUT harness (benchmark/dut/xbench.py): ./tools/run_dut_bench.sh B1 --variants rust,python"
 }
