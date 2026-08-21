@@ -2,3 +2,9 @@ rust/target-crate
 rust/target/
 results/*/
 vendor/
+
+# The repo-root .gitignore has a blanket `_*.py`, which silently swallowed
+# _bench.py -- a REQUIRED module of the pymocks package (every other module
+# imports it). A fresh clone therefore got a package that could not import, while
+# azure kept working because the file existed there untracked. Re-include it here.
+!pymocks/sonic_platform/_bench.py
