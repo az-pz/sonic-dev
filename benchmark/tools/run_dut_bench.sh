@@ -13,9 +13,17 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$(cd "$HERE/.." && pwd)"
+REPO="$(cd "$BENCH/.." && pwd)"
 DUT_IP="${DUT_IP:-10.250.0.101}"
 DUT_PW="${DUT_PW:-password}"
 STAGE=/tmp/xbench
+# PROVENANCE. This used to default silently to ~/recode/crate, which is a STAGING
+# directory that validate_on_dut.sh overwrites with whatever crate it last shipped --
+# so "the rust variant" was whatever happened to be there, not a named translation.
+# That produced two headline findings (7.6x read amplification, 5.85x idle CPU) that
+# did not reproduce on a second host, because the two hosts had different unnamed
+# crates staged. Every run now records exactly what it measured.
+CRATE="${CRATE:-}"
 RUST_BIN="${RUST_BIN:-$HOME/recode/crate/target/release/xcvrd-rs}"
 OUT="$BENCH/results/dut"; mkdir -p "$OUT"
 
@@ -43,8 +51,31 @@ docker exec mgmt bash -lc "sshpass -p $DUT_PW scp -o StrictHostKeyChecking=no -o
 dut "rm -rf $STAGE && mkdir -p $STAGE && tar xzf /tmp/xbench.tar.gz -C /tmp && cp -r /tmp/dut/* $STAGE/ && chmod +x $STAGE/*.sh $STAGE/*.py" >/dev/null
 
 if [[ ",$VARIANTS," == *,rust,* ]]; then
+  if [ -n "$CRATE" ]; then
+    echo "[dut-bench] building from $CRATE"
+    bash "$REPO/recodeAgent/tools/dut/build_crate.sh" "$CRATE" || exit 2
+    RUST_BIN="$CRATE/target/release/xcvrd-rs"
+  fi
   if [ -f "$RUST_BIN" ]; then
-    echo "[dut-bench] shipping rust binary ($(du -h "$RUST_BIN" | cut -f1))"
+    SHA="$(sha256sum "$RUST_BIN" | cut -c1-16)"
+    SRC="$(dirname "$(dirname "$(dirname "$RUST_BIN")")")"
+    echo "[dut-bench] rust binary : $RUST_BIN"
+    echo "[dut-bench]   sha256    : $SHA"
+    echo "[dut-bench]   built     : $(date -r "$RUST_BIN" "+%Y-%m-%d %H:%M")"
+    # Name the crate if it matches a recorded result, so the number is attributable.
+    MATCH=""
+    for r in "$REPO"/recodeAgent/results/result_*/crate; do
+      [ -d "$r/xcvrd-rs/src" ] || continue
+      diff -rq "$SRC/xcvrd-rs/src" "$r/xcvrd-rs/src" >/dev/null 2>&1 && MATCH="$(basename "$(dirname "$r")")"
+    done
+    if [ -n "$MATCH" ]; then
+      echo "[dut-bench]   crate     : $MATCH"
+    else
+      echo "[dut-bench]   crate     : UNRECOGNISED -- does not match any recodeAgent/results/result_*/crate."
+      echo "[dut-bench]   Results will not be attributable to a named translation. Pass"
+      echo "[dut-bench]   CRATE=recodeAgent/results/result_N to build from a known one."
+    fi
+    echo "{\"provenance\":{\"binary\":\"$RUST_BIN\",\"sha256_16\":\"$SHA\",\"crate\":\"${MATCH:-unrecognised}\",\"host\":\"$(hostname)\",\"ts\":\"$(date -Is)\"}}" >> "$OUT/${SCEN}.jsonl"
     docker cp "$RUST_BIN" mgmt:/tmp/xcvrd-rs >/dev/null
     docker exec mgmt bash -lc "sshpass -p $DUT_PW scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /tmp/xcvrd-rs admin@$DUT_IP:$STAGE/xcvrd-rs" >/dev/null 2>&1
   else
