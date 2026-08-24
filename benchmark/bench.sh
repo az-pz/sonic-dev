@@ -26,7 +26,11 @@
 #       --skip-build      measure using the existing binary (NOT recommended; the
 #                         result is only as attributable as that binary)
 #       --variants LIST   comma list of rust,python          (default: rust,python)
-#       --reps N          repetitions per scenario           (default: 2)
+#       --reps N          repetitions per scenario           (default: 1)
+#       --dom-interval S  DOM poll interval given to BOTH daemons (default: 5).
+#                         The reference defaults to 60s and reads this only from argv,
+#                         so leaving it unset would compare a 60s Python against a 5s
+#                         Rust -- an order of magnitude apart in polling work.
 #       --duration S      seconds for soak-style scenarios   (default: 30)
 #       --settle S        quiet period before each DUT scenario (default: 20; env
 #                         SETTLE_SECS). Do not set to 0 for multi-scenario runs -- the
@@ -56,7 +60,7 @@ DUT_SCENARIOS="B1 B2 B3 B5 B6 B8 B9 B10 B11"
 INPROC_SCENARIOS="B4 B7 B12"
 
 CRATE_ARG=""; ONE=""; BUILD_ONLY=0; SKIP_BUILD=0; LIST=0; VENDOR=0
-VARIANTS="rust,python"; REPS=2; DURATION=30; OUT=""
+VARIANTS="rust,python"; REPS=1; DURATION=30; OUT=""; DOM_INTERVAL=5
 
 die() { echo "[bench] $*" >&2; exit 2; }
 log() { echo "[bench] $*"; }
@@ -70,6 +74,7 @@ while [ $# -gt 0 ]; do
     --skip-build)   SKIP_BUILD=1; shift ;;
     --variants)     VARIANTS="${2:?}"; shift 2 ;;
     --reps)         REPS="${2:?}"; shift 2 ;;
+    --dom-interval) DOM_INTERVAL="${2:?}"; shift 2 ;;
     --duration)     DURATION="${2:?}"; shift 2 ;;
     --settle)       SETTLE_SECS="${2:?}"; export SETTLE_SECS; shift 2 ;;
     -o|--out)       OUT="${2:?}"; shift 2 ;;
@@ -233,8 +238,8 @@ RESTORED=0
 cleanup() {
   [ "$RESTORED" = 1 ] && return
   RESTORED=1
-  log "restoring stock python xcvrd"
-  dut "bash $STAGE/inject.sh python" >/dev/null 2>&1 || true
+  log "restoring the stock python xcvrd"
+  dut "bash $STAGE/inject.sh restore" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -308,7 +313,16 @@ run_dut_scenario() {
     IFS=',' read -ra VS <<< "$VARIANTS"
     for v in "${VS[@]}"; do
       echo "    rep $rep / $v"
-      dut "bash $STAGE/inject.sh $v" >/dev/null || { echo "    inject $v FAILED"; continue; }
+      # Capture the inject result: a variant that silently failed to start would
+      # otherwise be measured as though it were the other one, since supervisor keeps
+      # running whatever was there before.
+      local ij
+      ij="$(dut "bash $STAGE/inject.sh $v $DOM_INTERVAL" 2>&1)"
+      case "$ij" in
+        *"$v active"*) ;;
+        *) echo "    inject $v FAILED:"; echo "$ij" | sed 's/^/      /' | tail -3; continue ;;
+      esac
+      echo "$ij" | grep -a WARNING | sed 's/^/    /' || true
       out="$(dut "cd $STAGE && python3 xbench.py $s --reps 1 --timeout 180 $extra" | grep -a '^{' | tail -1)"
       [ -n "$out" ] && emit "$out" || echo "    no result from $s/$v"
     done
@@ -474,6 +488,7 @@ doc = {
     "id": "$RUN_ID", "started": "$RUN_TS", "elapsed_s": $ELAPSED,
     "host": "$(hostname)", "reps": $REPS, "duration_s": $DURATION,
     "variants": "$VARIANTS".split(","),
+    "dom_update_interval_s": $DOM_INTERVAL,
     "scenarios_requested": "$SCENARIOS".split(),
   },
   "provenance": {
