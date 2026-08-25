@@ -57,7 +57,17 @@ TOGGLE_PERIOD = 2.0     # seconds between edges -- must be well under the poll c
 # The link-change re-read is scheduled DIAG_DB_UPDATE_TIME_AFTER_LINK_CHANGE (1s) after
 # the flap, so a daemon that honours it captures most edges. 0.6 leaves room for the
 # edge closest to the end of the run and for one or two coalesced flaps, while still
-# sitting far above the ~0.4 a 5s poll-only daemon can reach.
+# sitting far above what a poll alone can reach.
+#
+# CALIBRATED on the reference daemon at a measured 4.8s cadence:
+#     with flaps (this test)          10/10 edges captured   ratio 1.00
+#     same edges, NO flaps (control)   2/10 edges captured   ratio 0.20
+# so 0.60 sits midway between the two with a 5x separation. The no-flap control is the
+# honest negative here: it feeds the daemon exactly what one ignoring the APPL_DB
+# trigger would see -- the periodic poll and nothing else -- without modifying it.
+# Note the control landed at 0.20 rather than the ~0.48 the poll ceiling allows,
+# because consecutive polls often observe the same state between even-spaced toggles;
+# the real margin is wider than the arithmetic bound below.
 MIN_CAPTURE_RATIO = 0.6
 # Below this cadence a poll-only daemon could reach the threshold on polls alone, so the
 # test can no longer separate the two and says so instead of reporting a false pass.
