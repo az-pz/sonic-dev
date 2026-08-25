@@ -464,6 +464,20 @@ def b06_plug_storm(db, x, args):
     return out
 
 
+def _fault_present(db, port):
+    """True when TRANSCEIVER_STATUS_SW.error describes an actual fault.
+
+    The field is ALWAYS present: it reads 'N/A' when healthy and a description like
+    'Blocking EEPROM from being read|Bus stuck (I2C data or clock shorted)' when
+    faulted. Testing existence rather than content therefore reported the fault as
+    already set (8.5ms, measuring nothing) and never saw it clear (the field never
+    empties), which is how this scenario produced a plausible set_s alongside a null
+    clear_s for both daemons.
+    """
+    v = db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error")
+    return bool(v) and v.strip() not in ("N/A", "0", "")
+
+
 def b08_error_inject(db, x, args):
     """B8 -- fault set and clear latency, via the bridge's STATE_DB error hook."""
     import inject_err
@@ -476,18 +490,31 @@ def b08_error_inject(db, x, args):
     idx = args.port if args.port is not None else (present[0] if present else 0)
     port = "Ethernet%d" % (idx * 4)
     e.close()
+
+    # Start from a known-clean port. A fault left over from an interrupted run would
+    # make the first set_s read as instantaneous.
+    inject_err.clear_error(idx)
+    if not _wait(lambda: not _fault_present(db, port), 30):
+        return {"error": "port %s still shows a fault before injection; "
+                         "cannot measure set latency from a dirty state" % port,
+                "error_field": db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error")}
+
     sets, clears = [], []
     for _ in range(args.reps):
         inject_err.set_error(idx)
-        sets.append(_wait(lambda: bool(db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error")),
-                          args.timeout))
+        sets.append(_wait(lambda: _fault_present(db, port), args.timeout))
         inject_err.clear_error(idx)
-        clears.append(_wait(
-            lambda: not db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error"), args.timeout))
+        clears.append(_wait(lambda: not _fault_present(db, port), args.timeout))
     inject_err.clear_all()
-    return {"index": idx, "port": port,
-            "set_s": {"p50": _pct(sets, .5), "raw": sets},
-            "clear_s": {"p50": _pct(clears, .5), "raw": clears}}
+
+    out = {"index": idx, "port": port,
+           "set_s": {"p50": _pct(sets, .5), "raw": sets},
+           "clear_s": {"p50": _pct(clears, .5), "raw": clears}}
+    if any(v is None for v in sets + clears):
+        out["timeout_reason"] = (
+            "a transition did not appear within %ss; error field currently=%r"
+            % (args.timeout, db.hget("TRANSCEIVER_STATUS_SW|%s" % port, "error")))
+    return out
 
 
 def b09_read_amplification(db, x, args):
