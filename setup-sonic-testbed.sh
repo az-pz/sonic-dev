@@ -100,16 +100,20 @@ EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS
 EMU_NO_SPECIAL="${EMU_NO_SPECIAL:-1}"                             # 1 = uniform CMIS only; 0 = provision the special modules
 export EMU_NO_SPECIAL
 EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-1}"                             # 1 = enable the bridge error-injection hook for xcvrd_tests (this is a test/dev testbed); set 0 for a clean virtual platform
-# DOM poll seconds baked into the STOCK Python xcvrd at emulator-deploy time, via
-# pmon_daemon_control.json (the supervisord template turns xcvrd.dom_update_interval
-# into the flag). Upstream defaults to 60s; 5 is used here so the reference daemon
-# and an injected Rust one poll at the SAME rate. Without this a benchmark comparing
-# them is comparing polling rates as much as implementations -- measured: python at
-# 60s read 2.3% CPU where the same daemon at 5s read 18.1%, against rust's 42.3%.
-# Persistent (survives pmon restarts by construction) and undone by emulator_revert.
-# 0 = leave the upstream default alone.
-XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}"
-export XCVRD_DOM_INTERVAL
+# DOM poll seconds for EVERY xcvrd on this testbed, whichever implementation is
+# running. Applied two ways, both from this one value:
+#   * stock PYTHON  -- baked into pmon_daemon_control.json at emulator-deploy time
+#                      (the supervisord template turns xcvrd.dom_update_interval into
+#                      the flag), so it survives pmon restarts and is undone by
+#                      emulator_revert.
+#   * injected RUST -- baked into the inject shim's argv by rust_xcvrd_ctl.sh.
+# One knob because the alternative caused a real error: the reference daemon sat at
+# upstream's 60s while injected Rust daemons were given 5s, so anything comparing them
+# was comparing polling rates as much as implementations. Measured on result_4, the
+# SAME python daemon read 2.3% idle CPU at 60s and 18.1% at 5s, against rust's 42.3%.
+# 0 = leave the upstream 60s default alone.
+DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
+export DOM_UPDATE_INTERVAL
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
 EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
 EMU_REBUILD_IMAGE="${EMU_REBUILD_IMAGE:-0}"                        # 1 = force rebuild the emulator image
@@ -442,18 +446,24 @@ _run_pytest() {
 #         platform_tests/test_xcvr_info_in_db.py
 #     ./setup-sonic-testbed.sh run_pytest transceiver/eeprom/ --rust ./recodeAgent/results/result_4
 #
-#   --dom_update_interval <secs>  (or DOM_UPDATE_INTERVAL=<secs>) is baked into
-#   the Rust inject shim as the daemon's --dom_update_interval. xcvrd's DOM loop
-#   defaults to 60 s, so after the inject's STATE_DB flush the DOM-backed tables
-#   (TRANSCEIVER_DOM_SENSOR / _STATUS) stay empty for up to a minute while
-#   TRANSCEIVER_INFO / _DOM_THRESHOLD appear immediately -- a smaller value makes
-#   DOM-cadence tests finish sooner and shrinks that window. Opt-in: unset keeps
-#   the upstream 60 s, so the Rust port is never silently graded under
-#   non-default timing. Applies to --rust runs only (it is a property of the
-#   injected daemon); it is ignored, with a warning, without --rust.
+#   --dom_update_interval <secs>  (or DOM_UPDATE_INTERVAL=<secs>) sets the DOM poll
+#   cadence for EVERY xcvrd on this testbed, not just the injected one: the stock
+#   Python daemon gets it via pmon_daemon_control.json at emulator-deploy time, and
+#   an injected Rust daemon gets it baked into its shim's argv. Defaults to 5.
+#
+#   It defaults to 5 rather than upstream's 60 for two reasons. Practically, after
+#   the inject's STATE_DB flush the DOM-backed tables (TRANSCEIVER_DOM_SENSOR /
+#   _STATUS) would otherwise stay empty for up to a minute while TRANSCEIVER_INFO /
+#   _DOM_THRESHOLD appear immediately, so DOM-cadence tests spend that window
+#   waiting. More importantly, a single value keeps the two implementations
+#   comparable: when the stock daemon sat at 60 s while injected Rust ran at 5 s,
+#   anything measured across both was partly measuring polling rate -- the same
+#   Python daemon read 2.3% idle CPU at 60 s and 18.1% at 5 s.
+#
+#   Set 0 to keep upstream's 60 s everywhere.
 #     ./setup-sonic-testbed.sh run_pytest --rust recodeAgent/results/result_4 \
-#         --dom_update_interval 5 platform_tests/test_xcvr_info_in_db.py
-#     DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder>
+#         --dom_update_interval 60 platform_tests/test_xcvr_info_in_db.py
+#     DOM_UPDATE_INTERVAL=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust <folder>
 #
 #   NOTE: -v is NOT consumed as a verbosity flag here (unlike the canned test
 #   phases) because it is also pytest's own flag -- it is forwarded to pytest
@@ -510,12 +520,6 @@ run_pytest() {
   if [ -n "$rust_folder" ]; then
     [ -d "$rust_folder" ] || die "rust pipeline folder not found: $rust_folder"
     [ -d "$rust_folder/crate" ] || die "no crate/ workspace under $rust_folder — is this a recodeAgent pipeline folder? (expected $rust_folder/crate/Cargo.toml)"
-  elif [ -n "${DOM_UPDATE_INTERVAL:-}" ]; then
-    # The interval is applied by baking it into the Rust inject shim, so without
-    # --rust there is nothing to apply it to. Warn instead of silently ignoring
-    # it -- a user who thinks they changed the DOM cadence would otherwise
-    # misread the resulting timings.
-    warn "--dom_update_interval/DOM_UPDATE_INTERVAL only applies to the injected Rust xcvrd (--rust); ignoring it for this run"
   fi
   if [ "${SKIP_CONN_GRAPH:-0}" = "1" ]; then
     log "  SKIP_CONN_GRAPH=1 -> not re-injecting the connection graph"
@@ -1254,9 +1258,9 @@ emulator() {
   bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
     || die "build_bundle.sh failed"
 
-  log "Shipping image + bundle to $DUT and running the native deploy (stock xcvrd --dom_update_interval=${XCVRD_DOM_INTERVAL:-5})"
+  log "Shipping image + bundle to $DUT and running the native deploy (stock xcvrd --dom_update_interval=$DOM_UPDATE_INTERVAL)"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
-  EMU_TEST_HOOKS="$EMU_TEST_HOOKS" XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}" \
+  EMU_TEST_HOOKS="$EMU_TEST_HOOKS" DOM_UPDATE_INTERVAL="$DOM_UPDATE_INTERVAL" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
   _emu_write_specials_marker
@@ -1550,11 +1554,11 @@ EOF
 ${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-sonic-testbed.sh ...)${n}
   ${b}VERBOSE${n}=1            Full tracebacks (-rA --tb=long --showlocals -s); same as the -v flag
   ${b}RESET_TESTS${n}=0        Skip the SLOW module-reset tests in transceiver_tests_all
-  ${b}DOM_UPDATE_INTERVAL${n}= DOM poll seconds for an injected RUST xcvrd, per run (unset = upstream 60s)
-  ${b}XCVRD_DOM_INTERVAL${n}=  DOM poll seconds baked into the STOCK Python xcvrd at emulator
-                       deploy time, so the reference daemon and an injected Rust one
-                       poll at the same rate. Persistent until emulator_revert;
-                       0 leaves upstream's 60s.             (current: $XCVRD_DOM_INTERVAL)
+  ${b}DOM_UPDATE_INTERVAL${n}= DOM poll seconds for EVERY xcvrd, python or rust. Baked into the
+                       stock daemon at emulator-deploy time and into the rust inject
+                       shim's argv, so both poll at the same rate -- otherwise a
+                       comparison between them is partly a comparison of polling
+                       rates. 0 leaves upstream's 60s.     (current: $DOM_UPDATE_INTERVAL)
   ${b}TESTBED_NAME${n}=...     conf-name in vtestbed.yaml            (current: $TESTBED_NAME)
   ${b}DUT${n}=...              DUT hostname                          (current: $DUT)
   ${b}DUT_IP${n}=...           DUT mgmt IPv4 as seen from the mgmt ctr (current: $DUT_IP)
@@ -1583,8 +1587,8 @@ ${b}EXAMPLES${n}
       platform_tests/test_xcvr_info_in_db.py                ${d}# one test vs Rust xcvrd${n}
   ./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4
                                                             ${d}# best Rust gate: 105 xcvrd tests${n}
-  DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh transceiver_tests_all_rust \\
-      recodeAgent/results/result_4                          ${d}# faster DOM cadence${n}
+  DOM_UPDATE_INTERVAL=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust \\
+      recodeAgent/results/result_4                          ${d}# upstream 60s cadence${n}
   ./setup-sonic-testbed.sh transceiver_tests_rust recodeAgent/results/result_4
   ./setup-sonic-testbed.sh hotplug_test Ethernet40
   ./setup-sonic-testbed.sh xcvrd_status                     ${d}# which xcvrd is live?${n}

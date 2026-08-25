@@ -27,7 +27,8 @@
 #                         result is only as attributable as that binary)
 #       --variants LIST   comma list of rust,python          (default: rust,python)
 #       --reps N          repetitions per scenario           (default: 1)
-#       --dom-interval S  DOM poll interval given to BOTH daemons (default: 5).
+#       --dom-interval S  DOM poll interval given to BOTH daemons (default: 5, or
+#                         $DOM_UPDATE_INTERVAL -- the same knob setup-sonic-testbed.sh uses).
 #                         The reference defaults to 60s and reads this only from argv,
 #                         so leaving it unset would compare a 60s Python against a 5s
 #                         Rust -- an order of magnitude apart in polling work.
@@ -60,7 +61,7 @@ DUT_SCENARIOS="B1 B2 B3 B5 B6 B8 B9 B10 B11"
 INPROC_SCENARIOS="B4 B7 B12"
 
 CRATE_ARG=""; ONE=""; BUILD_ONLY=0; SKIP_BUILD=0; LIST=0; VENDOR=0
-VARIANTS="rust,python"; REPS=1; DURATION=30; OUT=""; DOM_INTERVAL=5
+VARIANTS="rust,python"; REPS=1; DURATION=30; OUT=""; DOM_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
 
 die() { echo "[bench] $*" >&2; exit 2; }
 log() { echo "[bench] $*"; }

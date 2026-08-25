@@ -33,7 +33,7 @@ EMU_DEBUG="${EMU_DEBUG:-0}"             # forwarded to deploy_on_dut.sh (emulato
 # Default 5 rather than upstream's 60 so the reference daemon and an injected Rust
 # one poll at the same rate -- otherwise every comparison between them is partly a
 # comparison of polling rates. 0 leaves the upstream default alone.
-XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}"
+DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
 SSHP="sshpass -p $DUT_PASS"
 SSHOPT='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
 DUT="admin@$DUT_IP"
@@ -57,7 +57,7 @@ docker exec --user "$CTR_USER" "$CNAME" bash -lc "
 
 echo "[ship] unpack bundle + launch native deploy (detached — survives the pmon-restart ssh drop)"
 docker exec --user "$CTR_USER" "$CNAME" bash -lc "
-  $SSHP ssh $SSHOPT $DUT 'rm -rf /home/admin/emu-bundle && mkdir -p /home/admin/emu-bundle && tar xzf /home/admin/emu-bundle.tar.gz -C /home/admin/emu-bundle && rm -f /home/admin/native.log && nohup env EMU_TEST_HOOKS=$EMU_TEST_HOOKS EMU_DEBUG=$EMU_DEBUG XCVRD_DOM_INTERVAL=$XCVRD_DOM_INTERVAL bash /home/admin/deploy_on_dut.sh > /home/admin/native.log 2>&1 & echo launched'
+  $SSHP ssh $SSHOPT $DUT 'rm -rf /home/admin/emu-bundle && mkdir -p /home/admin/emu-bundle && tar xzf /home/admin/emu-bundle.tar.gz -C /home/admin/emu-bundle && rm -f /home/admin/native.log && nohup env EMU_TEST_HOOKS=$EMU_TEST_HOOKS EMU_DEBUG=$EMU_DEBUG DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL bash /home/admin/deploy_on_dut.sh > /home/admin/native.log 2>&1 & echo launched'
 "
 
 echo "[ship] waiting for deploy to complete (marker EMU_DEPLOY_DONE, up to ~6 min)..."

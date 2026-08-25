@@ -98,7 +98,7 @@ fi
 # --- 2) flip skip_xcvrd -> false, restart pmon so supervisord regenerates ---
 echo "[native] STEP 2: flip skip_xcvrd -> false, enable_xcvrd_sff_mgr -> true"
 [ -e "${PDC}.orig" ] || sudo cp "$PDC" "${PDC}.orig"
-sudo XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}" python3 - "$PDC" <<'PY'
+sudo DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}" python3 - "$PDC" <<'PY'
 import json, os, sys
 p = sys.argv[1]
 d = json.load(open(p))
@@ -127,7 +127,7 @@ d['enable_xcvrd_sff_mgr'] = True
 # 0 is deliberately treated as "leave upstream alone": the template's `if` is falsy
 # for 0, so writing it would silently produce the 60s default rather than the
 # continuous polling the value implies.
-ival = os.environ.get('XCVRD_DOM_INTERVAL', '5')
+ival = os.environ.get('DOM_UPDATE_INTERVAL', '5')
 if ival and ival != '0':
     d.setdefault('xcvrd', {})['dom_update_interval'] = int(ival)
 json.dump(d, open(p, 'w'), indent=4)
