@@ -886,6 +886,79 @@ xcvrd_status() {
 xcvrd_info() { xcvrd_status "$@"; }
 
 # ---------------------------------------------------------------------------
+# xcvrd_restore: put the stock PYTHON xcvrd back in pmon if a Rust one is
+#   injected. Idempotent -- a no-op when the stock daemon is already running.
+#
+#   Every phase that injects already restores on exit, including on interrupt.
+#   This exists for when that did not happen: an ssh drop, a killed shell, a host
+#   reboot mid-run, or a benchmark run that ended abnormally. A stranded Rust
+#   xcvrd is invisible -- the testbed looks entirely normal -- and every later
+#   test or benchmark silently grades the wrong daemon, so recovery needs to be
+#   one obvious command rather than a remembered ssh incantation.
+#
+#   Covers the benchmark harness too: benchmark/dut/inject.sh backs the stock
+#   daemon up to the same /usr/local/bin/xcvrd.pyorig, so one restore handles
+#   both injection paths.
+#
+#   Unlike the internal trap-time restore (which must never abort, since it
+#   usually runs while already unwinding), this FAILS loudly if the Python daemon
+#   is not actually back -- a command whose whole purpose is recovery must not
+#   report success when the box is still poisoned.
+#
+#     ./setup-sonic-testbed.sh xcvrd_restore
+# ---------------------------------------------------------------------------
+xcvrd_restore() {
+  local sshp="sshpass -p $DUT_PASS"
+  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
+  local dut="admin@$DUT_IP"
+  local dutdir ctl st
+  dutdir="$(_dut_dir)" \
+    || die "DUT helper scripts not found — expected recodeAgent/tools/dut next to $SCRIPT_DIR/$(basename "$0")"
+  ctl="$dutdir/rust_xcvrd_ctl.sh"
+
+  # Ship the control script: the whole point of this phase is recovering a testbed
+  # left in an unknown state, so it cannot assume an earlier run staged anything.
+  docker cp "$ctl" "$MGMT_CONTAINER:/tmp/rust_xcvrd_ctl.sh" || die "docker cp ctl -> mgmt failed"
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp scp $sshopt /tmp/rust_xcvrd_ctl.sh $dut:/home/admin/rust_xcvrd_ctl.sh" \
+    || die "failed to copy control script to DUT"
+
+  st="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+        "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh status'" 2>/dev/null)"
+  [ -n "$st" ] || die "could not query xcvrd status on $DUT — is the DUT reachable? (try: ./setup-sonic-testbed.sh xcvrd_status)"
+
+  case "$st" in
+    *"PYTHON (stock)"*)
+      ok "stock Python xcvrd already running on $DUT — nothing to restore"
+      printf '%s\n' "$st" | sed 's/^/  /'
+      return 0 ;;
+  esac
+
+  log "Rust xcvrd detected on $DUT — restoring the stock Python daemon"
+  printf '%s\n' "$st" | sed 's/^/  before: /'
+  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+    "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh restore'" \
+    || die "restore command failed on $DUT"
+
+  # Verify rather than trust the exit code: the restore copies a file and restarts a
+  # supervised process, and either half can fail while the command still returns 0.
+  st="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
+        "$sshp ssh $sshopt $dut 'bash /home/admin/rust_xcvrd_ctl.sh status'" 2>/dev/null)"
+  case "$st" in
+    *"PYTHON (stock)"*)
+      printf '%s\n' "$st" | sed 's/^/  after:  /'
+      ok "stock Python xcvrd restored on $DUT" ;;
+    "")
+      die "restore ran but the DUT stopped responding — verify by hand with './setup-sonic-testbed.sh xcvrd_status'" ;;
+    *)
+      printf '%s\n' "$st" | sed 's/^/  after:  /'
+      die "restore did NOT take — a Rust xcvrd is still injected, so the next test or benchmark would grade the wrong daemon.
+  Inspect : ./setup-sonic-testbed.sh xcvrd_status
+  By hand : ssh to the DUT and run 'bash /home/admin/rust_xcvrd_ctl.sh restore'" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # inject_conn_graph: provide a lab connection graph for the KVM DUT (vlab-01).
 #   The stock KVM (vms-kvm-t0) testbed ships NO lab connection graph, so the
 #   pytest `conn_graph_facts` fixture returns an empty dict and every
@@ -1416,6 +1489,7 @@ transceiver_tests_noop|[-v]|rust|NEGATIVE CONTROL: inject a no-op xcvrd; STATE_D
 transceiver_tests_all_noop|[-v]|rust|NEGATIVE CONTROL over the full set
 xcvrd_status||rust|Report the xcvrd running in pmon: PYTHON vs injected RUST (read-only)
 xcvrd_info||rust|Alias for xcvrd_status
+xcvrd_restore||rust|Put the stock Python xcvrd back if a Rust one is stranded (idempotent)
 remove_topo||teardown|Tear down the topology and stop the VMs
 rebuild||teardown|Recover after a /mnt/data wipe (re-lays storage, VMs, topo, emulator)
 REG
