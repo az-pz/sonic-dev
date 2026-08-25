@@ -100,6 +100,16 @@ EMU_MODULES="${EMU_MODULES:-33}"                                  # present CMIS
 EMU_NO_SPECIAL="${EMU_NO_SPECIAL:-1}"                             # 1 = uniform CMIS only; 0 = provision the special modules
 export EMU_NO_SPECIAL
 EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-1}"                             # 1 = enable the bridge error-injection hook for xcvrd_tests (this is a test/dev testbed); set 0 for a clean virtual platform
+# DOM poll seconds baked into the STOCK Python xcvrd at emulator-deploy time, via
+# pmon_daemon_control.json (the supervisord template turns xcvrd.dom_update_interval
+# into the flag). Upstream defaults to 60s; 5 is used here so the reference daemon
+# and an injected Rust one poll at the SAME rate. Without this a benchmark comparing
+# them is comparing polling rates as much as implementations -- measured: python at
+# 60s read 2.3% CPU where the same daemon at 5s read 18.1%, against rust's 42.3%.
+# Persistent (survives pmon restarts by construction) and undone by emulator_revert.
+# 0 = leave the upstream default alone.
+XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}"
+export XCVRD_DOM_INTERVAL
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
 EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
 EMU_REBUILD_IMAGE="${EMU_REBUILD_IMAGE:-0}"                        # 1 = force rebuild the emulator image
@@ -1244,9 +1254,9 @@ emulator() {
   bash "$EMU_DEPLOY_DIR/build_bundle.sh" "$XCVR_EMU_DIR" "$EMU_MODULES" \
     || die "build_bundle.sh failed"
 
-  log "Shipping image + bundle to $DUT and running the native deploy"
+  log "Shipping image + bundle to $DUT and running the native deploy (stock xcvrd --dom_update_interval=${XCVRD_DOM_INTERVAL:-5})"
   MGMT_CONTAINER="$MGMT_CONTAINER" DUT_IP="$DUT_IP" DUT_PASS="$DUT_PASS" \
-  EMU_TEST_HOOKS="$EMU_TEST_HOOKS" \
+  EMU_TEST_HOOKS="$EMU_TEST_HOOKS" XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}" \
     bash "$EMU_DEPLOY_DIR/ship_and_deploy.sh" "$EMU_BUNDLE" "$EMU_IMAGE_TAR" \
     || die "ship_and_deploy.sh failed"
   _emu_write_specials_marker
@@ -1540,7 +1550,11 @@ EOF
 ${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-sonic-testbed.sh ...)${n}
   ${b}VERBOSE${n}=1            Full tracebacks (-rA --tb=long --showlocals -s); same as the -v flag
   ${b}RESET_TESTS${n}=0        Skip the SLOW module-reset tests in transceiver_tests_all
-  ${b}DOM_UPDATE_INTERVAL${n}= DOM poll seconds for an injected RUST xcvrd (unset = upstream 60s)
+  ${b}DOM_UPDATE_INTERVAL${n}= DOM poll seconds for an injected RUST xcvrd, per run (unset = upstream 60s)
+  ${b}XCVRD_DOM_INTERVAL${n}=  DOM poll seconds baked into the STOCK Python xcvrd at emulator
+                       deploy time, so the reference daemon and an injected Rust one
+                       poll at the same rate. Persistent until emulator_revert;
+                       0 leaves upstream's 60s.             (current: $XCVRD_DOM_INTERVAL)
   ${b}TESTBED_NAME${n}=...     conf-name in vtestbed.yaml            (current: $TESTBED_NAME)
   ${b}DUT${n}=...              DUT hostname                          (current: $DUT)
   ${b}DUT_IP${n}=...           DUT mgmt IPv4 as seen from the mgmt ctr (current: $DUT_IP)

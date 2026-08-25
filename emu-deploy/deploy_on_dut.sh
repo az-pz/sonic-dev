@@ -98,8 +98,8 @@ fi
 # --- 2) flip skip_xcvrd -> false, restart pmon so supervisord regenerates ---
 echo "[native] STEP 2: flip skip_xcvrd -> false, enable_xcvrd_sff_mgr -> true"
 [ -e "${PDC}.orig" ] || sudo cp "$PDC" "${PDC}.orig"
-sudo python3 - "$PDC" <<'PY'
-import json, sys
+sudo XCVRD_DOM_INTERVAL="${XCVRD_DOM_INTERVAL:-5}" python3 - "$PDC" <<'PY'
+import json, os, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d['skip_xcvrd'] = False
@@ -111,6 +111,25 @@ d['skip_xcvrd'] = False
 # (TX_DISABLE, lpmode-disable, high-power-class) is silently absent and the
 # xcvrd-tests SFF gates fail.
 d['enable_xcvrd_sff_mgr'] = True
+
+# DOM poll interval for the STOCK Python daemon. Upstream defaults to 60s, which
+# makes every DOM-dependent wait on this testbed an order of magnitude slower than
+# it needs to be, and -- more importantly -- meant the reference daemon polled 12x
+# less often than an injected Rust one configured at 5s. Benchmarks comparing the
+# two were therefore comparing polling rates as much as implementations.
+#
+# The template supports this natively:
+#     {% if xcvrd and xcvrd.dom_update_interval %}
+#         {%- set options = options + " --dom_update_interval " + ... %}
+# so it is set through the same supported key as enable_xcvrd_sff_mgr rather than by
+# shimming /usr/local/bin/xcvrd, and it survives pmon restarts by construction.
+#
+# 0 is deliberately treated as "leave upstream alone": the template's `if` is falsy
+# for 0, so writing it would silently produce the 60s default rather than the
+# continuous polling the value implies.
+ival = os.environ.get('XCVRD_DOM_INTERVAL', '5')
+if ival and ival != '0':
+    d.setdefault('xcvrd', {})['dom_update_interval'] = int(ival)
 json.dump(d, open(p, 'w'), indent=4)
 print("    pmon_daemon_control.json ->", d)
 PY
