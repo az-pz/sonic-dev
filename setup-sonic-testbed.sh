@@ -1547,6 +1547,13 @@ ${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-son
   ${b}VM_TYPE${n}=...          vsonic | ceos | csonic | veos         (current: $VM_TYPE)
   ${b}NUM_VMS${n}=...          Neighbor VM count                     (current: $NUM_VMS)
   ${b}EMU_MODULES${n}=...      Present CMIS modules (0..N-1)         (current: $EMU_MODULES)
+  ${b}EMU_NO_SPECIAL${n}=0     Provision the 4 SPECIAL emulator modules alongside the uniform
+                       CMIS ones: idx10 SFF-8636, idx11 coherent C-CMIS ZR,
+                       idx13 flat-memory, idx14 multi-application. Only the
+                       xcvrd-tests suite exercises them; the sonic-mgmt tests
+                       assume a uniform plant and FAIL against them, which is why
+                       the default is 1 (uniform) and xcvrd_tests re-deploys with
+                       0 on its own.                          (current: $EMU_NO_SPECIAL)
   ${b}MGMT_CONTAINER${n}=...   sonic-mgmt container name             (current: $MGMT_CONTAINER)
   ${b}DATA${n}=...             Big-disk mount point                  (current: $DATA)
 
