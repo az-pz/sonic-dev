@@ -112,25 +112,8 @@ EMU_TEST_HOOKS="${EMU_TEST_HOOKS:-1}"                             # 1 = enable t
 # was comparing polling rates as much as implementations. Measured on result_4, the
 # SAME python daemon read 2.3% idle CPU at 60s and 18.1% at 5s, against rust's 42.3%.
 # 0 = leave the upstream 60s default alone.
-#
-# EXCEPTION: the xcvrd_tests suite overrides this to XCVRD_TESTS_DOM_INTERVAL unless
-# you set DOM_UPDATE_INTERVAL yourself -- see the note there. Explicit beats default,
-# so `DOM_UPDATE_INTERVAL=5 ./setup-sonic-testbed.sh xcvrd_tests` still runs at 5s.
-if [ -n "${DOM_UPDATE_INTERVAL+set}" ]; then DOM_INTERVAL_EXPLICIT=1; else DOM_INTERVAL_EXPLICIT=0; fi
 DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
 export DOM_UPDATE_INTERVAL
-
-# DOM cadence used by the xcvrd_tests black-box suite. Deliberately the upstream 60s
-# rather than the testbed default of 5s, because several of that suite's assertions
-# depend on the periodic poll being SLOW enough to distinguish from a faster,
-# event-driven path. test_link_change_triggers_fast_flag_recapture is the clearest
-# case: it raises a DOM flag, asserts it does NOT surface for GUARD=8s (proving no
-# poll raced in), then flaps the link and asserts the flag appears within T_FAST=15s
-# -- attributing that to xcvrd's link-change re-read. At a 5s cadence a poll lands
-# inside the 8s guard every time, so the test fails; and even when it did not, a poll
-# would satisfy the 15s assertion, making it vacuous. Verified both ways on the DUT:
-# fails at 5s with "a poll raced in", passes at 60s.
-XCVRD_TESTS_DOM_INTERVAL="${XCVRD_TESTS_DOM_INTERVAL:-60}"
 EMU_BUNDLE="${EMU_BUNDLE:-$EMU_DEPLOY_DIR/emu-bundle.tar.gz}"
 EMU_IMAGE_TAR="${EMU_IMAGE_TAR:-$EMU_DEPLOY_DIR/xcvr-emu-image.tar.gz}"  # emulator image tarball (docker save|gzip)
 EMU_REBUILD_IMAGE="${EMU_REBUILD_IMAGE:-0}"                        # 1 = force rebuild the emulator image
@@ -835,11 +818,6 @@ xcvrd_tests_rust() {
 
   # Emulator first (see above), while the Python xcvrd is still running.
   _xcvrd_tests_prestep
-  # Resolve the cadence BEFORE the inject: _rust_build_and_inject bakes
-  # $DOM_UPDATE_INTERVAL into the shim's argv, so deciding it afterwards would leave
-  # the Rust daemon polling at the testbed default while the suite expects the slow
-  # cadence its assertions are written against.
-  _xcvrd_tests_dom_cadence
   # SKIP_EMU_PRESTEP stops xcvrd_tests from re-running the prestep post-inject.
   SKIP_EMU_PRESTEP=1 _rust_run "$folder" xcvrd_tests "${@:2}"
 }
@@ -1389,69 +1367,6 @@ _xcvrd_tests_prestep() {
   EMU_NO_SPECIAL=0 emulator || die "emulator re-deploy (EMU_NO_SPECIAL=0) FAILED — xcvrd-tests would skip/fail the special-module tests"
 }
 
-# _xcvrd_tests_dom_cadence: give the suite the DOM cadence its assertions assume.
-#   Several of its tests distinguish an event-driven re-read from the periodic poll,
-#   which only works while the poll is slow (see XCVRD_TESTS_DOM_INTERVAL). The
-#   testbed default of 5s breaks that, so unless DOM_UPDATE_INTERVAL was set
-#   explicitly this raises the cadence for the run. Explicit always wins -- being
-#   able to run the suite at any cadence is the point of the override.
-_xcvrd_tests_dom_cadence() {
-  if [ "$DOM_INTERVAL_EXPLICIT" = 1 ]; then
-    log "DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL set explicitly — using it for xcvrd-tests"
-    log "  NOTE: tests that isolate an event-driven re-read from the periodic poll need a"
-    log "  cadence slower than their 8s guard; below ~20s expect test_link_change_flags to fail"
-    DOM_UPDATE_INTERVAL="$DOM_UPDATE_INTERVAL"
-  else
-    log "xcvrd-tests: using --dom_update_interval=$XCVRD_TESTS_DOM_INTERVAL (the suite's assertions need a slow poll)"
-    DOM_UPDATE_INTERVAL="$XCVRD_TESTS_DOM_INTERVAL"
-  fi
-  export DOM_UPDATE_INTERVAL
-  _set_stock_dom_interval "$DOM_UPDATE_INTERVAL"
-}
-
-# _set_stock_dom_interval <secs> : set the STOCK Python xcvrd's DOM cadence and
-#   restart it. Writes the same pmon_daemon_control.json key the emulator deploy
-#   uses, so it goes through the supervisord template rather than a shim, but skips
-#   the ~3 min full redeploy when only the cadence needs to change.
-_set_stock_dom_interval() {
-  local secs="${1:?_set_stock_dom_interval needs a value in seconds}"
-  local sshp="sshpass -p $DUT_PASS"
-  local sshopt='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=25'
-  local dut="admin@$DUT_IP" cur
-
-  cur="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
-        "$sshp ssh $sshopt $dut 'pid=\$(docker exec pmon supervisorctl status xcvrd 2>/dev/null | grep -o \"pid [0-9]*\" | cut -d\" \" -f2); docker exec pmon sh -c \"tr \\\\\\\\0 \\\" \\\" < /proc/\$pid/cmdline\"'" 2>/dev/null | tr -d '\r')"
-  case "$cur" in
-    *"--dom_update_interval $secs"*)
-      log "  stock xcvrd already at --dom_update_interval=$secs"
-      return 0 ;;
-    *xcvrd-rs*)
-      # A Rust daemon is injected; its cadence comes from the inject shim, not this
-      # file. Writing the file would be a silent no-op for the running daemon.
-      log "  a Rust xcvrd is injected — its cadence comes from the inject shim, not pmon_daemon_control.json"
-      return 0 ;;
-  esac
-
-  log "  setting the stock Python xcvrd to --dom_update_interval=$secs"
-  docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
-    "$sshp ssh $sshopt $dut 'sudo python3 -c \"
-import json
-p=\\\"/usr/share/sonic/device/x86_64-kvm_x86_64-r0/pmon_daemon_control.json\\\"
-d=json.load(open(p))
-d.setdefault(\\\"xcvrd\\\",{})[\\\"dom_update_interval\\\"]=$secs
-json.dump(d,open(p,\\\"w\\\"),indent=4)
-\" && docker restart pmon >/dev/null && sleep 20 && docker exec pmon supervisorctl start xcvrd >/dev/null 2>&1; sleep 5'" >/dev/null 2>&1 \
-    || warn "could not set the DOM interval on $DUT"
-
-  # Verify: a silently-unapplied cadence is exactly the failure this exists to avoid.
-  cur="$(docker exec --user "$HOST_USER" "$MGMT_CONTAINER" bash -lc \
-        "$sshp ssh $sshopt $dut 'pid=\$(docker exec pmon supervisorctl status xcvrd 2>/dev/null | grep -o \"pid [0-9]*\" | cut -d\" \" -f2); docker exec pmon sh -c \"tr \\\\\\\\0 \\\" \\\" < /proc/\$pid/cmdline\"'" 2>/dev/null | tr -d '\r')"
-  case "$cur" in
-    *"--dom_update_interval $secs"*) log "  stock xcvrd argv: $cur" ;;
-    *) warn "DOM interval may not have applied — running argv: ${cur:-<unreadable>}" ;;
-  esac
-}
-
 xcvrd_tests() {
   local src="$SCRIPT_DIR/xcvrd-tests"
   [ -d "$src" ] || die "xcvrd-tests folder not found at $src — run from a full sonic-develop checkout"
@@ -1460,7 +1375,6 @@ xcvrd_tests() {
   local dut="admin@$DUT_IP"
 
   _xcvrd_tests_prestep
-  _xcvrd_tests_dom_cadence
 
   log "Packaging xcvrd-tests and shipping to $DUT"
   local tar=/tmp/xcvrd-tests.tar.gz
@@ -1645,13 +1559,6 @@ ${b}COMMON ENV OVERRIDES${n} ${d}(prefix the command, e.g. VERBOSE=1 ./setup-son
                        shim's argv, so both poll at the same rate -- otherwise a
                        comparison between them is partly a comparison of polling
                        rates. 0 leaves upstream's 60s.     (current: $DOM_UPDATE_INTERVAL)
-  ${b}XCVRD_TESTS_DOM_INTERVAL${n}=
-                       Cadence the xcvrd_tests suite runs at, overriding the above
-                       unless you set DOM_UPDATE_INTERVAL yourself. Defaults to the
-                       upstream 60s because several of that suite's tests isolate an
-                       event-driven re-read from the periodic poll, which only works
-                       while the poll is slower than their 8s guard.
-                                                           (current: $XCVRD_TESTS_DOM_INTERVAL)
   ${b}TESTBED_NAME${n}=...     conf-name in vtestbed.yaml            (current: $TESTBED_NAME)
   ${b}DUT${n}=...              DUT hostname                          (current: $DUT)
   ${b}DUT_IP${n}=...           DUT mgmt IPv4 as seen from the mgmt ctr (current: $DUT_IP)
