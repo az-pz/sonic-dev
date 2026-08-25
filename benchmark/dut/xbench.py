@@ -198,8 +198,18 @@ def b01_cold_start(db, x, args):
 
     Flushes first, so the daemon must genuinely rediscover and republish the plant;
     counting rows that a previous run left behind would measure nothing.
+
+    The target is the row count observed BEFORE the flush -- what this daemon actually
+    publishes on this plant. Note that is not the emulator's module count: the daemon
+    only publishes for slots mapping to a configured logical port, and the two differ
+    on this testbed (33 modules, 32 ports).
     """
-    expected = args.ports or len(db.keys("TRANSCEIVER_INFO|*")) or 32
+    expected = args.ports or len(db.keys("TRANSCEIVER_INFO|*"))
+    if not expected:
+        # A hardcoded fallback here would be a guess presented as a measurement: if
+        # nothing is published yet, "how long to republish everything" has no meaning.
+        return {"error": "no TRANSCEIVER_INFO rows before the restart, so there is no "
+                         "baseline to republish; is xcvrd running and settled?"}
     db.flush_transceiver()
     t0 = time.time()
     x.restart()
@@ -213,8 +223,12 @@ def b01_cold_start(db, x, args):
             full = time.time() - t0
             break
         time.sleep(POLL)
-    return {"expected_ports": expected, "first_info_s": first, "all_info_s": full,
-            "timed_out": full is None}
+    out = {"expected_ports": expected, "first_info_s": first, "all_info_s": full,
+           "timed_out": full is None}
+    if full is None:
+        out["timeout_reason"] = "only %d of %d rows returned within %ss" % (
+            db.count("TRANSCEIVER_INFO"), expected, args.timeout)
+    return out
 
 
 def b04_dom_cadence(db, x, args):
@@ -377,24 +391,57 @@ def b03_cmis_bringup(db, x, args):
 
 
 def b06_plug_storm(db, x, args):
-    """B6 -- unplug every module, then plug them all at once."""
+    """B6 -- unplug every module, then plug them all at once.
+
+    The completion target is the daemon's OWN baseline row count, captured before the
+    storm -- not the emulator's module count. Those differ: the emulator presents a
+    module per slot, but the daemon only publishes TRANSCEIVER_INFO for slots that map
+    to a configured logical port, so a plant with more modules than CONFIG_DB ports can
+    never reach len(modules) rows. Targeting the module count made this scenario wait
+    out its full timeout and report all_info_s = null for BOTH daemons -- a harness
+    defect that looked like a daemon failure. Observed live: 33 modules, 32 ports.
+    """
     from emu import Emu
     e = Emu()
     idxs = e.present_indices()
     if not idxs:
+        e.close()
         return {"error": "emulator reports no present modules"}
+
+    baseline = db.count("TRANSCEIVER_INFO")
+    if baseline == 0:
+        # Nothing published to begin with: "restore what was there" is not a usable
+        # target, and a zero would silently pass on the first poll.
+        e.close()
+        return {"error": "no TRANSCEIVER_INFO rows before the storm; is xcvrd running "
+                         "and settled?"}
+
     for i in idxs:
         e.set_present(i, False)
-    _wait(lambda: db.count("TRANSCEIVER_INFO") == 0, args.timeout)
+    cleared = _wait(lambda: db.count("TRANSCEIVER_INFO") == 0, args.timeout)
+
     t0 = time.time()
     for i in idxs:
         e.set_present(i, True)
     first = _wait(lambda: db.count("TRANSCEIVER_INFO") > 0, args.timeout)
-    last = _wait(lambda: db.count("TRANSCEIVER_INFO") >= len(idxs), args.timeout)
+    last = _wait(lambda: db.count("TRANSCEIVER_INFO") >= baseline, args.timeout)
     e.close()
-    return {"modules": len(idxs), "first_info_s": first, "all_info_s": last,
-            "elapsed_s": round(time.time() - t0, 3),
-            "final_rows": db.count("TRANSCEIVER_INFO")}
+
+    final = db.count("TRANSCEIVER_INFO")
+    out = {"modules": len(idxs), "target_rows": baseline,
+           "unplug_cleared_s": cleared,
+           "first_info_s": first, "all_info_s": last,
+           "elapsed_s": round(time.time() - t0, 3), "final_rows": final}
+    # Say why a null is a null, rather than leaving the reader to guess whether the
+    # daemon was slow or the scenario was mis-targeted.
+    if last is None:
+        out["timeout_reason"] = (
+            "only %d of %d rows returned within %ss" % (final, baseline, args.timeout))
+    if cleared is None:
+        out["unplug_warning"] = (
+            "STATE_DB never emptied after unplugging all modules; the replug timing "
+            "starts from a dirty state and is not comparable")
+    return out
 
 
 def b08_error_inject(db, x, args):
