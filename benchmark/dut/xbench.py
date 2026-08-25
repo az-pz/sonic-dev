@@ -338,6 +338,22 @@ def _wait(pred, timeout, poll=POLL):
     return None
 
 
+def _wait_since(t0, pred, timeout, poll=POLL):
+    """Like _wait, but reports elapsed from an EXTERNAL t0.
+
+    For multi-stage observations of one stimulus (first row, then all rows), every
+    stage has to be timed from the stimulus itself. Timing each from its own start
+    yields sequential intervals that read as absolute latencies -- and can print a
+    later milestone as a smaller number than an earlier one.
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return round(time.time() - t0, 3)
+        time.sleep(poll)
+    return None
+
+
 def b02_hotplug(db, x, args):
     """B2 -- single-port hot plug and unplug latency."""
     from emu import Emu
@@ -423,8 +439,12 @@ def b06_plug_storm(db, x, args):
     t0 = time.time()
     for i in idxs:
         e.set_present(i, True)
-    first = _wait(lambda: db.count("TRANSCEIVER_INFO") > 0, args.timeout)
-    last = _wait(lambda: db.count("TRANSCEIVER_INFO") >= baseline, args.timeout)
+    # Both measured from t0, the moment of the plug. _wait returns elapsed from ITS own
+    # start, so chaining two calls would make the second an interval beginning when the
+    # first row appeared -- which produced the nonsense of a daemon reporting
+    # all_info_s = 1.50 after first_info_s = 2.90, i.e. finishing before it started.
+    first = _wait_since(t0, lambda: db.count("TRANSCEIVER_INFO") > 0, args.timeout)
+    last = _wait_since(t0, lambda: db.count("TRANSCEIVER_INFO") >= baseline, args.timeout)
     e.close()
 
     final = db.count("TRANSCEIVER_INFO")
