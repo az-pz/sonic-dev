@@ -1,194 +1,167 @@
-# sonic-xcvrd dev environment
+# sonic-dev
 
-Local, throwaway tooling to build and test **sonic-xcvrd** in Docker without
-touching the cloned repos. Nothing here is committed back into the repos.
+A self-contained SONiC virtual testbed for developing, testing and benchmarking the
+transceiver daemon (`xcvrd`) — including an automated pipeline that translates it from
+Python to Rust and grades the result.
 
-The image (`sonic-xcvrd-dev`) uses the **real** SWIG/C++ swss-common Python
-bindings, installed from SONiC's prebuilt Debian packages.
+Everything runs on one Linux host with nested virtualization: a KVM SONiC DUT, its
+neighbor VMs, a `sonic-mgmt` container, and an emulated transceiver plant. No physical
+optics required.
+
+```
+       setup-sonic-testbed.sh                the one entry point
+                 |
+   +-------------+--------------------------------+
+   |             |                                |
+ KVM testbed   xcvr-emu (emulated optics)   xcvrd under test
+ vlab-01 DUT   via the sonic_platform         python  |  rust
+ + 4 neighbors      gRPC bridge             (reversibly injected)
+                                                   |
+                                    graded by xcvrd-tests, measured by benchmark/
+```
+
+## Running it
+
+`setup-sonic-testbed.sh` is the interface to the whole repo — 1 700 lines, ~34 phases,
+each idempotent and individually re-runnable. Build the testbed from nothing:
+
+```bash
+./setup-sonic-testbed.sh                 # runs every setup phase in order
+```
+
+Then drive it a phase at a time:
+
+```bash
+./setup-sonic-testbed.sh emulator                              # deploy the emulated optics
+./setup-sonic-testbed.sh xcvrd_tests                           # black-box suite vs stock python xcvrd
+./setup-sonic-testbed.sh xcvrd_tests_rust recodeAgent/results/result_4
+./setup-sonic-testbed.sh xcvrd_status                          # which daemon is live?
+./setup-sonic-testbed.sh xcvrd_restore                         # un-strand an injected rust daemon
+```
+
+Tab completion:
+
+```bash
+eval "$(./setup-sonic-testbed.sh --completion bash)"
+```
+
+<details>
+<summary><code>./setup-sonic-testbed.sh --help</code></summary>
+
+```
+setup-sonic-testbed.sh — one-shot, idempotent SONiC KVM virtual testbed
+
+USAGE
+  ./setup-sonic-testbed.sh [<phase>] [args...]
+  ./setup-sonic-testbed.sh --help | --list-phases | --completion bash
+
+  With no phase it runs all (every setup phase in order). Every phase is
+  re-runnable on its own.
+
+SETUP PHASES (in the order `all` runs them)
+  all                        Run every phase in order (default when no phase is given)
+  preflight                  Verify KVM/nested-virt, OS version and passwordless sudo
+  install_prereqs            Install host packages, docker and python deps
+  setup_storage              Lay out the big-disk storage under the DATA mount point
+  clone_repo                 Clone/refresh the sonic-mgmt repo
+  setup_mgmt_network         Create the mgmt bridge network for the testbed
+  download_image             Download the sonic-vs DUT image
+  setup_container            Start the docker-sonic-mgmt container
+  setup_ssh                  Set up key-based SSH from the container to the vm_host
+  start_vms                  Start the neighbor VMs (see VM_TYPE / NUM_VMS below)
+  add_topo                   Deploy the topology (see TESTBED_NAME below)
+  deploy_mg                  Deploy the minigraph/config to the DUT
+  verify                     Verify the DUT is reachable and BGP sessions are up
+  inject_conn_graph          Inject the connection graph used by the transceiver tests
+
+TESTS
+  smoke_test [test] [-v]                Run the BGP verification test
+  run_pytest [--rust <folder>] <target> Run ARBITRARY sonic-mgmt pytest targets/args
+  transceiver_tests [-v]                xcvrd/SFP tests that pass on a vs DUT
+  transceiver_tests_all [-v]            Full validated set + the transceiver/eeprom suite
+  transceiver_eeprom_tests [-v]         Declarative transceiver/eeprom suite
+  transceiver_emu_test                  test_xcvr_info_in_db (needs the emulator)
+  hotplug_test [PORT]                   Unplug/replug a module, assert xcvrd reacts
+  xcvrd_tests [-- pytest args]          Ship xcvrd-tests/ to the DUT and run it there
+
+EMULATOR (xcvr-emu)
+  emulator                              Native deploy (bridge + pmon inject + container)
+  emulator_revert                       Undo it, restore the stock platform
+  emulator_e2e                          emulator + transceiver_emu_test in one go
+
+RUST xcvrd / recodeAgent
+  transceiver_tests_rust <folder>       Build+inject a Rust xcvrd, run, always restore
+  transceiver_tests_all_rust <folder>   Same, FULL validated set
+  xcvrd_tests_rust <folder>             Black-box suite against an injected Rust xcvrd
+  transceiver_tests_noop                NEGATIVE CONTROL: no-op xcvrd; tests SHOULD fail
+  transceiver_tests_all_noop            NEGATIVE CONTROL over the full set
+  xcvrd_status / xcvrd_info             Which xcvrd is in pmon: PYTHON vs RUST (read-only)
+  xcvrd_restore                         Restore stock Python if a Rust one is stranded
+
+TEARDOWN & RECOVERY
+  remove_topo                           Tear down the topology and stop the VMs
+  rebuild                               Recover after a /mnt/data wipe
+
+COMMON ENV OVERRIDES
+  VERBOSE=1              Full tracebacks; same as the -v flag
+  RESET_TESTS=0          Skip the SLOW module-reset tests
+  DOM_UPDATE_INTERVAL=   DOM poll seconds for EVERY xcvrd, python or rust
+  EMU_NO_SPECIAL=0       Also provision the 4 special emulator modules
+  TESTBED_NAME / DUT / DUT_IP / VM_TYPE / NUM_VMS / EMU_MODULES / DATA ...
+```
+
+Run `--help` for the full, current text — the registry in the script is the source of
+truth and this excerpt is trimmed.
+</details>
 
 ## Layout
 
 ```
-toRust/
-├── sonic-platform-daemons/   # cloned repo with xcvrd (pristine, read-only at test time)
-├── sonic-platform-common/    # cloned dependency repo (its sonic_xcvr tests run too)
-├── sonic-swss-common/        # cloned dependency repo (reference only)
-├── xcvr-emu/                 # cloned CMIS transceiver emulator (reference; installed via pip)
-└── dev/                      # everything in this folder is ours
-    ├── Dockerfile            # builds sonic-xcvrd-dev (REAL swsscommon, debian:trixie)
-    ├── entrypoint.sh         # stands up a /dev/log syslog sink, then runs cmd
-    ├── runtests              # in-container helper: clean test run (artifacts to /tmp)
-    ├── run-tests.sh          # host: runs the xcvrd suite (repo mounted read-only)
-    ├── run-tests-common.sh   # host: runs the sonic-platform-common sonic_xcvr suite
-    ├── shell.sh              # host: opens an interactive shell in the container
-    ├── emu-demo.sh           # host: end-to-end CmisApi-vs-emulator read demo
-    ├── emu-demo.py           # the demo driver (runs inside the container)
-    ├── emu-shell.sh          # host: shell with xcvr-emud running + bridge on PYTHONPATH
-    ├── fetch-swsscommon.sh   # host: downloads prebuilt swss-common debs from SONiC CI
-    ├── platform/             # the sonic_platform bridge plugin (gRPC -> xcvr-emu)
-    │   └── sonic_platform/   #   Platform / Chassis / Sfp(SfpOptoeBase) + emu_client
-    └── vendor/
-        ├── sonic-py-common/          # vendored from sonic-buildimage (not on PyPI)
-        ├── sonic-config-engine-stub/ # tiny stub to satisfy a build-time guard
-        └── debs/trixie-<arch>/       # prebuilt real swss-common .deb packages
+sonic-dev/
+├── setup-sonic-testbed.sh   the entry point above — testbed lifecycle, test runners,
+│                            emulator deploy, Rust inject/restore
+├── platform/                sonic_platform gRPC bridge: the SONiC platform API
+│                            (Chassis/Sfp) backed by the emulator instead of hardware.
+│                            Installed onto the DUT so xcvrd talks to emulated optics.
+├── emu-deploy/              deploying that bridge + the xcvr-emu container onto the DUT:
+│                            module config generation, special-module provisioning,
+│                            transceiver inventory, and a clean revert path
+├── xcvr-emu/                submodule — the CMIS transceiver emulator itself
+├── xcvrd-tests/             the black-box oracle: ~105 e2e tests that judge a daemon
+│                            purely by what it writes to STATE_DB, so they grade the
+│                            Python and Rust xcvrd identically. Ships to the DUT and
+│                            runs there
+├── recodeAgent/             the Python→Rust translation pipeline: agents, orchestrator,
+│                            the reference xcvrd source, DUT build/inject tooling, and
+│                            the produced translations under results/result_N
+├── benchmark/               performance harness comparing a Rust translation against
+│                            the Python reference — on the live DUT and in-process —
+│                            with provenance recording and a work-equivalence gate
+└── vendor/                  prebuilt swss-common debs and SONiC python shims
 ```
 
-## How dependencies are handled
+Each directory carries its own README with the detail.
 
-The xcvrd tests / source need these Python packages:
+## How the pieces fit
 
-| Package | How we provide it | Why |
-|---|---|---|
-| `swsscommon` | **real** SONiC deb (`python3-swsscommon`) | the genuine SWIG/C++ bindings; installed from the prebuilt deb (see below) |
-| `sonic-platform-common` | pip from git `master` (`--no-deps`) | provides `sonic_platform_base.*` (CmisApi, Sff86xx); tests use it for real |
-| `sonic-py-common` | vendored source, `pip --no-build-isolation` | not on PyPI; lives in sonic-buildimage |
-| `sonic-config-engine` | **stub** distribution | only needed to satisfy sonic-platform-common's build-time guard |
-| `pytest`, `pytest-cov`, `mock`, `natsort`, ... | pip | test tooling / runtime deps |
+**The emulator replaces hardware.** `platform/` implements the SONiC platform API over
+gRPC to `xcvr-emu`, so an unmodified `xcvrd` reads and writes EEPROM on emulated optics.
+`emu-deploy/` installs it. This is what makes plugging, faulting and reconfiguring a
+transceiver a scripted operation.
 
-`/dev/log`: the SONiC `SysLogger` logs to a syslog socket that a slim image
-lacks; `entrypoint.sh` creates a draining datagram sink there so logging does
-not crash (CI containers already have one).
+**`xcvrd-tests/` is the correctness oracle.** It never imports the daemon — it drives
+stimulus through the emulator and reads STATE_DB, so the same suite grades any
+implementation. That independence is why it can serve as the pipeline's verdict.
 
-## Real swsscommon
+**`recodeAgent/` produces the translations** under `results/result_N`, each graded by
+that suite via `xcvrd_tests_rust`.
 
-The swss-common bindings are a compiled artifact, not on PyPI, so we use the
-prebuilt Debian packages published by SONiC's public CI
-(`Azure.sonic-swss-common` on `dev.azure.com/mssonic`, anonymous download).
-`dev/fetch-swsscommon.sh` downloads them into `dev/vendor/debs/trixie-<arch>/`.
+**`benchmark/` measures them.** The DUT harness benchmarks the real supervised process
+(works for any translation); the in-process harness links a translation as a library for
+per-task detail. See `benchmark/README.md`.
 
-Why **trixie**: SONiC master targets Debian trixie, and trixie ships natively
-every runtime dep the swss-common deb needs (`libyang3 3.12.2`,
-`libboost-serialization1.83.0`, `libnl-3`, `libhiredis`, `libzmq5`) — so `apt`
-resolves the whole closure with no extra SONiC dependency debs. (Bookworm ships
-boost 1.74 and lacks libyang3, so it would need additional packages.)
+## Requirements
 
-`sonic-db-cli` and `redis-server` are included in the image, so you can run the
-real library against a live Redis (handy for future integration testing).
-
-## Usage
-
-> Commands are written for **git bash** on Windows.
-
-One-time: download the prebuilt swss-common debs (auto-detects your Docker arch):
-
-```bash
-dev/fetch-swsscommon.sh trixie          # -> dev/vendor/debs/trixie-<arch>/
-```
-
-Build the image:
-
-```bash
-docker build -t sonic-xcvrd-dev -f dev/Dockerfile dev
-```
-
-Run the full test suite (repo stays clean — mounted read-only, artifacts to /tmp):
-
-```bash
-dev/run-tests.sh
-```
-
-Run a subset / pass pytest args:
-
-```bash
-dev/run-tests.sh -k cmis -x
-```
-
-### sonic-platform-common tests (the CMIS/SFF API layer)
-
-`sonic-xcvrd` is built on the `sonic_xcvr` transceiver APIs that live in
-`sonic-platform-common`. That repo's `tests/sonic_xcvr/` suite (CMIS, c-CMIS,
-SFF-8636/8472/8436, optoe base, CDB firmware, VDM, …) directly exercises the
-layer xcvrd drives at runtime, so it's worth running alongside the xcvrd tests:
-
-```bash
-dev/run-tests-common.sh                                  # tests/sonic_xcvr (929 tests)
-dev/run-tests-common.sh tests/sonic_xcvr/test_cmis.py    # a single module
-dev/run-tests-common.sh tests/sonic_xcvr -k VDM          # forward pytest args
-```
-
-The cloned `sonic-platform-common` is mounted read-only and put first on
-`PYTHONPATH`, so its source (not the copy baked into the image) is what's tested.
-Artifacts go to `/tmp`; the repo stays pristine.
-
-> The full `tests` directory also has storage tests (need `psutil`) and
-> `sfputilhelper_test` (needs the real `sonic-config-engine`, which we stub).
-> Those are unrelated to xcvrd and aren't installed, so stick to `tests/sonic_xcvr`.
-
-### Interactive shell
-
-Drop into a shell inside the container to browse code, edit, and run tests.
-The repo is mounted read-write at `/work` and you start in the `sonic-xcvrd`
-directory:
-
-```bash
-dev/shell.sh
-```
-
-Inside the shell:
-
-```sh
-runtests                # full suite; artifacts go to /tmp, repo stays clean
-runtests -k cmis -x     # forward args to pytest
-pytest ...              # plain pytest also works (writes gitignored coverage files)
-ls xcvrd ; python3 -c "from swsscommon import swsscommon; print(swsscommon.__file__)"
-```
-
-Run a one-off command non-interactively instead of opening a shell:
-
-```bash
-dev/shell.sh python3 -c "import sonic_platform_base; print('ok')"
-```
-
-Latest result: **339 passed**, ~89% coverage.
-
-## CMIS transceiver emulator (xcvr-emu)
-
-[`xcvr-emu`](https://github.com/ishidawataru/xcvr-emu) is a software CMIS
-transceiver emulator: it models the full paged register space, the module state
-machine and per-datapath DPSMs, and exposes them over a gRPC `SfpEmulatorService`
-on port `50051`. It's baked into the image (pinned commit; modern grpc/protobuf
-since upstream pins an old grpcio with no py3.13 wheels).
-
-`dev/platform/sonic_platform/` is a **bridge plugin** that lets the *real* SONiC
-transceiver stack drive the emulator. xcvrd loads a platform via
-`import sonic_platform.platform; Platform().get_chassis()`; our `Sfp` subclasses
-`SfpOptoeBase` and implements the only three hardware hooks
-(`read_eeprom` / `write_eeprom` / `get_presence`) by translating to the
-emulator's gRPC `Read`/`Write`/`GetInfo`. The optoe *linear* offset SONiC uses is
-inverted back into the emulator's `(bank, page, window-offset)` form (verified by
-reading `VendorName` at `(0, 0, 129)`).
-
-So the same `CmisApi` the unit tests exercise runs unchanged — only the byte
-fetch underneath is the emulator instead of a mock or real hardware.
-
-### Read demo
-
-Drives the real `CmisApi` against an emulated 400G-DR4 module (starts its own
-`xcvr-emud`):
-
-```bash
-dev/emu-demo.sh
-```
-
-Expected: it prints `manufacturer: xcvr-emu`, `cmis_rev: 5.2`, the 400GBASE-DR4 /
-200GBASE-DR4 application advertisement, and a presence remove/insert toggle.
-
-### Interactive emulator shell
-
-Opens a shell with `xcvr-emud` already running (bundled `config.yaml`: modules
-0–6 present) and the bridge on `PYTHONPATH`:
-
-```bash
-dev/emu-shell.sh
-```
-
-Inside it:
-
-```sh
-xcvr-emush                                   # the emulator's own interactive client
-python3 -c "from sonic_platform.platform import Platform; \
-            print(Platform().get_chassis().get_sfp(0).get_xcvr_api().get_transceiver_info())"
-```
-
-The emulator address is configurable via `XCVR_EMU_ADDR` (default
-`localhost:50051`); the number of fallback SFPs via `XCVR_EMU_NUM_SFPS`.
+A Linux host with nested virtualization, passwordless sudo, docker, and a large data
+mount (default `/mnt/data`). `./setup-sonic-testbed.sh preflight` checks all of it and
+`install_prereqs` installs the rest.
