@@ -2,3 +2,7 @@
 	path = xcvr-emu
 	url = https://github.com/gsoosk/xcvr-emu
 	branch = sonic-dev
+[submodule "CodeWeaver"]
+	path = CodeWeaver
+	url = https://github.com/gsoosk/CodeWeaver
+	branch = V2

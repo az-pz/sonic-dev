@@ -134,6 +134,10 @@ sonic-dev/
 ├── recodeAgent/             the Python→Rust translation pipeline: agents, orchestrator,
 │                            the reference xcvrd source, DUT build/inject tooling, and
 │                            the produced translations under results/result_N
+├── CodeWeaver/              submodule — the general-purpose form of that pipeline. Same
+│                            agent methodology with everything project-specific moved
+│                            into a config file, so one engine drives any translation
+│                            (Python→Rust, Java→Go, ...) rather than just xcvrd
 ├── benchmark/               performance harness comparing a Rust translation against
 │                            the Python reference — on the live DUT and in-process —
 │                            with provenance recording and a work-equivalence gate
@@ -154,7 +158,9 @@ stimulus through the emulator and reads STATE_DB, so the same suite grades any
 implementation. That independence is why it can serve as the pipeline's verdict.
 
 **`recodeAgent/` produces the translations** under `results/result_N`, each graded by
-that suite via `xcvrd_tests_rust`.
+that suite via `xcvrd_tests_rust`. `CodeWeaver/` is the same pipeline generalized —
+identical agent methodology, but every project-specific detail lives in a config file,
+so it translates arbitrary codebases rather than only `xcvrd`.
 
 **`benchmark/` measures them.** The DUT harness benchmarks the real supervised process
 (works for any translation); the in-process harness links a translation as a library for
@@ -165,3 +171,11 @@ per-task detail. See `benchmark/README.md`.
 A Linux host with nested virtualization, passwordless sudo, docker, and a large data
 mount (default `/mnt/data`). `./setup-sonic-testbed.sh preflight` checks all of it and
 `install_prereqs` installs the rest.
+
+Clone with submodules (`xcvr-emu`, `CodeWeaver`):
+
+```bash
+git clone --recurse-submodules https://github.com/gsoosk/sonic-dev
+# already cloned:
+git submodule update --init --recursive
+```

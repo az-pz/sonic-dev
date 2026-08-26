@@ -1,9 +1,0 @@
-#!/bin/sh
-# Convenience wrapper to run the sonic-xcvrd suite from inside the container
-# shell without writing coverage/junit/cache artifacts into the mounted repo.
-# All generated output is redirected to /tmp. Extra args are forwarded to pytest.
-#
-#   runtests                # full suite
-#   runtests -k cmis -x     # forward args to pytest
-export COVERAGE_FILE=/tmp/.coverage
-exec pytest -o addopts="--cov=xcvrd --cov-report=term --cov-report=xml:/tmp/coverage.xml --cov-report=html:/tmp/htmlcov --junitxml=/tmp/test-results.xml -o cache_dir=/tmp/pytest_cache -v" "$@"
