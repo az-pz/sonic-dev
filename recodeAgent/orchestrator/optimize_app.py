@@ -32,10 +32,10 @@ import burr.core
 from burr.core import ApplicationBuilder, default, expr
 from burr.core.persistence import SQLLitePersister
 
+from . import actions
 from . import optimize as O
 
 PROJECT = "recodeagent-xcvrd-optimize"
-DEFAULT_DB = str(Path(__file__).resolve().parent.parent / "pipeline" / "optimize_state.db")
 
 
 def initial_state(max_rounds: int = 5) -> dict:
@@ -63,8 +63,11 @@ def _tracker_enabled() -> bool:
         return False
 
 
-def build_application(app_id: str, max_rounds: int = 5, db_path: str = DEFAULT_DB,
+def build_application(app_id: str, max_rounds: int = 5, db_path: str | None = None,
                       bootstrap_state: dict | None = None):
+    # Default the state next to the artifacts it describes: two runs against
+    # different pipeline directories are different runs and must not share a store.
+    db_path = db_path or str(actions._pipeline() / "optimize_state.db")
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     # Its own table: the optimize stage has a different state shape from the
     # translation stage, and sharing one would make a resume ambiguous.
@@ -113,7 +116,8 @@ def main() -> int:
                     help="optimisation rounds to attempt (default 5).")
     ap.add_argument("--pipeline-dir", default=None,
                     help="pipeline artifact directory (default: RECODE_PIPELINE_DIR or ./pipeline).")
-    ap.add_argument("--db", default=None, help="state file (default: pipeline/optimize_state.db).")
+    ap.add_argument("--db", default=None,
+                    help="state file (default: <pipeline-dir>/optimize_state.db).")
     ap.add_argument("--mock", action="store_true",
                     help="offline: fake agents, no Copilot or DUT. Proves the graph wiring.")
     ap.add_argument("--scenarios", default=None,
@@ -122,7 +126,8 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.pipeline_dir:
-        os.environ["RECODE_PIPELINE_DIR"] = str(Path(args.pipeline_dir).resolve())
+        # Must rebind the constants, not just the env: actions.py froze them at import.
+        actions.set_pipeline_dir(args.pipeline_dir)
     if args.mock:
         os.environ["RECODE_MOCK"] = "1"
     if args.scenarios:
@@ -131,11 +136,9 @@ def main() -> int:
         os.environ["RECODE_BENCH_REPS"] = args.reps
 
     app_id = args.app_id or f"opt-{os.getpid()}"
-    db_path = args.db or DEFAULT_DB
-
-    pipeline = Path(os.environ.get("RECODE_PIPELINE_DIR",
-                                   Path(__file__).resolve().parent.parent / "pipeline"))
-    crate = pipeline / "crate"
+    pipeline = actions._pipeline()
+    db_path = args.db or str(pipeline / "optimize_state.db")
+    crate = actions.PIPELINE_CRATE
     if not args.mock and not crate.exists():
         # This stage optimises an ALREADY-TRANSLATED crate. Failing here with the reason
         # beats an agent being asked to optimise a directory that does not exist.

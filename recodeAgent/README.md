@@ -27,7 +27,7 @@ From **Git Bash** in `dev/recodeAgent/` (Python ≥ 3.11):
 pip install -e .                    # add '.[tracking]' for Burr telemetry, '.[ui]' for the UI
                                     # (without [tracking] the run still works; the tracker just auto-disables)
 
-# 2. Install the six Copilot custom-agent profiles into $COPILOT_HOME/agents
+# 2. Install the Copilot custom-agent profiles into $COPILOT_HOME/agents
 bash tools/install_agents.sh        # copilot.py also auto-installs before each run
 
 # 3a. Offline dry-run — mock agents, no Copilot/DUT, ~30s (proves the graph wiring)
@@ -337,10 +337,13 @@ dev/recodeAgent/
 │   ├── actions.py                #   @action: analyze/scope/plan/select_milestone/translate/validate/parity_verify
 │   ├── copilot.py                #   invoke_agent(): subprocess wrapper around `copilot`
 │   ├── mock.py                   #   offline mock agents (RECODE_MOCK=1): drive the graph w/o Copilot
-│   └── milestones.py             #   Scoper-owned milestone ARTIFACT loader (pipeline/milestones.json; §5)
+│   ├── milestones.py             #   Scoper-owned milestone ARTIFACT loader (pipeline/milestones.json; §5)
+│   ├── optimize.py               #   OPTIMIZE stage actions: benchmark / optimize / validate (§8)
+│   └── optimize_app.py           #   OPTIMIZE stage Burr graph -- separate app, separate state table
 ├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5 + our scoper/parity)
 │   ├── analyzer.agent.md  scoper.agent.md  planner.agent.md
 │   ├── translator.agent.md  validator.agent.md  parity_verifier.agent.md
+│   ├── optimizer.agent.md  benchmarker.agent.md      # OPTIMIZE stage only (§8)
 │   │                             #   installed to $COPILOT_HOME/agents by tools/install_agents.sh
 ├── tools/
 │   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
@@ -377,7 +380,7 @@ by writing a parseable artifact there — `analysis.md`, `milestones.json`,
 `--output-format json` (JSONL), which the orchestrator parses for success/failure
 detection and logging; the file artifacts remain the authoritative state channel.
 
-### 4a. The six agents (`agents/*.agent.md`)
+### 4a. The agents (`agents/*.agent.md`)
 
 Each stage is a **GitHub Copilot CLI custom agent** — a Markdown profile with YAML
 frontmatter (`name`, `description`, scoped `tools`) plus a system prompt. The CLI
@@ -403,7 +406,7 @@ and a **per-agent reasoning effort**: the heavy reasoning stages (analyzer, scop
 planner, translator, parity_verifier) run at `--reasoning-effort max`; the validator
 (mostly tool execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Model/effort are
 overridable via `RECODE_MODEL` / `RECODE_EFFORT` (a set `RECODE_EFFORT` overrides
-all agents). Verified on CLI 1.0.77: all six profiles are discovered, the model +
+all agents). Verified on CLI 1.0.77: every profile is discovered, the model +
 `max`/`high` efforts + flags are accepted, and JSONL parsing extracts the agent's
 final message.
 
@@ -639,7 +642,7 @@ copilot -p "Analyze source/xcvrd and write pipeline/analysis.md" \
   --allow-all --no-ask-user --add-dir ../xcvrd-tests
 ```
 
-Smoke-verified on CLI 1.0.77: all six agents are discovered, `claude-opus-4.8` +
+Smoke-verified on CLI 1.0.77: every agent is discovered, `claude-opus-4.8` +
 `--allow-all` + `--reasoning-effort max`/`high` are accepted, and the JSONL result is
 parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
 `xcvrd-tests` and always restores the Python xcvrd.
@@ -755,3 +758,66 @@ also polls on its own). Requires Docker Desktop running. Override the port with
 So clicking a `translate:M2` node shows exactly what the Translator did — the chat,
 the shell/edit tool calls, and which files it changed. (Full raw JSONL is also on
 disk at `pipeline/logs/<agent>.stdout.jsonl`.)
+
+
+---
+
+## 8. Optimize stage (separate loop, runs after translation)
+
+The pipeline above answers **"is it correct?"**. This one answers **"is it fast?"**,
+and only makes sense once the first has finished — there is nothing to optimise
+about a crate that does not yet pass its oracle. It is a **separate Burr app** with
+its own state table, so it cannot interfere with a translation run.
+
+```
+benchmark ──> optimize ──> validate ──┐
+    ^                                 │  rounds remain
+    └─────────────────────────────────┘
+                                      │  budget spent
+                                      └──> terminal
+```
+
+| action | agent | does |
+|---|---|---|
+| `benchmark` | **Benchmarker** | runs `benchmark/bench.sh <crate>` and reports `bench.json`. Has **no edit tool** — it measures, it does not fix. |
+| `optimize` | **Optimizer** | **one** small focused change set to `pipeline/crate` (daemon *and* Rust platform-bridge), guided by the numbers, without changing observable behaviour. Must leave `tools/unit_test.sh` passing. |
+| `validate` | **Validator** (the same one the translation stage uses) | mocked unit tests **plus** `tools/validate_on_dut.sh --all` — the *entire* e2e suite, not a milestone gate. |
+
+```bash
+# offline wiring check — fake agents, no Copilot or DUT
+python -m orchestrator.optimize_app --app-id demo --rounds 3 --mock
+
+# real run against a translated crate
+python -m orchestrator.optimize_app --app-id opt1 --rounds 5 \
+    --pipeline-dir pipeline --scenarios B9 --reps 1
+```
+
+**Design decisions worth knowing:**
+
+- **Measure every round, before changing anything.** Each optimisation is justified
+  by the state of the crate it is actually editing, not by a stale reading. After a
+  revert the re-measurement also *confirms* the rollback rather than assuming it.
+- **A failed round is reverted, not repaired.** `optimize` snapshots the crate
+  before the agent touches it (excluding `target/`). The change set is small by
+  construction, so there is nothing worth salvaging — and repairing here would let a
+  behaviour regression survive several rounds of edits before anyone noticed.
+- **The full e2e suite, every round.** During translation a milestone only needs its
+  own cumulative gate; a performance change can regress *any* behaviour, so the
+  subset is not sufficient.
+- **Fail closed.** The verdict file is deleted before the Validator runs, so a
+  Validator that dies without writing one fails the round instead of inheriting the
+  previous round's `"passed": true`.
+- **Its own artifact names.** `optimize_report.json`, not `report.json` — sharing a
+  pipeline directory with the translation stage would otherwise have each clobber
+  the other's verdict.
+- **"No change" is a valid answer.** The Optimizer is told to write
+  `"title": "no further safe optimisation identified"` rather than invent a marginal
+  change that carries regression risk for no measured gain.
+- **Behaviour is the black box.** The daemon is graded on what it writes to STATE_DB.
+  A change that is faster because it does *less observable work* is a behaviour
+  change, and the Optimizer is told to reject it itself.
+
+Artifacts land in the pipeline directory: `bench.json`, `optimize.json`,
+`optimize_report.json`, `optimize_history.json` (append-only round log, including
+reverted rounds and why — the Optimizer reads it so it does not retry a failed idea),
+`crate_snapshot/`, and `optimize_state.db`.

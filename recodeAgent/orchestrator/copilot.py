@@ -57,7 +57,13 @@ def _resolve_effort(agent_name: str, explicit: str | None) -> str:
 
 # When set, skip Copilot entirely and return a canned response so the Burr graph,
 # transitions and crash-resume can be exercised offline (Phase-0 harness tests).
-MOCK = os.environ.get("RECODE_MOCK") == "1"
+# Read on EVERY call, not once at import: the --mock CLI flag sets the variable from
+# inside main(), by which point this module is already imported. Binding it to a
+# module constant made the flag silently invoke the real Copilot CLI (which then
+# blocks on login), while `RECODE_MOCK=1 python -m ...` worked -- which is why
+# tools/check.sh, that exports the variable, never caught it.
+def _mock_enabled() -> bool:
+    return os.environ.get("RECODE_MOCK") == "1"
 
 # Canonical agent profiles live in agents/; the CLI discovers custom agents from
 # ~/.copilot/agents/ (or COPILOT_HOME/agents). Mirror them there before running.
@@ -267,7 +273,7 @@ def invoke_agent(
     Returns:
         AgentResult with ok/returncode/final_text and the parsed JSONL events.
     """
-    if MOCK:
+    if _mock_enabled():
         return _mock(agent_name, prompt)
 
     # Optional wall-clock cap (paper uses 5000s). None = no timeout. Override with

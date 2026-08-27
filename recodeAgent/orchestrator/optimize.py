@@ -32,8 +32,9 @@ from pathlib import Path
 from burr.core import action
 
 from .copilot import invoke_agent
+from . import actions as _actions
 from .actions import (
-    ROOT, PIPELINE, PIPELINE_CRATE, XCVRD_TESTS,
+    ROOT, XCVRD_TESTS,
     _crate_env, _pipeline, _is_mock, _read_json, _log_agent,
 )
 
@@ -41,9 +42,22 @@ BENCH_DIR = ROOT.parent / "benchmark"
 BENCH_JSON = "bench.json"
 OPTIMIZE_JSON = "optimize.json"
 HISTORY_JSON = "optimize_history.json"
+# NOT "report.json": that is the translation stage's validator artifact, and
+# sharing a pipeline directory would have each stage clobber the other's verdict.
+REPORT_JSON = "optimize_report.json"
 # Snapshot of the crate taken before each optimize round, so a failed round can be
 # rolled back to a known-good tree rather than relying on the agent to undo itself.
 SNAPSHOT = "crate_snapshot"
+
+
+def _crate() -> Path:
+    """The working copy being optimised.
+
+    Resolved through the module rather than from-imported: --pipeline-dir rebinds
+    actions.PIPELINE_CRATE after this module is already imported, and a from-import
+    would have captured the pre-rebind value.
+    """
+    return _actions.PIPELINE_CRATE
 
 
 # --------------------------------------------------------------------------- io
@@ -97,8 +111,8 @@ def _snapshot_crate() -> None:
     dest = _pipeline() / SNAPSHOT
     if dest.exists():
         shutil.rmtree(dest, ignore_errors=True)
-    if PIPELINE_CRATE.exists():
-        shutil.copytree(PIPELINE_CRATE, dest,
+    if _crate().exists():
+        shutil.copytree(_crate(), dest,
                         ignore=shutil.ignore_patterns("target", "*.tmp"))
 
 
@@ -108,12 +122,12 @@ def _restore_crate() -> bool:
         return False
     # Keep target/ in place: it is not in the snapshot and deleting it would force a
     # full rebuild for no benefit -- cargo will rebuild exactly what changed back.
-    for item in PIPELINE_CRATE.iterdir():
+    for item in _crate().iterdir():
         if item.name == "target":
             continue
         shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink(missing_ok=True)
     for item in src.iterdir():
-        dst = PIPELINE_CRATE / item.name
+        dst = _crate() / item.name
         shutil.copytree(item, dst) if item.is_dir() else shutil.copy2(item, dst)
     return True
 
@@ -168,10 +182,10 @@ def benchmark(state, __tracer) -> dict:
     scenarios = os.environ.get("RECODE_BENCH_SCENARIOS", "").strip()
     scen_arg = f" --scenario {scenarios}" if scenarios else ""
     reps = os.environ.get("RECODE_BENCH_REPS", "1")
-    cmd = (f"bash {BENCH_DIR}/bench.sh {PIPELINE_CRATE} --reps {reps}{scen_arg} "
+    cmd = (f"bash {BENCH_DIR}/bench.sh {_crate()} --reps {reps}{scen_arg} "
            f"--out {out_path}")
     prompt = (
-        f"Benchmark round {round_no} of the working copy at {PIPELINE_CRATE}.\n\n"
+        f"Benchmark round {round_no} of the working copy at {_crate()}.\n\n"
         f"Run EXACTLY this command and let it finish:\n    {cmd}\n\n"
         f"Then read {out_path} and verify before reporting: provenance.crate names the "
         "crate you measured and built_this_run is true; every scenario produced records "
@@ -213,7 +227,7 @@ def optimize(state, __tracer) -> dict:
 
     prompt = (
         f"Optimisation round {round_no}. Improve the PERFORMANCE of the working copy at "
-        f"{PIPELINE_CRATE} (the daemon xcvrd-rs AND the Rust platform-bridge) without "
+        f"{_crate()} (the daemon xcvrd-rs AND the Rust platform-bridge) without "
         "changing observable behaviour.\n\n"
         f"Evidence: {_pipeline() / BENCH_JSON} holds this round's measurements. "
         f"{_pipeline() / HISTORY_JSON} holds every previous round including the ones that "
@@ -262,10 +276,14 @@ def validate_optimization(state, __tracer) -> dict:
         passed = os.environ.get("RECODE_MOCK_OPT_FAIL", "") != str(round_no)
         report = {"round": round_no, "passed": passed, "tests": 105,
                   "failures": [] if passed else [{"test": "mock", "why": "scripted failure"}]}
-        (_pipeline() / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+        (_pipeline() / REPORT_JSON).write_text(json.dumps(report, indent=2), encoding="utf-8")
     else:
+        # Remove the previous round's verdict first. If the Validator dies without
+        # writing one, the read below must come back empty and fail the round --
+        # inheriting last round's "passed": true would silently keep a regression.
+        (_pipeline() / REPORT_JSON).unlink(missing_ok=True)
         prompt = (
-            f"Validate optimisation round {round_no} of the working copy at {PIPELINE_CRATE}.\n\n"
+            f"Validate optimisation round {round_no} of the working copy at {_crate()}.\n\n"
             f"The Optimizer made a performance change described in {_pipeline() / OPTIMIZE_JSON}; "
             "read it so you know what to scrutinise. This is a PERFORMANCE change that must not "
             "have altered behaviour, so run the FULL gate, not a subset:\n"
@@ -273,7 +291,7 @@ def validate_optimization(state, __tracer) -> dict:
             "2. `bash tools/validate_on_dut.sh --all` -- the entire xcvrd-tests black-box suite "
             "on the DUT (no -k gate: a performance change can regress any behaviour, so the "
             "cumulative-milestone selection used during translation is not sufficient here).\n\n"
-            f"Write the verdict to {_pipeline() / 'report.json'} as "
+            f"Write the verdict to {_pipeline() / REPORT_JSON} as "
             '{"round","passed","tests","failures"}, where passed requires BOTH layers to pass. '
             "Each failure needs the test id and an actionable description of what regressed."
         )
@@ -283,7 +301,10 @@ def validate_optimization(state, __tracer) -> dict:
             log_dir=_pipeline() / "logs", extra_env=_crate_env(),
         )
         _log_agent(__tracer, stage=f"validate-opt-{round_no}", prompt=prompt, result=result)
-        report = _read_json("report.json")
+        report = _read_json(REPORT_JSON)
+        if not report:
+            print(f"[optimize] round {round_no}: validator wrote no {REPORT_JSON} "
+                  "-- treating the round as FAILED")
 
     passed = bool(report.get("passed"))
     reverted = False

@@ -36,6 +36,24 @@ PIPELINE_CRATE = PIPELINE / "crate"      # the working copy the agents translate
 XCVRD_TESTS = ROOT.parent / "xcvrd-tests"
 
 
+def set_pipeline_dir(path: str | os.PathLike) -> Path:
+    """Repoint the pipeline at `path`, for callers that learn it from argv.
+
+    PIPELINE and PIPELINE_CRATE are read at import time because they are baked into
+    agent prompts as literal paths. A caller that only sets RECODE_PIPELINE_DIR from
+    inside main() is therefore too late -- this module is already imported, and the
+    agents would be told to work in the default directory while the orchestrator
+    read artifacts from the requested one. Every entrypoint that accepts a
+    --pipeline-dir flag must call this instead of setting the variable alone.
+    """
+    global PIPELINE, PIPELINE_CRATE
+    PIPELINE = Path(path).resolve()
+    PIPELINE_CRATE = PIPELINE / "crate"
+    os.environ["RECODE_PIPELINE_DIR"] = str(PIPELINE)   # for subprocesses and sibling modules
+    PIPELINE.mkdir(parents=True, exist_ok=True)
+    return PIPELINE
+
+
 def _crate_env() -> dict:
     """Point the DUT tools (validate_on_dut.sh / build_check.sh / unit_test.sh) at the
     pipeline working copy so the immutable crate/ is never built or modified."""

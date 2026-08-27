@@ -48,19 +48,16 @@ PROJECT = "recodeagent-xcvrd"
 
 
 def _configure_pipeline_dir(path: str | os.PathLike) -> Path:
-    """Point every file-based stage at an existing pipeline directory.
+    """Point every file-based stage at an EXISTING pipeline directory.
 
-    actions.py resolves its pipeline constants at import time, so a CLI-provided
-    path must update both the environment (used dynamically by milestones/mock)
-    and those two constants.
+    Unlike actions.set_pipeline_dir, this refuses to create one: `--pipeline-dir`
+    on this entrypoint means "resume the run whose artifacts are here", and silently
+    creating an empty directory would start a fresh translation under a typo'd path.
     """
     p = Path(path).expanduser().resolve()
     if not p.is_dir():
         raise ValueError(f"pipeline directory does not exist: {p}")
-    os.environ["RECODE_PIPELINE_DIR"] = str(p)
-    actions.PIPELINE = p
-    actions.PIPELINE_CRATE = p / "crate"
-    return p
+    return actions.set_pipeline_dir(p)
 
 
 def _state_from_existing_pipeline(
