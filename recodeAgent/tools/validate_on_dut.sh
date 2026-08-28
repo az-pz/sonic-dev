@@ -6,11 +6,18 @@
 # host, runs the full build -> reversible-inject -> xcvrd-tests -> restore cycle
 # on the DUT, and fetches the authoritative report.json into pipeline/.
 #
-# Usage: tools/validate_on_dut.sh <MILESTONE|--all> [pytest args passed to run.sh...]
+# Usage: tools/validate_on_dut.sh <MILESTONE|--all> [--dom-interval N] [pytest args...]
 #   tools/validate_on_dut.sh M0 -k test_xcvrd_running
 #   tools/validate_on_dut.sh M1 tests/test_presence.py -m "not slow"
 #   tools/validate_on_dut.sh --all                # run the ENTIRE xcvrd-tests suite
 #   tools/validate_on_dut.sh --all -m "not slow"  # whole suite, minus slow tests
+#   tools/validate_on_dut.sh --all --dom-interval 5   # pin the DOM poll cadence
+#
+# --dom-interval N passes --dom_update_interval N to the injected daemon. OMITTED
+# BY DEFAULT: a partially translated crate may not implement the option yet, and
+# must not fail to start over a flag the milestone under test does not cover. When
+# requested, the DUT side retries without it if the daemon will not come up, so
+# asking for an interval can never turn a passing crate into a failing one.
 #
 # Set RECODE_PRINT_GATE=1 to print the resolved milestone + pytest gate and exit
 # (no build / inject / DUT run) -- handy for previewing or testing the selection.
@@ -24,11 +31,31 @@ CRATE_DIR="${RECODE_CRATE_DIR:-$RECODE_DIR/crate}"
 # The xcvrd-tests suite that grades the translated crate. It is shipped to the DUT
 # on every run (see below) so a validation never grades against a stale tree.
 TESTS_DIR="${RECODE_TESTS_DIR:-$(cd "$RECODE_DIR/.." && pwd)/xcvrd-tests}"
-# DOM poll interval handed to the injected Rust daemon. Matches the benchmark
-# harness and the testbed default so every stage grades the daemon at the same
-# cadence; 0 leaves the daemon's own default alone.
-DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
+# DOM poll interval handed to the injected Rust daemon, via `--dom-interval N` or
+# DOM_UPDATE_INTERVAL=N. UNSET BY DEFAULT and deliberately so: this harness grades
+# partial translations, and a crate that has not implemented --dom_update_interval
+# yet would fail to start for a reason that has nothing to do with the milestone.
+# When it IS requested the DUT side falls back to no flag if the daemon will not
+# come up with it, so asking for an interval can never turn a passing crate into a
+# failing one.
+DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-}"
 MILESTONE="${1:?milestone id (e.g. M0) or --all}"; shift || true
+
+# Pull --dom-interval out before the rest becomes pytest args.
+_rest=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --dom-interval)   DOM_UPDATE_INTERVAL="${2:?--dom-interval needs a value}"; shift 2 ;;
+    --dom-interval=*) DOM_UPDATE_INTERVAL="${1#--dom-interval=}"; shift ;;
+    *)                _rest+=("$1"); shift ;;
+  esac
+done
+set -- ${_rest+"${_rest[@]}"}
+
+case "$DOM_UPDATE_INTERVAL" in
+  '')        ;;
+  *[!0-9]*)  echo "[validate] --dom-interval must be a non-negative integer (got '$DOM_UPDATE_INTERVAL')" >&2; exit 2 ;;
+esac
 
 # --all / -a (or a bare "all"/"ALL"): run the ENTIRE xcvrd-tests suite with no
 # milestone -k gate -- every test module, including the T-series parity tests
@@ -91,11 +118,10 @@ r_put_dir "$TESTS_DIR" "~/recode/xcvrd-tests" .pydeps results.xml __pycache__
 r_put_files "~/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
 
 echo "[validate] running build+inject+test+restore on the DUT"
-# Pin the DOM poll interval for the run. The shim dut_validate.sh installs execv's
-# the daemon with an explicit argv, which DISCARDS whatever supervisor was going to
-# pass -- so without this the Rust daemon silently runs at its own built-in default
-# while the benchmark harness pins 5s, and the two stages grade different daemons.
-r_run "DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
+# Only forward the interval when one was actually requested. With none, the shim
+# passes no flag at all and the daemon uses its own default -- which is what a
+# translation that has not implemented the option yet requires.
+r_run "${DOM_UPDATE_INTERVAL:+DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL }bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
 
 echo "[validate] fetching report.json -> pipeline/"
 mkdir -p "$RECODE_DIR/pipeline"

@@ -6,9 +6,9 @@
 set -uo pipefail
 MILESTONE="${1:?milestone id}"
 ARGS_B64="${2:-}"
-# Forwarded from validate_on_dut.sh; handed to dut_validate.sh, which bakes it into
-# the shim's argv (the daemon reads it from argv, not the environment).
-DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
+# Optional; forwarded from validate_on_dut.sh only when an interval was requested.
+# Empty means "pass no --dom_update_interval at all", which is the normal case.
+DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-}"
 
 RECODE="$HOME/recode"
 CRATE="$RECODE/crate"
@@ -68,9 +68,9 @@ docker exec mgmt bash -lc "$SP $DUT \"
 \"" || exit 2
 _ph "ship tests" "$T"
 
-echo "[run] validating on the DUT (milestone $MILESTONE, dom_update_interval=${DOM_UPDATE_INTERVAL})"
+echo "[run] validating on the DUT (milestone $MILESTONE${DOM_UPDATE_INTERVAL:+, dom_update_interval=$DOM_UPDATE_INTERVAL})"
 T=$(_now_ms)
-docker exec mgmt bash -lc "$SP $DUT \"DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL bash /tmp/recode/dut_validate.sh $MILESTONE $ARGS_B64\""
+docker exec mgmt bash -lc "$SP $DUT \"${DOM_UPDATE_INTERVAL:+DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL }bash /tmp/recode/dut_validate.sh $MILESTONE $ARGS_B64\""
 _ph "validate (on DUT)" "$T"
 
 echo "[run] fetching report.json"

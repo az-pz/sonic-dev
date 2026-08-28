@@ -16,10 +16,12 @@ XORIG=/usr/local/bin/xcvrd.pyorig    # backup of the real python xcvrd
 XRUST=/usr/local/bin/xcvrd-rs        # the injected Rust binary
 TESTS=/home/admin/xcvrd-tests
 REPORT="$STAGE/report.json"
-# DOM poll interval baked into the shim's argv (see inject()). Forwarded from
-# validate_on_dut.sh so validation and benchmarking grade the daemon at the same
-# cadence; 0 leaves the daemon's own default alone.
-DOM_IVAL="${DOM_UPDATE_INTERVAL:-5}"
+# OPTIONAL DOM poll interval to bake into the shim's argv (see inject()). Empty is
+# the normal case and means "pass no flag" -- a partially translated crate may not
+# have implemented --dom_update_interval yet, and it must not fail to start over an
+# option the milestone under test does not cover.
+DOM_IVAL="${DOM_UPDATE_INTERVAL:-}"
+DOM_APPLIED=""      # what actually ended up in the daemon's argv
 
 # --- timing: per-step elapsed in ms, to profile where the harness spends time ---
 _now_ms() { date +%s%3N; }
@@ -67,31 +69,58 @@ inject() {
   lap "verify backup"
   # 2) stage the shim to a temp file, verify it, then atomically move into place
   #    so a partial/ENOSPC write can never leave xcvrd truncated.
-  #    The daemon reads its options from argv, and execv replaces supervisor's
-  #    command line entirely, so any flag must be baked in here -- otherwise the
-  #    daemon runs at its own default while the rest of the pipeline assumes 5s.
-  local shim_args='"xcvrd-rs"'
-  case "$DOM_IVAL" in
-    ''|0)        ;;                                    # 0 = leave the daemon's default alone
-    *[!0-9]*)    echo "[dut] DOM_UPDATE_INTERVAL must be a non-negative integer (got '$DOM_IVAL')" >&2; return 1 ;;
-    *)           shim_args="$shim_args, \"--dom_update_interval\", \"$DOM_IVAL\"" ;;
+  _write_shim "$DOM_IVAL" || return 1
+  lap "write shim"
+  docker exec "$PMON" supervisorctl restart xcvrd >/dev/null 2>&1
+  lap "supervisorctl restart"
+  if wait_running; then
+    DOM_APPLIED="$DOM_IVAL"
+    lap "settle (poll RUNNING)"
+    return 0
+  fi
+
+  # The daemon did not come up. If we asked for an interval, that is the most
+  # likely cause -- this crate may not implement --dom_update_interval yet -- so
+  # retry once with no flag rather than failing the milestone over an option the
+  # milestone under test does not cover. If it was already flagless, the failure
+  # is real and belongs to the crate.
+  if [ -z "$DOM_IVAL" ]; then
+    echo "[dut] warning: xcvrd not RUNNING after restart" >&2
+    lap "settle (poll RUNNING)"
+    return 0
+  fi
+  echo "[dut] xcvrd did not start with --dom_update_interval=$DOM_IVAL; retrying WITHOUT it" >&2
+  _write_shim "" || return 1
+  docker exec "$PMON" supervisorctl restart xcvrd >/dev/null 2>&1
+  if wait_running; then
+    DOM_APPLIED=""
+    echo "[dut] DOM_INTERVAL_FALLBACK: running with the daemon's default interval; " \
+         "--dom_update_interval is NOT supported by this crate" >&2
+  else
+    echo "[dut] warning: xcvrd not RUNNING even without the flag" >&2
+  fi
+  lap "settle (poll RUNNING)"
+}
+
+_write_shim() {
+  # $1 = optional dom interval. The daemon reads its options from argv and execv
+  # replaces supervisor's command line entirely, so a flag must be baked in here.
+  local ival="${1:-}" shim_args='"xcvrd-rs"'
+  case "$ival" in
+    '')        ;;
+    *[!0-9]*)  echo "[dut] DOM_UPDATE_INTERVAL must be a non-negative integer (got '$ival')" >&2; return 1 ;;
+    *)         shim_args="$shim_args, \"--dom_update_interval\", \"$ival\"" ;;
   esac
   docker exec -i "$PMON" sh -c "cat > $XBIN.new" <<SHIM
 #!/usr/bin/env python3
 import os
 os.execv("/usr/local/bin/xcvrd-rs", [$shim_args])
 SHIM
-  lap "write shim.new"
   docker exec "$PMON" sh -c "[ -s $XBIN.new ] && mv $XBIN.new $XBIN && chmod +x $XBIN" \
       || { echo "[dut] shim write failed; aborting" >&2; docker exec "$PMON" rm -f "$XBIN.new" 2>/dev/null; return 1; }
-  lap "mv shim -> xcvrd"
-  docker exec "$PMON" supervisorctl restart xcvrd >/dev/null 2>&1
-  lap "supervisorctl restart"
-  wait_running || echo "[dut] warning: xcvrd not RUNNING after restart" >&2
-  lap "settle (poll RUNNING)"
 }
 
-echo "[dut] injecting Rust xcvrd for milestone $MILESTONE"
+echo "[dut] injecting Rust xcvrd for milestone $MILESTONE${DOM_IVAL:+ (requested --dom_update_interval=$DOM_IVAL)}"
 _PHASE=$(_now_ms)
 if ! inject; then
   echo "[dut] INJECT FAILED — writing fail report, leaving Python xcvrd intact"
@@ -105,6 +134,7 @@ PY
   exit 1
 fi
 echo "[dut] xcvrd status after inject:"
+echo "[dut] dom_update_interval: ${DOM_APPLIED:-<daemon default, no flag passed>}"
 printf '[dut][t] %-26s %6d ms  <== INJECT PHASE TOTAL\n' "inject() total" "$(( $(_now_ms) - _PHASE ))"
 docker exec "$PMON" supervisorctl status xcvrd || true
 
