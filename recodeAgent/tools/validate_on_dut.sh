@@ -92,7 +92,7 @@ fi
 
 # Preview/test hook: show the resolved selection and stop before any DUT work.
 if [ "${RECODE_PRINT_GATE:-0}" = "1" ]; then
-  echo "[validate] RECODE_PRINT_GATE=1 -> milestone=$MILESTONE args=[${ARGS[*]:-}]"
+  echo "[validate] RECODE_PRINT_GATE=1 -> milestone=$MILESTONE args=[${ARGS[*]:-}] dom_interval=${DOM_UPDATE_INTERVAL:-<none>}"
   exit 0
 fi
 
