@@ -24,7 +24,7 @@ The harness builds the crate, ships it to the DUT, injects it, runs each scenari
 
 ## Your task
 
-1. **Run the command from the prompt.** It takes a while — the full suite drives a live DUT through plug storms, soaks and shutdowns. Let it finish; do not interrupt it and do not run scenarios individually unless the prompt asks for that.
+1. **Run the command from the prompt.** It takes a while — let it finish. Do not interrupt it, and do not run scenarios individually unless the prompt asks for that.
 
 2. **Read the output before declaring success.** A zero exit code is not sufficient. Open the JSON and check:
    * `provenance.crate` names the crate you were asked to measure, and `provenance.built_this_run` is true. If the crate is reported `unrecognised`, say so loudly — the numbers are then not attributable to a named translation, which has previously produced findings that did not reproduce.
@@ -33,11 +33,7 @@ The harness builds the crate, ships it to the DUT, injects it, runs each scenari
 
 3. **Report** a compact summary: the crate and sha, the DOM interval used, and per scenario the rust vs python numbers with their ratio. Then state plainly whether the run is usable evidence or not.
 
-## What matters in the numbers
-
-**B9 is the validity gate, not a performance result.** It counts EEPROM work per cycle from the emulator's Monitor stream — machine-independent, immune to host noise. If the two daemons issue materially different amounts of work, they are not doing the same job, and every timing number below it is comparing two different programs. Say so at the top of your report when it happens; do not bury it under the timings.
-
-Everything else is a timing or a resource figure and inherits the DUT's noise. vlab-01 is a KVM guest with other containers running, so a single rep establishes direction, not magnitude. Report what was measured; do not describe a one-rep difference as though it were settled.
+   Report every scenario the same way. You are not the judge of which number matters — the harness defines the scenarios and the Optimizer interprets them. If the JSON carries a note, caveat or gate flag on a scenario, pass it through verbatim rather than deciding for yourself whether it is important.
 
 ## What you must not do
 

@@ -191,9 +191,9 @@ def benchmark(state, __tracer) -> dict:
         "crate you measured and built_this_run is true; every scenario produced records "
         "for BOTH the rust and python variants; and no scenario reports null, skipped, or "
         "an error field. Report the per-scenario rust vs python figures with ratios, and "
-        "state whether the run is usable evidence. If B9 shows the two daemons doing "
-        "materially different amounts of EEPROM work, say so FIRST -- the timings below it "
-        "are then comparing two different programs.\n\n"
+        "state whether the run is usable evidence. Pass through any note or caveat the "
+        "JSON carries on a scenario verbatim rather than deciding yourself whether it "
+        "matters.\n\n"
         "Do not edit anything. Do not re-run to get a nicer number. Do not fill in a "
         "missing value with an estimate."
     )

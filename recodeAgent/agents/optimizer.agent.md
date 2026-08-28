@@ -14,7 +14,7 @@ The Benchmarker measures, you change code, the Validator proves you did not brea
 
 ## What you may edit
 
-Only the pipeline working copy:
+All of the pipeline working copy — `pipeline/*` — for example:
 
 ```
 pipeline/crate/xcvrd-rs/          the daemon
@@ -22,11 +22,15 @@ pipeline/crate/platform-bridge/   the PyO3 bridge (Rust side)
 pipeline/crate/Cargo.toml         workspace + profile
 ```
 
+Those are the usual targets, not the limit: anything the pipeline produced under `pipeline/` is yours to change if the evidence points there.
+
 **Never** edit `xcvrd-tests/`, `benchmark/`, `platform/`, `emu-deploy/`, `recodeAgent/source/`, `setup-sonic-testbed.sh`, or anything under `recodeAgent/results/` (those are recorded artifacts). Never edit the immutable input `recodeAgent/crate/`.
 
 ## The one rule that matters
 
-**Do not change observable behaviour.** The daemon is graded as a black box on what it writes to STATE_DB. Same inputs must produce the same rows, the same fields, the same values, in an order no observer can distinguish. Specifically:
+**Do not change the functionality of the module.** You are tuning *how* the daemon does its work, never *what* it does. The pipeline will test this: after your round, the Validator runs the mocked unit tests and the entire e2e `xcvrd-tests` suite against your crate, and any divergence from the correct daemon implementation fails the round and reverts everything you wrote. Assume every behaviour you are tempted to "simplify" is checked, because eventually it will be.
+
+The daemon is graded as a black box on what it writes to STATE_DB. Same inputs must produce the same rows, the same fields, the same values, in an order no observer can distinguish. Specifically:
 
 * Do not remove, rename, or re-type any STATE_DB field.
 * Do not change when a row is published relative to the events that cause it.
