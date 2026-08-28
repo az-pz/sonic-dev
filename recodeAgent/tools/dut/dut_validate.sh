@@ -134,7 +134,10 @@ PY
   exit 1
 fi
 echo "[dut] xcvrd status after inject:"
-echo "[dut] dom_update_interval: ${DOM_APPLIED:-<daemon default, no flag passed>}"
+# What was PASSED, which is all we can honestly assert: a daemon that tolerates an
+# unknown option starts fine while ignoring it, so "started with the flag" is not
+# evidence that the flag took effect -- only that it was not rejected.
+echo "[dut] dom_update_interval: ${DOM_APPLIED:+passed --dom_update_interval=$DOM_APPLIED (accepted, not rejected)}${DOM_APPLIED:-<none passed; daemon default>}"
 printf '[dut][t] %-26s %6d ms  <== INJECT PHASE TOTAL\n' "inject() total" "$(( $(_now_ms) - _PHASE ))"
 docker exec "$PMON" supervisorctl status xcvrd || true
 
