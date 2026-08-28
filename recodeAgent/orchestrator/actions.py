@@ -539,7 +539,8 @@ def validate(state, __tracer) -> dict:
         f"--args {m.id}`, then read {PIPELINE/'skips.json'} and append `and not <func>` for "
         "each of its tests_to_skip). It builds the Rust crate for pmon, injects it (reversibly), "
         "runs exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
-        "results.xml into pipeline/report.json.\n"
+        "results.xml into pipeline/report.json. It runs the daemon at a DOM poll interval of 5s "
+        "(the harness default) so every stage grades the same cadence.\n"
         + skip_note +
         f"Then write the authoritative verdict to {PIPELINE/'report.json'} as "
         '{"milestone","passed","tests","failures"}, where `passed` requires BOTH the unit '

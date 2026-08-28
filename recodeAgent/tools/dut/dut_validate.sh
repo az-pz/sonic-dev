@@ -16,6 +16,10 @@ XORIG=/usr/local/bin/xcvrd.pyorig    # backup of the real python xcvrd
 XRUST=/usr/local/bin/xcvrd-rs        # the injected Rust binary
 TESTS=/home/admin/xcvrd-tests
 REPORT="$STAGE/report.json"
+# DOM poll interval baked into the shim's argv (see inject()). Forwarded from
+# validate_on_dut.sh so validation and benchmarking grade the daemon at the same
+# cadence; 0 leaves the daemon's own default alone.
+DOM_IVAL="${DOM_UPDATE_INTERVAL:-5}"
 
 # --- timing: per-step elapsed in ms, to profile where the harness spends time ---
 _now_ms() { date +%s%3N; }
@@ -63,10 +67,19 @@ inject() {
   lap "verify backup"
   # 2) stage the shim to a temp file, verify it, then atomically move into place
   #    so a partial/ENOSPC write can never leave xcvrd truncated.
-  docker exec -i "$PMON" sh -c "cat > $XBIN.new" <<'SHIM'
+  #    The daemon reads its options from argv, and execv replaces supervisor's
+  #    command line entirely, so any flag must be baked in here -- otherwise the
+  #    daemon runs at its own default while the rest of the pipeline assumes 5s.
+  local shim_args='"xcvrd-rs"'
+  case "$DOM_IVAL" in
+    ''|0)        ;;                                    # 0 = leave the daemon's default alone
+    *[!0-9]*)    echo "[dut] DOM_UPDATE_INTERVAL must be a non-negative integer (got '$DOM_IVAL')" >&2; return 1 ;;
+    *)           shim_args="$shim_args, \"--dom_update_interval\", \"$DOM_IVAL\"" ;;
+  esac
+  docker exec -i "$PMON" sh -c "cat > $XBIN.new" <<SHIM
 #!/usr/bin/env python3
 import os
-os.execv("/usr/local/bin/xcvrd-rs", ["xcvrd-rs"])
+os.execv("/usr/local/bin/xcvrd-rs", [$shim_args])
 SHIM
   lap "write shim.new"
   docker exec "$PMON" sh -c "[ -s $XBIN.new ] && mv $XBIN.new $XBIN && chmod +x $XBIN" \

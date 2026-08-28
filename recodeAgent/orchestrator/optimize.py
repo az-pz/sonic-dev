@@ -290,7 +290,9 @@ def validate_optimization(state, __tracer) -> dict:
             "1. `bash tools/unit_test.sh` -- the mocked Rust unit tests.\n"
             "2. `bash tools/validate_on_dut.sh --all` -- the entire xcvrd-tests black-box suite "
             "on the DUT (no -k gate: a performance change can regress any behaviour, so the "
-            "cumulative-milestone selection used during translation is not sufficient here).\n\n"
+            "cumulative-milestone selection used during translation is not sufficient here).\n"
+            "Run the daemon at a DOM poll interval of 5s (the harness default) so validation "
+            "grades the same cadence the benchmarks measure.\n\n"
             f"Write the verdict to {_pipeline() / REPORT_JSON} as "
             '{"round","passed","tests","failures"}, where passed requires BOTH layers to pass. '
             "Each failure needs the test id and an actionable description of what regressed."

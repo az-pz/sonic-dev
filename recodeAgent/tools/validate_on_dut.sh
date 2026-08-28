@@ -24,6 +24,10 @@ CRATE_DIR="${RECODE_CRATE_DIR:-$RECODE_DIR/crate}"
 # The xcvrd-tests suite that grades the translated crate. It is shipped to the DUT
 # on every run (see below) so a validation never grades against a stale tree.
 TESTS_DIR="${RECODE_TESTS_DIR:-$(cd "$RECODE_DIR/.." && pwd)/xcvrd-tests}"
+# DOM poll interval handed to the injected Rust daemon. Matches the benchmark
+# harness and the testbed default so every stage grades the daemon at the same
+# cadence; 0 leaves the daemon's own default alone.
+DOM_UPDATE_INTERVAL="${DOM_UPDATE_INTERVAL:-5}"
 MILESTONE="${1:?milestone id (e.g. M0) or --all}"; shift || true
 
 # --all / -a (or a bare "all"/"ALL"): run the ENTIRE xcvrd-tests suite with no
@@ -87,7 +91,11 @@ r_put_dir "$TESTS_DIR" "~/recode/xcvrd-tests" .pydeps results.xml __pycache__
 r_put_files "~/recode/dut/" "$HERE/dut/"*.sh "$HERE/dut/Dockerfile.build"
 
 echo "[validate] running build+inject+test+restore on the DUT"
-r_run "bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
+# Pin the DOM poll interval for the run. The shim dut_validate.sh installs execv's
+# the daemon with an explicit argv, which DISCARDS whatever supervisor was going to
+# pass -- so without this the Rust daemon silently runs at its own built-in default
+# while the benchmark harness pins 5s, and the two stages grade different daemons.
+r_run "DOM_UPDATE_INTERVAL=$DOM_UPDATE_INTERVAL bash ~/recode/dut/run_validate.sh $MILESTONE $ARGS_B64"
 
 echo "[validate] fetching report.json -> pipeline/"
 mkdir -p "$RECODE_DIR/pipeline"
