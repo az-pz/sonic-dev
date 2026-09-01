@@ -1,15 +1,14 @@
 # recodeAgent — multi-agent Python→Rust translation of xcvrd
 
 A ReCodeAgent-style (arXiv:2604.07341) multi-agent pipeline that translates the
-SONiC **xcvrd** transceiver daemon from Python to Rust, validating every step as
-a **black box** against the existing `xcvrd-tests` suite on the `sonic-dev`
-testbed.
+SONiC **xcvrd** transceiver daemon from Python to Rust, validating every step as a
+**black box** against the existing `xcvrd-tests` suite on the `sonic-dev` testbed,
+then optionally optimising the result.
 
-The LLM work is done by **GitHub Copilot CLI custom agents** (Analyzer, Planner,
-Translator, Validator). A small **Apache Burr** state machine is the only
-deterministic code: it sequences the agents, owns the milestone × repair loop,
-persists state (crash-resume), and renders the live graph UI. Burr never calls an
-LLM — Copilot is the agent runtime.
+The LLM work is done by **GitHub Copilot CLI custom agents**. A small **Apache
+Burr** state machine is the only deterministic code: it sequences the agents, owns
+the milestone × repair loop, persists state (crash-resume), and renders a live
+graph UI. Burr never calls an LLM — Copilot is the agent runtime.
 
 > **Scope boundary:** everything here lives under `dev/recodeAgent/`. The pipeline
 > *calls* `xcvrd-tests/run.sh` and drives the DUT over SSH, but never edits
@@ -18,95 +17,74 @@ LLM — Copilot is the agent runtime.
 
 ---
 
-## 0. Quickstart — install agents & run the app
+## 0. Quickstart
 
 From **Git Bash** in `dev/recodeAgent/` (Python ≥ 3.11):
 
 ```bash
 # 1. Install the orchestrator (Apache Burr) — once
-pip install -e .                    # add '.[tracking]' for Burr telemetry, '.[ui]' for the UI
-                                    # (without [tracking] the run still works; the tracker just auto-disables)
+pip install -e .            # '.[tracking]' for telemetry, '.[ui]' for the UI
+                            # (without [tracking] the run still works; the tracker auto-disables)
 
 # 2. Install the Copilot custom-agent profiles into $COPILOT_HOME/agents
 bash tools/install_agents.sh        # copilot.py also auto-installs before each run
 
-# 3a. Offline dry-run — mock agents, no Copilot/DUT, ~30s (proves the graph wiring)
-export PYTHON=python
+# 3a. Offline dry-run — mock agents, no Copilot/DUT (proves the graph wiring)
 python -m orchestrator.app --app-id demo --mock
 
 # 3b. Real run — drives the actual LLM agents (needs `copilot login` + AI credits)
 python -m orchestrator.app --app-id run1
+
+# 3c. ...and then make it faster (see §6)
+python -m orchestrator.app --app-id run1 --optimize
 ```
 
+Also installed as a console script: `recode --app-id run1`.
+
 `--app-id` is the resume key: re-running the **same** id continues from the last
-persisted node (crash-resume); use a fresh id to start over. Useful flags:
-`--max-iter N` (per-milestone repair budget, default 10), `--max-parity-rounds N`
-(outer parity budget, default 3), `--mock` (offline), `--db PATH` (state file),
-`--pipeline-dir PATH`, `--start-milestone Mx`, and `--start-parity`.
-Installed as a console script too: `recode --app-id run1`. Watch it live with the
-Burr UI: `burr` → open the printed URL → project `recodeagent-xcvrd` (see §7).
+persisted node; use a fresh id to start over.
+
+| Flag | Meaning |
+|---|---|
+| `--max-iter N` | per-milestone repair budget (default 10) |
+| `--max-parity-rounds N` | outer parity budget (default 3) |
+| `--optimize` | run the optimize phase after parity (default 5 rounds; §6) |
+| `--max-opt-rounds N` | optimisation round count; implies `--optimize`, `0` disables |
+| `--mock` | offline, no Copilot or DUT |
+| `--pipeline-dir PATH` | artifact directory (default `./pipeline`) |
+| `--db PATH` | state file (default `<pipeline-dir>/burr.db`) |
+| `--start-milestone Mx` / `--start-parity` / `--start-benchmark` | enter partway through |
 
 ### Start partway through, from an existing pipeline folder
 
-Use these when `analysis.md`, `milestones.json`, `plan.json`, and the translated
-working copy (`crate/xcvrd-rs/`) already exist and you want a **new orchestration
-run** to begin somewhere other than the start.
-
-**At a chosen milestone** — skips analyze/scope/plan:
-
-```bash
-python -m orchestrator.app \
-  --pipeline-dir /path/to/existing/pipeline \
-  --start-milestone M3 \
-  --app-id retry-from-m3
-```
-
-Loads the milestone ids from that folder's `milestones.json`, marks
-analyze/scope/plan complete, selects M3, and enters at `select_milestone` →
-`translate`.
-
-**At the Parity Verifier** — also skips the entire milestone loop:
+For when `analysis.md`, `milestones.json`, `plan.json`, and the working copy
+`crate/xcvrd-rs/` already exist and you want a **new** run to begin later in the
+graph. All three flags are mutually exclusive, validate those artifacts up front,
+and fail fast if any are missing.
 
 ```bash
-python -m orchestrator.app \
-  --pipeline-dir /path/to/existing/pipeline \
-  --start-parity \
-  --app-id parity-only
+# at a chosen milestone — skips analyze/scope/plan
+python -m orchestrator.app --pipeline-dir PATH --start-milestone M3 --app-id from-m3
+
+# at the Parity Verifier — also skips the whole milestone loop
+python -m orchestrator.app --pipeline-dir PATH --start-parity --app-id parity-only
+
+# at the optimize phase — also skips parity
+python -m orchestrator.app --pipeline-dir PATH --start-benchmark --max-opt-rounds 5 \
+    --app-id optimise-only
 ```
 
-Enters directly at `parity_verify` to grade the translation as it currently
-stands. The outer loop still works from there: if parity reports gaps it
-re-scopes / appends a retry milestone and runs the milestone loop as usual, so
-this is also the quick way to re-check coverage after a manual fix.
+`--start-parity` grades the translation as it stands; the outer loop still works
+from there, so it is the quick way to re-check coverage after a manual fix.
 
-**At the optimize phase** — also skips parity (see [§8](#8-optimize-phase-in-pipeline-after-parity)):
+`--start-benchmark` **asserts** the translation is already complete and correct —
+`parity_complete` is set from the flag, not re-derived. Point it at an unfinished
+translation and it will optimise code that is still going to change; only the
+appended full-suite milestone would eventually catch that.
 
-```bash
-python -m orchestrator.app \
-  --pipeline-dir /path/to/existing/pipeline \
-  --start-benchmark --max-opt-rounds 5 \
-  --app-id optimise-only
-```
-
-Enters at `benchmark` and runs only benchmark <-> optimize plus the appended
-full-suite conformance milestone. It **asserts** the translation is already
-complete and correct: `parity_complete` is set from the flag, not re-derived, so
-pointing this at an unfinished translation optimises code that is still going to
-change — the appended milestone is what would eventually catch that. Implies
-`--optimize`, and rejects `--max-opt-rounds 0` (there would be nothing to run).
-
-The three start flags are mutually exclusive, and all validate the required artifacts up front and fail fast with a clear message
-if any are missing. Existing `skips.json` is preserved and used. The default state
-DB is `<pipeline-dir>/burr.db`; pass `--db PATH` to keep bootstrap runs separate.
-
-**Use a fresh `--app-id` to force the requested start.** If that app id already
-exists in the selected DB, Burr's normal crash-resume state wins and these flags
-do not rewind or override it. The environment-variable form also works:
-
-```bash
-RECODE_PIPELINE_DIR=/path/to/existing/pipeline \
-  python -m orchestrator.app --start-milestone M3 --app-id retry-from-m3
-```
+**Use a fresh `--app-id` to force the requested start.** If the id already exists
+in the selected DB, Burr's crash-resume state wins and these flags do not rewind
+it. `RECODE_PIPELINE_DIR` works instead of `--pipeline-dir`.
 
 ---
 
@@ -114,131 +92,134 @@ RECODE_PIPELINE_DIR=/path/to/existing/pipeline \
 
 ```
 Apache Burr  (deterministic state machine + telemetry UI + SQLite resume)
+
   analyze ─▶ scope ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
-              ▲                     ▲                   ▲            │
-   re-scope   │        next milestone │        repair    │          │ parse results.xml
-   (parity    │        (passed &      │        (failed & │          ▼
-    gaps)     │         more left)    │         iter<max)│      verdict
-              │                       └───────────────────┴──────────┤
-              │                              all milestones green ─▶ parity_verify
-              └──────────────────────── gaps + budget left ──────────┤
-                                        complete (or budget spent) ─▶ terminal
+              ▲                    ▲                              │
+   re-scope   │      next milestone│      repair (failed &        │ parse results.xml
+   (parity    │      (concluded &  │      iter < max_iter)        ▼
+    gaps)     │       more left)   └──────────────────────────  verdict
+              │                                                   │
+              │                        all milestones concluded ─▶ parity_verify
+              └───────────── gaps + budget left ──────────────────┤
+                                                                  │ complete
+                                          ┌───────────────────────┤
+                        (no --optimize) ──┴──▶ terminal           │
+                                                                  ▼
+                                        benchmark ⇄ optimize  (N rounds)
+                                                     │
+                                                     ▼
+                                                 opt_repair
+                                          (appends a full-suite milestone)
+                                                     │
+                                                     ▼
+                                    select_milestone ▶ translate ⇄ validate ▶ terminal
+
         │ every action = subprocess ▼                 │ validate action ▼
    GitHub Copilot CLI custom agents            tools/validate_on_dut.sh
-   (Opus 4.8, high reasoning)                    build Rust (Debian-13 container)
-   analyzer / scoper / planner /                 ▶ inject into pmon (reversible)
-   translator / validator / parity_verifier      ▶ xcvrd-tests/run.sh  (UNCHANGED)
-   do ALL real work via their tools              ▶ parse results.xml ▶ restore py xcvrd
+   (claude-opus-4.8, high/max effort)            build Rust (Debian-13 container)
+   analyzer / scoper / planner / translator      ▶ inject into pmon (reversible)
+   validator / parity_verifier                   ▶ xcvrd-tests/run.sh  (UNCHANGED)
+   benchmarker / optimizer                       ▶ parse results.xml ▶ restore py xcvrd
 ```
 
-Two nested loops: the **inner** milestone×repair loop (correctness, gated by the e2e
-oracle) and the **outer** parity loop (completeness). The **Scoper** derives the
-milestone set from the analysis + the `xcvrd-tests` suite; the **Parity Verifier**
-compares the finished Rust against the Python source per module and, if anything is
-untranslated, feeds gaps back to the Scoper as new unit-only milestones. There is **no
-deferral** — the run succeeds only when parity is complete; exhausting the outer budget
-with gaps still open is a hard failure.
+Three loops:
 
-**Division of labor**
+- **inner** — milestone × repair (correctness, gated by the e2e oracle);
+- **outer** — parity (completeness: is anything untranslated?);
+- **optimize** — benchmark ⇄ optimize, closed by one full-suite milestone (§6).
+
+The **Scoper** derives the milestone set from the analysis + the `xcvrd-tests`
+suite; the **Parity Verifier** compares the finished Rust against the Python
+source per module and feeds gaps back to the Scoper as new unit-only milestones.
+There is **no deferral at the outer level** — the run succeeds only when parity is
+complete; exhausting the outer budget with gaps open is a hard failure.
+
+**Division of labour**
 
 | Layer | Owner | Responsibility |
 |-------|-------|----------------|
-| Sequencing, milestone loop, repair loop, parity loop, typed state, resume, UI | **Burr** (this repo) | ~250 lines of deterministic Python |
-| Analysis, scoping, planning, translation, repair diagnosis, parity check | **Copilot agents** | all the LLM reasoning + code writing |
+| Sequencing, the three loops, typed state, resume, UI | **Burr** (this repo) | deterministic Python, no LLM calls |
+| Analysis, scoping, planning, translation, repair, parity, optimisation | **Copilot agents** | all reasoning + code writing |
 | Black-box verdict | **`xcvrd-tests/run.sh`** (unchanged) | trusted oracle; `results.xml` is the structured result |
-| HAL + STATE_DB + build/deploy | **environment scaffolding** (this repo) | provided so agents don't fight interop (see §3) |
+| HAL + STATE_DB + build/deploy | **environment scaffolding** (this repo) | provided so agents don't fight interop (§3) |
 
 ---
 
 ## 2. How we adapt the paper (deliberately)
 
-Faithful to ReCodeAgent's agents and Algorithm 1 loop, extended with two agents of
-our own (**Scoper**, **Parity Verifier**) and these adaptations for our environment:
+Faithful to ReCodeAgent's agents and Algorithm 1 loop, extended with agents of our
+own (**Scoper**, **Parity Verifier**, and the optimize pair) plus these
+adaptations:
 
 1. **Two validation layers — unit tests (Part B) *and* a fixed black-box oracle.**
-   We keep the paper's Part B (test translation): the Translator rewrites xcvrd's
-   Python **behavioral unit tests** (`source/xcvrd/tests/test_xcvrd.py`) into Rust
-   and adds new unit tests for new code, running them against **mocks** of the HAL
-   and STATE_DB (mirroring the Python `mock_platform.py` / `mock_swsscommon.py`) via
-   `cargo test` — fast, no DUT. On top of that, the **end-to-end `xcvrd-tests`** are
-   an *additional, authoritative* oracle: the Validator deploys the candidate Rust
-   daemon to the DUT and runs that suite **unchanged** (never translated or
-   generated), so the ultimate oracle cannot be gamed. A milestone passes only when
-   **both** layers pass.
+   We keep the paper's Part B: the Translator rewrites xcvrd's Python **behavioral
+   unit tests** (`source/xcvrd/tests/test_xcvrd.py`) into Rust and adds new ones,
+   running them against **mocks** of the HAL and STATE_DB (mirroring the Python
+   `mock_platform.py` / `mock_swsscommon.py`) via `cargo test` — fast, no DUT. On
+   top of that, the end-to-end `xcvrd-tests` are an *additional, authoritative*
+   oracle, run **unchanged** (never translated or generated) so it cannot be gamed.
+   A milestone passes only when **both** layers pass.
 
-2. **Plan = prioritized functionality milestones, owned by the Scoper.** The milestone
-   set is no longer hand-authored: the **Scoper** agent (after `analyze`, before `plan`)
-   partitions the daemon's functionality into an ordered set of slices and writes it to
-   `pipeline/milestones.json`, mapping **every** `xcvrd-tests` module onto exactly one
-   milestone and ending on a golden/full-suite gate. Each slice is gated by its
-   `xcvrd-tests` subset (§5) plus its unit tests, cumulatively; a milestone must go green
-   before the next begins. The **Parity Verifier** may append more (unit-only) milestones
-   when it finds untranslated source (see §2a).
+2. **Plan = prioritized functionality milestones, owned by the Scoper.** The
+   milestone set is not hand-authored: the **Scoper** (after `analyze`, before
+   `plan`) partitions the daemon's functionality into an ordered set and writes
+   `pipeline/milestones.json`, mapping **every** `xcvrd-tests` module onto exactly
+   one milestone and ending on a golden/full-suite gate.
 
 3. **Immutable input, mutable working copy.** `crate/` (the M1 bootstrap +
-   scaffolding) is a read-only input; the Planner copies it to `pipeline/crate/` and
-   all translation happens there. `crate/` is never modified.
+   scaffolding) is read-only input; the Planner copies it to `pipeline/crate/` and
+   all translation happens there.
 
 ### 2a. Parity loop (completeness, not just correctness)
 
-Passing every milestone proves the translation is *correct against the tests* — but
-tests can miss behavior. After all milestones are green, the **Parity Verifier** runs a
-per-module comparison of the Python source against the final Rust (`pipeline/crate/`) and
-writes `pipeline/parity_report.json` (`coverage_matrix`, `gaps`, `complete`):
+Passing every milestone proves the translation is correct *against the tests* —
+but tests can miss behaviour. After all milestones are green the **Parity
+Verifier** compares the Python source against the final Rust per module and writes
+`pipeline/parity_report.json` (`coverage_matrix`, `gaps`, `complete`):
 
-- `complete: true` → the pipeline succeeds (`terminal`, `done=True`).
-- `complete: false` with outer-loop budget remaining → the gaps flow back to the
-  **Scoper**, which **appends** new `origin="parity", unit_only=true` milestones (fresh
-  ids, never renumbering the passed ones). They carry no new e2e test but inherit the
-  full cumulative e2e gate ("pass all previous e2e tests") and are verified by new Rust
-  unit tests. The inner loop then translates/validates them and control returns to parity.
-- budget exhausted (`--max-parity-rounds`) with gaps still open → **hard failure**
-  (`done=False`). There is no deferral at the outer level: everything must translate.
+- `complete: true` → the pipeline succeeds (or proceeds to optimize, §6).
+- `complete: false` with budget left → gaps flow back to the **Scoper**, which
+  **appends** `origin="parity", unit_only=true` milestones (fresh ids, never
+  renumbering passed ones). They add no new e2e test but inherit the full
+  cumulative gate and are verified by new Rust unit tests.
+- budget exhausted with gaps open → **hard failure** (`done=False`).
 
-**Inner give-up (skip, don't fail).** Within a milestone, the translate→validate repair
-loop runs up to `--max-iter` times (default **10**). If a milestone still can't be made
-green, the run does **not** stop: the milestone is **skipped** (recorded in `skipped[]`
-and flagged `gave_up` in history), its still-failing **e2e tests are recorded in
-`pipeline/skips.json`** (`tests_to_skip`) and deselected from every later milestone's
-cumulative gate (so they can't drag each one back to `max_iter`), and the loop advances.
+**Inner give-up (skip, don't fail).** Within a milestone the repair loop runs up to
+`--max-iter` times. If it still can't go green the run does **not** stop: the
+milestone is skipped (recorded in `skipped[]`, flagged `gave_up`), its still-failing
+e2e tests are recorded in `pipeline/skips.json` and deselected from every later
+milestone's cumulative gate — so they can't drag each one back to `max_iter` — and
+the loop advances.
 
-**Deferred-test retry (one shot, then permanent).** When the Parity Verifier runs, it
-also **revisits `pipeline/skips.json`**. For any skipped test that hasn't yet had a
-retry, it appends **one dedicated retry milestone** (`origin="retry"`) that **re-enables**
-those tests (removes them from `tests_to_skip`) and sends the loop back for a fresh
-translate/validate attempt. Outcomes:
-- retry **passes** → the tests are un-deferred (stay out of `tests_to_skip`); the fix stuck.
-- retry **gives up** → the tests go back into `tests_to_skip` and, since they're now in
-  `skips.json`'s `retried` list, they are **skipped permanently** (never retried again).
-  The run surfaces them as `PERMANENTLY SKIPPED` and may terminate.
+**Deferred-test retry (one shot, then permanent).** The Parity Verifier revisits
+`skips.json`. For any skipped test that hasn't had a retry it appends **one**
+dedicated retry milestone (`origin="retry"`) that re-enables those tests:
 
-So a stubborn test gets exactly one focused second chance, then stops wasting budget.
-Its untranslated source still shows up as a **parity gap** (→ re-scope) until coverage
-is complete or the outer budget is spent.
+- retry **passes** → the tests stay un-deferred; the fix stuck.
+- retry **gives up** → they return to `tests_to_skip`, are marked `retried`, and are
+  **skipped permanently**.
 
-Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
-offline with mock agents via `tools/check.sh` (14 scenarios, zero tokens).
-
-Everything else — Analyzer, Planner, skeleton-first, name mapping, the
-translate→validate→repair loop with `maxIter` — is the paper's design.
+So a stubborn test gets exactly one focused second chance, then stops burning
+budget. Its untranslated source still shows up as a parity gap until coverage is
+complete or the outer budget is spent.
 
 ---
 
 ## 3. Environment scaffolding (the key design decision)
 
-The paper's Analyzer picks "idiomatic target-language counterparts" for each
-source dependency. We **pin** two of them and pre-build them so the agents never
-have to reinvent fragile interop:
+The paper's Analyzer picks "idiomatic target-language counterparts" for each source
+dependency. We **pin** two of them and pre-build them so the agents never have to
+reinvent fragile interop.
 
 ### 3a. HAL = the existing Python platform via PyO3 (`crate/platform-bridge`)
 
 The Rust xcvrd talks to `xcvr-emu` through the **exact Python `sonic_platform`
-plugin we run today** (pulled to `source/sonic_platform/`; lives on pmon at
-`/usr/local/lib/python3.13/dist-packages/sonic_platform/`), via **PyO3**. We do
-NOT re-implement the CMIS/SFF decode stack in Rust.
+plugin we run today** (pulled to `source/sonic_platform/`; on pmon at
+`/usr/local/lib/python3.13/dist-packages/sonic_platform/`), via **PyO3**. We do NOT
+re-implement the CMIS/SFF decode stack in Rust.
 
-Why: `sonic_platform.Sfp` subclasses `SfpOptoeBase`, so the Python platform
-already provides the *entire* transceiver API on top of three raw hooks:
+Why: `sonic_platform.Sfp` subclasses `SfpOptoeBase`, so the Python platform already
+provides the *entire* transceiver API on top of three raw hooks:
 
 ```
 Sfp(SfpOptoeBase)
@@ -249,98 +230,83 @@ Chassis(ChassisBase)
                 : get_num_sfps(), get_sfp(i), get_change_event(timeout)
 ```
 
-**`platform-bridge` is a PyO3 crate (built by us) that embeds CPython, imports the
-real plugin, and exposes this high-level API to Rust.** So:
+**`platform-bridge` is a PyO3 crate that embeds CPython, imports the real plugin,
+and exposes this high-level API to Rust.** So:
 
-- **What stays in Python (behind the bridge):** all CMIS/SFF parsing — "the exact
-  platform we have now."
-- **What the agents translate into Rust:** the xcvrd **daemon logic** — the task
-  loops (`SfpStateUpdateTask`, `DomInfoUpdateTask`, `CmisManagerTask`
-  orchestration), polling cadence, state-update decisions, and the STATE_DB
-  schema writes.
+- **Stays in Python (behind the bridge):** all CMIS/SFF parsing.
+- **Translated into Rust by the agents:** the xcvrd **daemon logic** — the task
+  loops (`SfpStateUpdateTask`, `DomInfoUpdateTask`, `CmisManagerTask`), polling
+  cadence, state-update decisions, and the STATE_DB schema writes.
+
+This *thick* boundary beats a thin one (Rust re-implementing CMIS decode on
+read/write/presence): a far smaller, safer translation surface, and it matches "use
+the exact platform we have now".
 
 **Exposed surface** (`platform_bridge::{Platform, Chassis, Sfp, ChangeEvent}`):
 `Platform::new()` → `num_sfps()`, `sfp(i)`, `get_change_event(timeout_ms)`; per-SFP
 `get_presence()/is_replaceable()/get_reset_status()/sfp_type()/get_error_description()`
 (typed scalars), `get_transceiver_info()/_dom_real_value()/_status()/_threshold_info()`
-(returned as `serde_json::Value` so the surface is stable as milestones add fields),
-`get_lpmode()/set_lpmode()/reset()` [M4], `read_eeprom()/write_eeprom()`, and a
-generic `call_json(method, args)` escape hatch. Complex dicts are marshalled via
+(as `serde_json::Value`, so the surface is stable as milestones add fields),
+`get_lpmode()/set_lpmode()/reset()`, `read_eeprom()/write_eeprom()`, and a generic
+`call_json(method, args)` escape hatch. Complex dicts are marshalled via
 `json.dumps(…, default=str)`; NUL-padded CMIS strings are returned verbatim (the
 daemon logic strips them, exactly like the Python original).
 
-> ✅ **Confirmed & proven on the DUT (2026-07-20).** This *thick* boundary (Rust
-> calls `get_transceiver_info()` etc. via PyO3) beats a "thin" one (Rust
-> re-implements CMIS decode on read/write/presence) — far smaller, safer
-> translation surface, and it matches "use the exact platform we have now."
-> `bridge-smoke` runs inside pmon: PyO3 **0.22.6** links `libpython3.13.so.1.0`,
-> imports `sonic_platform`, discovers **33 SFPs** over gRPC, and CMIS-decodes real
-> identity (`type=QSFP-DD…`, `manufacturer=xcvr-emu`, `model=EMU-40G-LR4`,
-> `cmis_rev=5.2`). Reproduce end to end (build in trixie → run in pmon → clean up)
-> with **`bash tools/bridge_smoke.sh`**.
->
-> The `TRANSCEIVER_INFO` contract M1 must reproduce (from `get_transceiver_info()`):
-> `type, type_abbrv_name, hardware_rev, serial, manufacturer, model, connector,
-> encoding, ext_identifier, ext_rateselect_compliance, cable_length,
-> nominal_bit_rate, vendor_date, vendor_oui, active_apsel_hostlane{1..8},
-> application_advertisement, host_lane_count, media_lane_count, cable_type,
-> media_interface_technology, vendor_rev, cmis_rev, specification_compliance,
-> vdm_supported`.
+Verify the boundary independently of the daemon with `bash tools/bridge_smoke.sh`
+(builds in the trixie container, runs inside pmon against the live emulator, cleans
+up): expect `num_sfps = 33`, CMIS-decoded identity per module, `bridge-smoke: OK`.
 
 ### 3b. STATE_DB = official `swss-common` Rust crate
 
-The Rust daemon reads/writes Redis STATE_DB through the upstream Rust bindings at
+The daemon reads/writes Redis STATE_DB through the upstream Rust bindings at
 [`sonic-net/sonic-swss-common` `crates/swss-common`](https://github.com/sonic-net/sonic-swss-common/tree/master/crates/swss-common/src),
-not a hand-rolled client. It's a **pinned git dependency** (`xcvrd-rs/Cargo.toml`,
-rev `7faca59`) exposing `DbConnector`, `Table`, `SonicV2Connector`,
-`ProducerStateTable`, `SubscriberStateTable`, etc. Agents write STATE_DB from Rust
-with e.g. `DbConnector::new_unix(6, "/var/run/redis/redis.sock", 0)?.hset(key, field, &CxxString::from(v))`.
+not a hand-rolled client — a **pinned git dependency** exposing `DbConnector`,
+`Table`, `SonicV2Connector`, `ProducerStateTable`, `SubscriberStateTable`, etc.
 
-**Native-lib wiring (the tricky part, solved once):** `swss-common`'s `build.rs`
-runs **bindgen** over the C-API headers and links `dylib=swsscommon` (the C++
-`libswsscommon`). pmon ships `libswsscommon.so.0` **with the C-API compiled in**
-(verified by symbol probe: `SWSSTable_*`, `SWSSDBConnector_new_unix`, …), so a
-Rust binary loads and runs there. The build container (`Dockerfile.build`) bakes
-what bindgen needs: `clang`/`libclang-dev`, the pinned c-api **headers**
-(`SWSS_COMMON_REPO`), and `BINDGEN_EXTRA_CLANG_ARGS=-x c` so bindgen parses only
-the C boundary (no boost/hiredis/C++ headers). The link library itself is
-pmon-specific, so it's pulled from the live pmon into `~/recode/swsslib` by
-`tools/dut/ensure_swsslib.sh` and mounted at build time (`-L native=/swsslib`).
-Keep the `Dockerfile.build` `SWSS_COMMON_REV` arg in sync with the Cargo rev.
+**Native-lib wiring (the tricky part, solved once):** `swss-common`'s `build.rs` runs
+**bindgen** over the C-API headers and links `dylib=swsscommon`. pmon ships
+`libswsscommon.so.0` with the C-API compiled in, so a Rust binary loads and runs
+there. The build container (`Dockerfile.build`) bakes what bindgen needs —
+`clang`/`libclang-dev`, the pinned c-api headers, and `BINDGEN_EXTRA_CLANG_ARGS=-x c`
+so bindgen parses only the C boundary (no boost/hiredis/C++ headers). The link
+library itself is pmon-specific, so `tools/dut/ensure_swsslib.sh` pulls it from the
+live pmon and mounts it at build time. **Keep `Dockerfile.build`'s `SWSS_COMMON_REV`
+in sync with the Cargo rev.**
 
-> ✅ **Proven on the DUT (2026-07-20).** The `statedb_probe` example links
-> `libswsscommon.so.0` and round-trips a STATE_DB hash; the `hal_to_statedb`
-> example composes **both** libraries — reads
-> transceiver 0 via the bridge and publishes 6 CMIS fields to STATE_DB — the exact
-> `SfpStateUpdateTask` pattern. Both run green in pmon via **`bash tools/env_check.sh`**.
+`bash tools/env_check.sh` proves both libraries compile, link and run together: a
+`statedb_probe` example round-trips a STATE_DB hash, and `hal_to_statedb` reads a
+transceiver via the bridge and publishes it — the exact `SfpStateUpdateTask`
+read→publish pattern.
 
 ### 3c. Build/deploy targeting pmon
 
 pmon is **Debian 13, glibc 2.41, Python 3.13.5**. Neither the Windows dev box nor
-the `sonic-dev` host can produce a matching binary directly. So
+the `sonic-dev` host can produce a matching binary directly, so
 `tools/validate_on_dut.sh` builds inside a **Debian-13 container with Rust +
-python3.13-dev + clang + the swss c-api headers** (PyO3 links libpython3.13;
-swss-common links libswsscommon), then `docker cp`s the binary into pmon and swaps
-it in via supervisor — **reversible**, restoring the Python xcvrd after every run
-(same inject/restore pattern as `xcvrd-tests/tools/inject_dummy_xcvrd.sh`).
+python3.13-dev + clang + the swss c-api headers**, then `docker cp`s the binary
+into pmon and swaps it in via supervisor — **reversibly**, restoring the Python
+xcvrd after every run.
 
-**Where the orchestrator runs (local vs. on sonic-dev).** The host-side wrappers
-(`validate_on_dut.sh`, `build_check.sh`, `unit_test.sh`, `bridge_smoke.sh`,
-`env_check.sh`) stage the crate + `dut/*.sh` and invoke them through a small
-transport shim, `tools/lib_remote.sh` (`r_run` / `r_put_dir` / `r_put_files` /
-`r_get`), selected by **`RECODE_RUN_MODE`**:
+The inject is crash-safe: the Python xcvrd is backed up and the backup verified
+first, and the shim is staged to a temp file and moved atomically, so an
+ENOSPC/partial write can never truncate `xcvrd`.
 
-- **`remote`** (default) — ssh/scp to `RECODE_SSH_HOST` (default `sonic-dev`).
-  This is the from-your-laptop path; behavior is unchanged.
-- **`local`** — no ssh; operate directly on the box's filesystem, for when the
-  whole pipeline (Burr + Copilot) runs **on sonic-dev itself**. Auto-selected when
-  `RECODE_SSH_HOST` is `localhost`/`127.0.0.1`, or set it explicitly:
-  `RECODE_RUN_MODE=local python -m orchestrator.app --app-id run1`.
+**Where the orchestrator runs.** The host-side wrappers stage the crate + `dut/*.sh`
+and invoke them through a transport shim, `tools/lib_remote.sh`, selected by
+**`RECODE_RUN_MODE`**:
 
-Only the *outer* hop (you → sonic-dev) changes; the *inner* DUT chain in
-`tools/dut/*.sh` (sonic-dev → `mgmt` → `admin@10.250.0.101` → `pmon`) is identical
-in both modes. Running on sonic-dev additionally needs the Copilot CLI + Python 3.11+
-installed and authenticated there (see §0).
+- **`remote`** (default) — ssh/scp to `RECODE_SSH_HOST` (default `sonic-dev`); the
+  from-your-laptop path.
+- **`local`** — no ssh, operate directly on the box, for when the whole pipeline
+  runs **on sonic-dev itself**. Auto-selected when `RECODE_SSH_HOST` is
+  `localhost`/`127.0.0.1`.
+
+Only the *outer* hop changes; the inner DUT chain (sonic-dev → `mgmt` →
+`admin@10.250.0.101` → `pmon`) is identical in both modes.
+
+---
+
+## 4. Repository layout
 
 ```
 dev/recodeAgent/
@@ -349,107 +315,107 @@ dev/recodeAgent/
 ├── orchestrator/                 # the small deterministic Burr layer
 │   ├── app.py                    #   ApplicationBuilder: actions + transitions + persister
 │   ├── state.py                  #   typed state helpers
-│   ├── actions.py                #   @action: analyze/scope/plan/select_milestone/translate/validate/parity_verify
+│   ├── actions.py                #   analyze/scope/plan/select_milestone/translate/validate/parity_verify
+│   ├── optimize.py               #   optimize phase: benchmark / optimize / opt_repair (§6)
+│   ├── milestones.py             #   Scoper-owned milestone ARTIFACT loader (§5)
 │   ├── copilot.py                #   invoke_agent(): subprocess wrapper around `copilot`
-│   ├── mock.py                   #   offline mock agents (RECODE_MOCK=1): drive the graph w/o Copilot
-│   ├── milestones.py             #   Scoper-owned milestone ARTIFACT loader (pipeline/milestones.json; §5)
-│   ├── optimize.py               #   OPTIMIZE phase actions: benchmark / optimize / opt_repair (§8)
-├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5 + our scoper/parity)
+│   └── mock.py                   #   offline mock agents (RECODE_MOCK=1)
+├── agents/                       # Copilot CLI custom-agent profiles (§4a)
 │   ├── analyzer.agent.md  scoper.agent.md  planner.agent.md
 │   ├── translator.agent.md  validator.agent.md  parity_verifier.agent.md
-│   ├── optimizer.agent.md  benchmarker.agent.md      # OPTIMIZE stage only (§8)
-│   │                             #   installed to $COPILOT_HOME/agents by tools/install_agents.sh
+│   └── benchmarker.agent.md  optimizer.agent.md          # optimize phase only
 ├── tools/
-│   ├── validate_on_dut.sh        # build (Debian-13) ▶ inject ▶ run.sh ▶ results.xml ▶ restore
-│   ├── build_check.sh            # compile-only check (no inject/tests) for planner/translator
-│   ├── unit_test.sh              # cargo test (Part-B unit tests, mocked) in the trixie container
+│   ├── validate_on_dut.sh        # build ▶ inject ▶ run.sh ▶ results.xml ▶ restore
+│   ├── build_check.sh            # compile-only check (no inject/tests)
+│   ├── unit_test.sh              # cargo test (Part-B unit tests, mocked) in the container
 │   ├── install_agents.sh         # install the .agent.md profiles where the CLI discovers them
-│   ├── lib_remote.sh             # transport shim: RECODE_RUN_MODE=remote (ssh sonic-dev) | local (on sonic-dev)
-│   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
-│   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
-│   ├── check.sh                  # offline orchestrator mock checks (all loops: happy/repair/budget/parity/resume/optimize)
-│   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
-│       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh
-│       ├── bridge_smoke.sh   env_check.sh   ensure_swsslib.sh   # (ensure_swsslib pulls libswsscommon.so)
-├── crate/                        # the Rust workspace (build target = pmon)
-│   ├── Cargo.toml                #   workspace: xcvrd-rs + platform-bridge
-│   ├── xcvrd-rs/                 #   BOOTSTRAP: daemon bin + lib wiring BOTH bindings
-│   │   ├── src/main.rs           #     thin entrypoint -> xcvrd_rs::daemon::run()
-│   │   ├── src/lib.rs  src/env.rs  src/daemon.rs  # M1 bootstrap: presence + identity
-│   │   └── examples/{statedb_probe,hal_to_statedb}.rs  # binding demos (cargo examples, not deployed)
-│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform (BUILT + PROVEN)
-│       ├── src/lib.rs            #     Platform/Chassis/Sfp/ChangeEvent
-│       └── src/bin/bridge_smoke.rs  #  spine smoke test (run in pmon)
+│   ├── lib_remote.sh             # transport shim: RECODE_RUN_MODE=remote | local
+│   ├── bridge_smoke.sh           # PyO3 spine proof, in pmon
+│   ├── env_check.sh              # bridge + swss-common proof, in pmon
+│   ├── check.sh                  # offline orchestrator mock checks (§7)
+│   ├── burr_ui.sh                # local Burr telemetry UI (§7a)
+│   ├── tests/                    # host-side unit tests for the harness itself
+│   └── dut/                      # scripts that run on the sonic-dev host / vlab / pmon
+├── crate/                        # IMMUTABLE input: the Rust workspace (build target = pmon)
+│   ├── xcvrd-rs/                 #   bootstrap daemon wiring BOTH bindings
+│   └── platform-bridge/          #   PyO3 wrappers around sonic_platform
 ├── source/                       # INPUT (gitignored, re-pullable)
-│   ├── xcvrd/                    #   the Python xcvrd source the agents translate
-│   │   └── tests/               #     Python behavioral unit tests + mocks (Part-B input, from upstream)
+│   ├── xcvrd/                    #   the Python xcvrd source (+ tests/ = Part-B input)
 │   └── sonic_platform/           #   the emulator HAL — bridge-design reference
-└── pipeline/                     # runtime hand-off (gitignored): analysis.md, plan.json, report.json,
-                                  #   and crate/ = the mutable working copy (crate/ stays immutable)
+├── results/                      # recorded pipeline outputs (result_N/), immutable
+└── pipeline/                     # runtime hand-off (gitignored) — see below
 ```
 
-Inter-stage state is passed as **files in `pipeline/`** (each agent ends its run
-by writing a parseable artifact there — `analysis.md`, `milestones.json`,
-`plan.json`, `report.json`, `parity_report.json`). Copilot CLI also supports
-`--output-format json` (JSONL), which the orchestrator parses for success/failure
-detection and logging; the file artifacts remain the authoritative state channel.
+Inter-stage state is passed as **files in `pipeline/`**; each agent ends its run by
+writing a parseable artifact there:
+
+| Artifact | Written by | Contents |
+|---|---|---|
+| `analysis.md` | analyzer | source research, dep mapping, target design |
+| `milestones.json` | scoper | the ordered milestone set (§5) |
+| `plan.json` + `crate/` | planner | per-milestone plan; the mutable working copy |
+| `report.json` | validator | combined unit + e2e verdict |
+| `skips.json` | orchestrator | deferred e2e tests + their one-shot retry record |
+| `parity_report.json` | parity_verifier | `coverage_matrix`, `gaps`, `complete` |
+| `bench.json`, `optimize.json`, `optimize_history.json` | benchmarker / optimizer | §6 |
+| `burr.db` | Burr | persisted state for crash-resume |
+
+Copilot CLI's `--output-format json` (JSONL) is parsed for success/failure detection
+and logging, but the file artifacts remain the authoritative state channel.
 
 ### 4a. The agents (`agents/*.agent.md`)
 
-Each stage is a **GitHub Copilot CLI custom agent** — a Markdown profile with YAML
+Each stage is a **Copilot CLI custom agent** — a Markdown profile with YAML
 frontmatter (`name`, `description`, scoped `tools`) plus a system prompt. The CLI
-discovers custom agents from `~/.copilot/agents/` (user level) or a repo's
-`.github/agents/`; since our profiles must live under `dev/recodeAgent/`, they are
-version-controlled in `agents/` and mirrored to `$COPILOT_HOME/agents/` by
-`tools/install_agents.sh` (and automatically by `copilot.py`'s
-`ensure_agents_installed()` before every run — honoring `COPILOT_HOME`).
+discovers them from `~/.copilot/agents/`; ours are version-controlled in `agents/`
+and mirrored there by `tools/install_agents.sh` (and automatically by `copilot.py`
+before every run, honouring `COPILOT_HOME`).
 
-| Agent | Paper | Reads → Writes | Adaptation for this project |
-|-------|-------|----------------|------------------------------|
-| **analyzer** | §3.2 | `source/xcvrd/` (+ `tests/`) → `pipeline/analysis.md` | 3 design docs (source research, Py-dep→Rust analysis, target design) + a source-cited **behavior inventory for scoping**. Bakes in the thick-HAL, swss-common, two-layer-validation, and immutable-input constraints; designs the mockable HAL/DB seams. Does **not** define milestones (the Scoper does). Writes no Rust. |
-| **scoper** | *(ours)* | `analysis.md` + `source/xcvrd/` + `../xcvrd-tests/` (+ `parity_report.json` on re-scope) → `pipeline/milestones.json` | Owns the milestone set. First pass **partitions every `xcvrd-tests` module** across dependency-ordered milestones (M0 deploy-smoke … golden/full-suite last), exactly one milestone per module. On parity feedback, **appends** unit-only milestones for untranslated source (fresh ids). Writes no Rust/tests. |
-| **planner** | §3.3 | `analysis.md` + `milestones.json` → copies `crate/`→`pipeline/crate/`, writes `pipeline/plan.json` + skeleton | Fragment extraction (Part A daemon **+ Part B unit tests**, validated), name mapping, compilable skeleton with mock/test seams, dependency-aware per-milestone plan. |
-| **translator** | §3.4 | `plan.json`/`report.json` → edits `pipeline/crate/xcvrd-rs/` | Implements the milestone's daemon logic (Part A) **and** rewrites the matching Python unit tests + adds new Rust unit tests with mocks (Part B); `build_check.sh` + `unit_test.sh`. Never touches `crate/`. |
-| **validator** | §3.5 | runs `unit_test.sh` + `validate_on_dut.sh` → `pipeline/report.json` | **Two layers**: Rust unit tests (mocked, `cargo test`) **and** the fixed e2e `xcvrd-tests` on the DUT. Combined verdict (`passed` iff both), actionable per-failure hints. Never edits daemon/tests/platform. |
-| **parity_verifier** | *(ours)* | `source/xcvrd/` + `pipeline/crate/` + `analysis.md` → `pipeline/parity_report.json` | Runs once all milestones pass. **Per-module** source-vs-Rust completeness check → `{coverage_matrix, gaps, complete}`. Gaps feed back to the Scoper; `complete:true` ends the run. Read-only; edits nothing. |
+| Agent | Paper | Reads → Writes | Role here |
+|-------|-------|----------------|-----------|
+| **analyzer** | §3.2 | `source/xcvrd/` (+ `tests/`) → `analysis.md` | Source research, Py-dep→Rust mapping, target design, and a source-cited behaviour inventory for scoping. Bakes in the thick-HAL / swss-common / two-layer-validation / immutable-input constraints and designs the mockable HAL/DB seams. Defines no milestones; writes no Rust. |
+| **scoper** | *(ours)* | `analysis.md` + source + `../xcvrd-tests/` (+ `parity_report.json`) → `milestones.json` | Owns the milestone set. First pass **partitions every `xcvrd-tests` module** across dependency-ordered milestones, exactly one milestone per module, ending on a full-suite gate. On parity feedback, appends unit-only milestones. Writes no Rust/tests. |
+| **planner** | §3.3 | `analysis.md` + `milestones.json` → `pipeline/crate/`, `plan.json` | Fragment extraction (Part A daemon **+ Part B unit tests**), name mapping, compilable skeleton with mock/test seams, dependency-aware plan. |
+| **translator** | §3.4 | `plan.json` / `report.json` → edits `pipeline/crate/xcvrd-rs/` | Implements the milestone's daemon logic **and** rewrites the matching Python unit tests + adds Rust unit tests with mocks. Never touches `crate/`. |
+| **validator** | §3.5 | runs `unit_test.sh` + `validate_on_dut.sh` → `report.json` | **Two layers**: mocked Rust unit tests **and** the fixed e2e suite on the DUT. `passed` iff both. Never edits daemon/tests/platform. |
+| **parity_verifier** | *(ours)* | source + `pipeline/crate/` → `parity_report.json` | Per-module source-vs-Rust completeness check once all milestones pass. Read-only. |
+| **benchmarker** | *(ours)* | runs `benchmark/bench.sh` → `bench.json` | Measures only — **no edit tool**, deliberately (§6). |
+| **optimizer** | *(ours)* | `bench.json` + `optimize_history.json` → edits `pipeline/crate/` | One small focused change set per round; must leave `unit_test.sh` green. |
 
-`tools` are scoped per role (all omit the `agent` alias, so an agent can't
-delegate to another — the Burr graph is the only sequencer). The orchestrator runs
+`tools` are scoped per role and all omit the `agent` alias, so an agent cannot
+delegate to another — the Burr graph is the only sequencer. The orchestrator runs
 each with `--model claude-opus-4.8 --allow-all --no-ask-user --output-format json`
-and a **per-agent reasoning effort**: the heavy reasoning stages (analyzer, scoper,
-planner, translator, parity_verifier) run at `--reasoning-effort max`; the validator
-(mostly tool execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Model/effort are
-overridable via `RECODE_MODEL` / `RECODE_EFFORT` (a set `RECODE_EFFORT` overrides
-all agents). Verified on CLI 1.0.77: every profile is discovered, the model +
-`max`/`high` efforts + flags are accepted, and JSONL parsing extracts the agent's
-final message.
+and a **per-agent reasoning effort**: heavy reasoning stages at `max`, the validator
+(mostly tool execution) at `high` (see `AGENT_EFFORT` in `copilot.py`). Override
+with `RECODE_MODEL` / `RECODE_EFFORT`.
 
 ---
 
-## 5. Milestone matrix (the incremental plan)
+## 5. Milestone matrix
 
-Each milestone is a slice of the daemon. Its gate is **CUMULATIVE**: a milestone
-must pass its own new tests **and every earlier milestone's tests** (regression
-safety — new work can't break earlier functionality). The milestone set is a
-Scoper-generated **artifact** at `pipeline/milestones.json` (with `DEFAULT_MILESTONES`
-in `orchestrator/milestones.py` as the bootstrap the Scoper starts from and the
-loader's fallback); `python -m orchestrator.milestones --args M3` prints the resolved
-gate for whatever set is loaded, and `tools/validate_on_dut.sh M3` runs it automatically.
-Parity-appended milestones (`origin="parity"`, `unit_only=true`) add no new module to
-the gate but still inherit the full cumulative e2e set.
+Each milestone is a slice of the daemon, and its gate is **CUMULATIVE**: it must
+pass its own new tests **and every earlier milestone's** (regression safety). The
+set is a Scoper-generated artifact at `pipeline/milestones.json`, with
+`DEFAULT_MILESTONES` in `orchestrator/milestones.py` as the bootstrap the Scoper
+starts from and the loader's fallback.
 
-**Every milestone runs its full cumulative set, including slow tests** (no `-m`
-marker filter). Selection uses a pytest **`-k` module expression** (not file
-paths): `run.sh` always runs `pytest <tests-dir> …`, so a `-k "test_presence or
-test_info_content"` narrows the already-collected dir to exactly the intended
-modules — while slow tests within those modules still run.
+```bash
+python -m orchestrator.milestones --args M3   # print the resolved gate
+bash tools/validate_on_dut.sh M3              # ...and run it
+```
 
-The **bootstrap** set (what the Scoper starts from; the real first-pass partition maps
-*every* `xcvrd-tests` module and may differ):
+Selection uses a pytest **`-k` module expression**, not file paths: `run.sh` always
+runs `pytest <tests-dir> …`, so `-k "test_presence or test_info_content"` narrows
+the already-collected dir to exactly the intended modules while slow tests within
+them still run. **No `-m` marker filter** — every milestone runs its full cumulative
+set including slow tests.
 
-| #  | Milestone (adds) | Cumulative gate (this + all earlier) |
-|----|------------------|--------------------------------------|
-| M0 | **Skeleton** (compiles, injects, RUNNING) | *deploy-smoke* — supervisor RUNNING (no pytest) |
+The **bootstrap** set (the real first-pass partition maps *every* module and may
+differ):
+
+| #  | Milestone (adds) | Cumulative gate |
+|----|------------------|-----------------|
+| M0 | **Skeleton** (compiles, injects, RUNNING) | *deploy-smoke* — supervisor RUNNING, no pytest |
 | M1 | **Presence + identity** | `-k "test_presence or test_info_content"` |
 | M2 | **DOM** | + `test_dom or test_interaction_trace` |
 | M3 | **Status / CMIS / errors** | + `test_status_error` |
@@ -457,368 +423,39 @@ The **bootstrap** set (what the Scoper starts from; the real first-pass partitio
 | M5 | **Multiport concurrency** | + `test_multiport` |
 | M6 | **Golden conformance** | + `test_golden` (all eight modules) |
 
-So M3's gate is `-k "test_presence or test_info_content or test_dom or
-test_interaction_trace or test_status_error"` (slow tests included), and M6
-selects all eight modules.
+M0 is a deploy-smoke gate because the suite's clean-baseline fixture requires
+`TRANSCEIVER_INFO` repopulation, so no pytest can pass on a bare skeleton.
+
+Milestones appended later carry an `origin` (`parity`, `retry`, `optimize`) and may
+set `unit_only` (no new e2e module) or `full_suite` (gate on the entire suite, §6).
 
 ---
 
-## 6. Status
+## 6. Optimize phase (in-pipeline, after parity)
 
-**Deterministic core (Burr): proven.** analyze→plan→(translate↔validate)×milestone
-with SQLite persistence; happy path, repair loop, budget exhaustion, and
-cross-process crash-resume all validated offline via the mock.
+Everything above answers **"is it correct?"**. This phase answers **"is it fast?"** —
+in the same graph, after parity confirms the translation is complete. It is gated on
+`parity_complete`: tuning a translation with known gaps tunes code that is still
+going to change.
 
-**DUT validation harness (`tools/validate_on_dut.sh`): proven end-to-end.** Builds
-the crate in a Debian-13 (trixie) container on the sonic-dev host, ships the
-binary through the mgmt→vlab-01 chain, **crash-safely** injects it into pmon (a
-Python shim `execv`s the Rust binary; backup-verified + atomic shim write so an
-ENOSPC/partial write can never truncate xcvrd), runs `xcvrd-tests/run.sh`, parses
-`results.xml`→`report.json`, and **always restores** the Python xcvrd.
-
-- **M0** is a *deploy-smoke* gate (inject + supervisor RUNNING; no pytest), since
-  the suite's clean-baseline requires `TRANSCEIVER_INFO` repopulation and thus no
-  pytest passes on a bare skeleton. Proven: skeleton → `passed: true`.
-- **Fail path** proven: a no-op binary against a real pytest gate → `passed: false`.
-
-> **DUT disk note:** vlab-01's 16G root filled to 0 during Phase-0 work. Root
-> cause: an unbounded docker **container json-log** (one container had an 8.3GB
-> `*-json.log`; docker doesn't rotate these by default and `docker system df`
-> doesn't even count them). Fix/lever (reclaimed 8.3GB, testbed unaffected):
-> `sudo find /var/lib/docker/containers -name '*-json.log' -exec truncate -s 0 {} +`.
-> The crash-safe inject also means a future ENOSPC can no longer corrupt xcvrd.
-
-**platform-bridge (PyO3 thick HAL): proven on the DUT.** The `Platform/Chassis/Sfp`
-wrappers embed CPython, import the real `sonic_platform` plugin, and return its
-high-level results to Rust (see §3a). Built with PyO3 0.22.6 in the trixie
-container (links `libpython3.13.so.1.0`) and run inside pmon via `bridge-smoke`:
-discovers 33 SFPs over gRPC and CMIS-decodes real identity. Re-runnable any time
-with `bash tools/bridge_smoke.sh` (builds → runs in pmon → cleans up; leaves xcvrd
-untouched).
-
-**swss-common wiring + bootstrap: proven on the DUT.** The official `swss-common`
-crate (pinned git rev) is wired directly into **`xcvrd-rs`** alongside
-`platform-bridge`, so the crate agents start from already has both bindings. The
-daemon (`src/daemon.rs`) is a minimal **M1 bootstrap** (presence + identity):
-`src/env.rs` exposes `open_platform()` / `open_state_db()` / `open_config_db()`,
-and the daemon reads identity via the HAL and publishes `TRANSCEIVER_INFO` +
-`TRANSCEIVER_STATUS_SW`, reacting to plug/unplug via `get_change_event`. Two
-`examples/` also demonstrate the bindings — `statedb_probe` round-trips a STATE_DB
-hash; `hal_to_statedb` reads a transceiver and publishes it (the exact
-`SfpStateUpdateTask` read→publish pattern), both green via `bash tools/env_check.sh`.
-The build container bakes the swss build prereqs (clang, pinned c-api headers,
-bindgen `-x c`) and `ensure_swsslib.sh` supplies `libswsscommon.so` from the live
-pmon, so agent builds "just work" (see §3b).
-
-> ✅ **M1 green on the DUT (2026-07-21).** `validate_on_dut.sh M1` → **11 passed,
-> 0 failed** (`test_info_content` ×5 + `test_presence` ×6): identity fields,
-> plug/unplug clear+restore, `STATUS_SW.status` 1/0, and `cmis_state=READY`. The
-> bootstrap gets the suite past the clean-baseline fixture so the real tests run
-> and pass, giving the agents a working M1 starting point instead of a no-op.
-
-**The four Copilot agents: implemented + wired.** `agents/{analyzer,planner,
-translator,validator}.agent.md` encode the paper's §3.2–3.5 roles with this
-project's adaptations (thick HAL, fixed black-box oracle, milestone-incremental).
-`copilot.py` auto-installs them and invokes each with `--model claude-opus-4.8
---reasoning-effort high --allow-all --output-format json`. Verified on CLI 1.0.72:
-profiles discovered, model + flags accepted, JSONL parsing fixed for the 1.0.72
-event shape. This completes Phase 0 — the pipeline can now be driven end to end
-(`python -m orchestrator.app --app-id run1`), authentication permitting.
-
-**Phase 0 complete.** *(Done: deterministic Burr core, DUT validation harness,
-platform-bridge, swss-common wiring, the M1 bootstrap daemon, the source pull, and
-the four agent profiles.)* Next is Phase 1 — actually running the pipeline so the
-agents extend `crate/xcvrd-rs` beyond M1 (DOM, CMIS state, errors, …) on the proven
-scaffolding.
-
----
-
-## 7. Running the checks yourself
-
-Checks **A–D** need no Copilot token (the orchestrator check uses the offline
-mock; the DUT harness + smokes exercise build/inject/test/restore). Check **E**
-drives the real Copilot agents and needs a login + AI credits.
-
-### A. Deterministic orchestrator (offline, ~30s, no DUT)
-
-From **Git Bash**, in `dev/recodeAgent/`:
-
-```bash
-bash tools/check.sh
-```
-
-Runs eleven scenarios against the mock agents and prints a summary:
-
-| # | Scenario | Look for |
-|---|----------|----------|
-| 1 | Happy path | `done=True milestone_idx=6 skipped=[]`, M0..M6 all `passed=True`, parity complete |
-| 2 | Repair loop | `M1 iter=1 passed=False` then `M1 iter=2 passed=True` |
-| 3 | Give-up + dedicated retry passes | M2 gives up; parity appends retry milestone; retry passes; `tests_to_skip=[]` |
-| 3b | Dedicated retry also gives up | test appears in both `tests_to_skip` and `retried` → permanently skipped |
-| 4 | Crash-resume (inner) | process 2 prints `loaded state ... milestone_idx=3` = **resumed, not restarted** |
-| 5 | Parity feedback loop | parity `passed=False`, Scoper appends `M7` (origin parity), then `done=True parity_round=2` |
-| 6 | Outer budget exhaustion | `done=False parity_complete=False` (parity never completes) |
-| 7,8 | Crash-resume at scope / parity | process 2 resumes at that node, `done=True` |
-| 9 | Start from existing artifacts at M3 | analyze/scope/plan skipped; history begins at M3, then M4..M6→parity |
-| 10 | Start at the Parity Verifier | `--start-parity`: history is just PARITY; no milestone runs at all |
-
-Run a single scenario manually:
-
-```bash
-export RECODE_MOCK=1 RECODE_PIPELINE_DIR="$PWD/pipeline"
-python -m orchestrator.app --app-id my-run --mock          # happy path
-python -m orchestrator.app --app-id my-run --mock          # re-run SAME id => resumes/continues
-```
-
-### B. DUT validation harness (real build+inject+test+restore, ~1-2 min)
-
-Needs `ssh sonic-dev` reachable (it is on this box). From **Git Bash** (the
-harness uses bash/ssh/scp/tar — do NOT use `& bash -lc` from PowerShell, it opens
-an interactive shell):
-
-```bash
-cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/validate_on_dut.sh M0        # deploy-smoke: skeleton must be RUNNING
-bash tools/validate_on_dut.sh M1        # first real pytest gate (auto-resolves the -k selection)
-bash tools/validate_on_dut.sh --all     # run the ENTIRE xcvrd-tests suite (every module, incl. the
-                                         #   T-series parity tests not wired into the milestone matrix)
-```
-
-`--all` (aliases `-a`, `all`) drops the milestone `-k` gate and runs `run.sh` over
-the whole `tests/` dir under the report label `ALL`; append pytest args to narrow
-it (e.g. `--all -m "not slow"`). Set `RECODE_PRINT_GATE=1` to print the resolved
-milestone + gate and exit before any build/inject/DUT run.
-
-It prints the verdict and writes `pipeline/report.json`:
-
-```json
-{ "milestone": "M0", "passed": true, "tests": {"total":1,"passed":1,"failed":0}, "failures": [] }
-```
-
-M0 passes (deploy-smoke) and **M1 passes 11/11** on the current bootstrap daemon
-(presence + identity). M2+ (DOM, CMIS state, errors, …) will fail until that logic
-is added — that's expected. The harness ALWAYS restores the Python xcvrd
-afterward; confirm the testbed is healthy any time with:
-
-```powershell
-ssh sonic-dev "docker exec mgmt bash -lc 'sshpass -p password ssh -o StrictHostKeyChecking=no admin@10.250.0.101 \"docker exec pmon supervisorctl status xcvrd\"'"
-```
-
-### C. platform-bridge smoke (real PyO3 → sonic_platform in pmon, ~1 min)
-
-Proves the HAL boundary independently of the daemon. From **Git Bash**:
-
-```bash
-cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/bridge_smoke.sh
-```
-
-Builds `bridge-smoke` in the trixie container, runs it inside pmon against the live
-`xcvr-emu`, and cleans up. Expected: `num_sfps = 33`, every present module prints
-`type=QSFP-DD… manufacturer=xcvr-emu model=EMU-40G-LR4`, and `bridge-smoke: OK`
-(`rc=0`). It leaves the Python xcvrd untouched.
-
-### D. Agent scaffolding: bridge + swss-common (real STATE_DB in pmon, ~1 min)
-
-Proves the two libraries agents build `xcvrd-rs` on compile, link, and run
-together. From **Git Bash**:
-
-```bash
-cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/env_check.sh
-```
-
-Builds the `statedb_probe` + `hal_to_statedb` examples in the trixie container
-(pulling `libswsscommon.so` from pmon first via `ensure_swsslib.sh`), runs both
-inside pmon, and cleans up. Expected: `statedb_probe: OK` (STATE_DB round-trip) and
-`hal_to_statedb: OK` — `bridge -> swss: wrote 6 fields to TRANSCEIVER_INFO|RECODE_HAL2DB_0`
-(`manufacturer=xcvr-emu`, `cmis_rev=5.2`, …). Uses throwaway STATE_DB keys it
-deletes; leaves xcvrd untouched.
-
-### E. Driving the real agents (needs a Copilot login + AI credits)
-
-Unlike A–D, this runs the actual LLM pipeline. Install the profiles and drive the
-orchestrator against Copilot (authenticate first with `copilot login`, or set
-`COPILOT_GITHUB_TOKEN`):
-
-```bash
-cd /c/Users/t-fhabibi/Desktop/toRust/dev/recodeAgent
-bash tools/install_agents.sh                     # -> $COPILOT_HOME/agents/*.agent.md
-python -m orchestrator.app --app-id run1          # analyze ▶ scope ▶ plan ▶ (translate ▶ validate)* ▶ parity_verify
-```
-
-`copilot.py` also auto-installs the profiles before each call. To exercise a single
-agent by hand:
-
-```bash
-copilot -p "Analyze source/xcvrd and write pipeline/analysis.md" \
-  --agent analyzer --model claude-opus-4.8 --reasoning-effort high \
-  --allow-all --no-ask-user --add-dir ../xcvrd-tests
-```
-
-Smoke-verified on CLI 1.0.77: every agent is discovered, `claude-opus-4.8` +
-`--allow-all` + `--reasoning-effort max`/`high` are accepted, and the JSONL result is
-parsed. The agents edit only `crate/xcvrd-rs/`; the Validator runs the fixed
-`xcvrd-tests` and always restores the Python xcvrd.
-
-### F. Grading a pipeline output with the real sonic-mgmt suites (on the VM)
-
-Beyond the recodeAgent `xcvrd-tests` gate, you can run the **official sonic-mgmt**
-transceiver suites against a Rust xcvrd built from any pipeline-run folder. Two
-subcommands were added to the sibling `../setup-sonic-testbed.sh` (run on the
-sonic-dev VM; the emulator must be deployed first):
-
-```bash
-cd /c/Users/t-fhabibi/Desktop/toRust/dev            # on the VM: sonic-develop/dev
-./setup-sonic-testbed.sh transceiver_tests_rust     recodeAgent/pipeline_run3      # vs-compatible subset
-./setup-sonic-testbed.sh transceiver_tests_all_rust recodeAgent/pipeline_run3 -v   # full validated set
-RESET_TESTS=0 ./setup-sonic-testbed.sh transceiver_tests_all_rust recodeAgent/pipeline_run3
-```
-
-Each builds `<folder>/crate` in the Debian-13 container (`build_crate.sh`),
-crash-safely injects the binary into pmon via `tools/dut/rust_xcvrd_ctl.sh`
-(backup-verify + atomic shim, mirroring `dut_validate.sh`), **flushes STATE_DB to a
-clean baseline** (stop xcvrd → delete every `TRANSCEIVER_*` row → start → soft-verify
-repopulation), runs the existing `transceiver_tests` / `transceiver_tests_all`
-against it, then **always restores the Python xcvrd** (explicit + EXIT/INT/TERM
-trap). The suite's exit code propagates so a CI wrapper can gate on it.
-
-**Why the flush matters (test validity).** STATE_DB rows survive an xcvrd restart,
-so the Python xcvrd's `TRANSCEIVER_INFO` would otherwise persist and let a broken
-Rust daemon *false-pass* the STATE_DB-backed tests. Flushing first means any pass
-must be because the injected daemon **repopulated** the tables. Note the sonic-mgmt
-suites split into two kinds: STATE_DB-backed (`test_sfpshow`, `test_xcvr_info_in_db`)
-which genuinely exercise xcvrd, and platform-API-direct (`test_sfputil`,
-`api/test_sfp`) which read `sonic_platform` and pass even if xcvrd is dead — count
-only the former as xcvrd evidence.
-
-**Negative control (proves the tests have teeth):**
-
-```bash
-./setup-sonic-testbed.sh transceiver_tests_noop     # inject a NO-OP xcvrd + same flush
-```
-
-Injects a no-op daemon (stays RUNNING under supervisor but writes nothing) with the
-same clean baseline, so the STATE_DB tests **must fail**. Demonstrated live: with the
-no-op, `sfpshow presence`→`Not present` and `sfpshow eeprom`→`SFP EEPROM Not detected`
-across all 32 ports (`TRANSCEIVER_INFO`=0); with the real Rust xcvrd, the same flush
-is followed by `TRANSCEIVER_INFO`=32 and `sfpshow`→`Present` / `SFP EEPROM detected`.
-Same tests, opposite outcome — so a real-run pass is attributable to the Rust daemon,
-not stale data.
-
-To check which xcvrd is live in pmon at any time (stock **PYTHON** vs an injected
-**RUST** `xcvrd-rs`) — supervisor state, the running process image, and the
-inject/backup markers — use the read-only status command (changes nothing):
-
-```bash
-./setup-sonic-testbed.sh xcvrd_status      # alias: xcvrd_info
-# [xcvrd] flavor     : PYTHON (stock) | RUST (xcvrd-rs)
-# [xcvrd] supervisor : xcvrd   RUNNING   pid 37, uptime 0:08:23
-# [xcvrd] running    : python (interpreter) | xcvrd-rs (native binary)
-# [xcvrd] markers    : xcvrd-rs=none  py-backup=none  (py-backup present => Rust injected)
-```
-
-### The state machine (what the Burr graph encodes)
+**Off by default** (it costs DUT time). Turn it on with `--optimize`, or set the
+count directly with `--max-opt-rounds N`; `--max-opt-rounds` wins when both are
+given, so `--optimize --max-opt-rounds 0` turns it back off.
 
 ```
-  analyze ─▶ scope ─▶ plan ─▶ select_milestone ─▶ translate ─▶ validate
-               ▲                    ▲                              │
-   re-scope    │        concluded & │  (not passed & iter<max_iter)│ repair
-   (parity     │        more left   │            translate ◀───────┤
-    gaps)      │        ───────────▶ select_milestone              │
-               │        (passed OR gave-up: advance; give-up SKIPS │
-               │         the milestone and records it in skipped[])│
-               │                                                   │
-               │              last milestone concluded ─▶ parity_verify
-               │   (gaps & rounds<budget)  ╱        │        ╲ (complete)
-               └──────────────────────────╯         │         ╲─▶ terminal (done=True)
-                                           (gaps & budget spent) ─▶ terminal (done=False)
-```
-
-Inner loop = per-milestone repair (`translate ⇄ validate`, up to `--max-iter`, default 10).
-A milestone "concludes" when it passes **or** exhausts its repair budget; on give-up it is
-**skipped** (not a run failure) and the loop advances. Outer loop = parity coverage: the
-Parity Verifier re-scopes gaps (including anything a skipped milestone left untranslated)
-until complete, or fails hard once `--max-parity-rounds` is spent with gaps open.
-
-### Burr telemetry UI (local, live)
-
-Traces are captured to `~/.burr/recodeagent-xcvrd/` on every run. The interactive
-UI server (`burr`) needs `apache-burr[start]` (pyarrow), which has **no wheel for
-this box's Python 3.12 ARM64** — so it can't run *natively* here. The helper runs
-it in a local Docker container (Docker Desktop's Linux/arm64 engine, where pyarrow
-*does* have wheels) and **bind-mounts your real `~/.burr`**, so the UI reads the
-same files the pipeline writes — it's **live**, no syncing:
-
-```bash
-bash tools/burr_ui.sh          # build (once) + start the UI locally on :7241
-#  -> open http://localhost:7241   (project: recodeagent-xcvrd)
-bash tools/burr_ui.sh --stop   # stop the UI container
-bash tools/burr_ui.sh --logs   # tail the UI server logs
-```
-
-Because the trace dir is mounted directly, the graph, per-step timings, and each
-node's state update **as a run progresses** — just refresh the browser (the UI
-also polls on its own). Requires Docker Desktop running. Override the port with
-`BURR_PORT`.
-
-**Per-step Copilot chat in the UI.** Every stage logs its Copilot invocation as
-**attributes** on that action node (visible in the UI's action/attributes panel):
-- `copilot_chat` — the readable transcript (assistant messages + each tool call
-  and its result), reconstructed from the JSONL by `copilot.transcript_from_events`;
-- `copilot_prompt`, `final_text`, `files_modified`, `lines_added`/`lines_removed`,
-  `premium_requests`, `duration_s`, `returncode`, and (for validate) `milestone_passed`
-  + `report_tests`/`report_failures`.
-So clicking a `translate:M2` node shows exactly what the Translator did — the chat,
-the shell/edit tool calls, and which files it changed. (Full raw JSONL is also on
-disk at `pipeline/logs/<agent>.stdout.jsonl`.)
-
-
----
-
-## 8. Optimize phase (in-pipeline, after parity)
-
-The pipeline above answers **"is it correct?"**. This phase answers **"is it fast?"**
-— and runs *inside the same graph*, after parity confirms the translation is
-complete. There is nothing to optimise about a crate that does not yet pass its
-oracle, so it is gated on `parity_complete`.
-
-**Off by default** — it costs DUT time and only makes sense on a finished
-translation. Turn it on with `--optimize`, or set the count directly:
-
-```bash
-# full pipeline, then 5 optimisation rounds (the --optimize default)
-python -m orchestrator.app --app-id run1 --optimize
-
-# ...with an explicit round count (implies --optimize)
-python -m orchestrator.app --app-id run1 --max-opt-rounds 8
-
-# JUST the optimize phase, against a pipeline whose translation is already done:
-# skips analyze/scope/plan, the milestone loop AND parity
-python -m orchestrator.app --app-id opt1 --start-benchmark \
-    --pipeline-dir pipeline --max-opt-rounds 5
-```
-
-`--max-opt-rounds` wins when both are given, so `--optimize --max-opt-rounds 0`
-turns the phase back off. `--start-benchmark` **asserts** the translation is
-complete and correct — parity is not re-checked — and is mutually exclusive with
-`--start-milestone` / `--start-parity`.
-
-```
-parity_verify ──> benchmark ──> optimize ──┐
-                      ^                    │  rounds remain
+parity_verify ──▶ benchmark ──▶ optimize ──┐
+                      ▲                    │ rounds remain
                       └────────────────────┘
-                                           │  budget spent
-                                           v
-                                       opt_repair          (appends one milestone)
-                                           │
-                                           v
-                       select_milestone ─> translate <─> validate ──> terminal
+                                           │ budget spent
+                                           ▼
+                                      opt_repair   (appends one milestone)
+                                           ▼
+                      select_milestone ──▶ translate ⇄ validate ──▶ terminal
 ```
 
 | action | agent | does |
 |---|---|---|
-| `benchmark` | **Benchmarker** | runs `benchmark/bench.sh <crate>`, reports `bench.json`. Has **no edit tool** — it measures, it does not fix. |
+| `benchmark` | **Benchmarker** | runs `benchmark/bench.sh <crate>`, reports `bench.json`. No edit tool — it measures, it does not fix. |
 | `optimize` | **Optimizer** | one small focused change set to `pipeline/crate`, guided by the numbers. Must leave `tools/unit_test.sh` passing. |
 | `opt_repair` | — | appends a final `full_suite` milestone and hands it to the normal repair loop |
 
@@ -829,30 +466,30 @@ on failure. Measured over 20 real rounds on `result_4`, that was actively harmfu
 
 - one flaky test (`test_dom_gating`) failed in **14 of 20** rounds,
 - **including 7 rounds where the Optimizer changed nothing at all** (`files: []`) —
-  an empty change set cannot cause a regression, so those reverts discarded work
-  for a failure the round did not produce,
+  an empty change set cannot cause a regression, so those reverts discarded work for
+  a failure the round did not produce,
 - **16 of 20 rounds were thrown away**, and the second half of the run kept nothing.
 
 So rounds now **accumulate**. The Optimizer still runs the mocked unit tests every
-round — cheap, deterministic, and it catches real breakage immediately — and the
-expensive e2e gate runs **once**, as a normal milestone. A failure there is
-**repaired** by the Translator over `--max-iter` attempts instead of discarding the
-round. A flaky failure now costs one repair attempt that finds nothing, rather than
-an entire optimisation.
+round — cheap, deterministic, catches real breakage immediately — and the expensive
+e2e gate runs **once**, as a normal milestone, where a failure is **repaired** by the
+Translator over `--max-iter` attempts instead of discarding the round. A flaky
+failure now costs one repair attempt that finds nothing, rather than an entire
+optimisation.
 
 ### Other decisions worth knowing
 
-- **Reuses the milestone machinery.** `opt_repair` appends a milestone exactly as
-  the Parity Verifier appends its retry milestone, so the repair loop, `skips.json`
+- **Reuses the milestone machinery.** `opt_repair` appends a milestone exactly as the
+  Parity Verifier appends its retry milestone, so the repair loop, `skips.json`
   handling, budget and failure-report format all come for free.
-- **`full_suite` gate.** The new `Milestone.full_suite` flag makes `validate` run
-  `validate_on_dut.sh <M> --all --dom-interval 5` instead of the cumulative `-k`
-  selection: that selection only covers modules some milestone listed, but a
-  performance change can regress anything — including the T-series parity tests no
-  milestone claims. The DOM interval matches what the benchmarks measured (with the
-  harness's `DOM_INTERVAL_FALLBACK` if the crate can't take the flag).
+- **`full_suite` gate.** `Milestone.full_suite` makes `validate` run
+  `validate_on_dut.sh <M> --all --dom-interval 5` instead of the cumulative `-k`:
+  that selection covers only modules some milestone listed, but a performance change
+  can regress anything — including the T-series parity tests no milestone claims.
+  The DOM interval matches what the benchmarks measured; the harness falls back to no
+  flag (logging `DOM_INTERVAL_FALLBACK`) if the crate does not accept it.
 - **Terminates.** `validate → terminal` is ordered **before** `select_milestone` and
-  `parity_verify` so the repair milestone cannot fall back into parity and re-enter
+  `parity_verify`, so the repair milestone cannot fall back into parity and re-enter
   optimization; `opt_done` is a second guard.
 - **Fails loudly.** If the repair milestone exhausts its budget, `done=False` and the
   run exits non-zero — an unrepaired regression is never reported as success.
@@ -860,6 +497,109 @@ an entire optimisation.
   the pre-optimisation tree stays recoverable; re-snapshotting per round would
   overwrite the only pristine copy with an already-optimised one.
 
-Artifacts: `bench.json`, `optimize.json`, `optimize_history.json` (append-only, one
-entry per round — the Optimizer reads it so it does not repeat an idea),
-`crate_snapshot/`.
+`optimize_history.json` is append-only, one entry per round; the Optimizer reads it
+so it does not repeat an idea.
+
+---
+
+## 7. Running the checks yourself
+
+| Check | Needs | Command |
+|---|---|---|
+| **A.** Orchestrator, offline | nothing | `bash tools/check.sh` |
+| **B.** DUT validation harness | `ssh sonic-dev` | `bash tools/validate_on_dut.sh M1` |
+| **C.** platform-bridge spine | `ssh sonic-dev` | `bash tools/bridge_smoke.sh` |
+| **D.** bridge + swss-common | `ssh sonic-dev` | `bash tools/env_check.sh` |
+| **E.** The real agents | Copilot login + credits | `python -m orchestrator.app --app-id run1` |
+
+Only **E** spends tokens. Run the shell ones from **Git Bash**, not PowerShell.
+
+### A. Deterministic orchestrator (offline, no DUT)
+
+`bash tools/check.sh` runs 15 scenarios against the mock agents:
+
+| # | Scenario | Look for |
+|---|---|---|
+| 1 | Happy path | `done=True`, M0..M6 `passed=True`, parity complete |
+| 2 | Repair loop | `M1 iter=1 passed=False` then `iter=2 passed=True` |
+| 3 / 3b | Give-up → retry passes / retry also fails | retry milestone appended; then permanent skip |
+| 3c | Skips extraction is shape-tolerant | validator omits `layer` / uses prose |
+| 4, 7, 8 | Crash-resume (inner / scope / parity) | process 2 prints `loaded state … milestone_idx=N` |
+| 5 | Parity feedback loop | Scoper appends `M7` (origin parity), `parity_round=2` |
+| 6 | Outer budget exhaustion | `done=False parity_complete=False` |
+| 9 / 10 | Start at M3 / at parity | history begins there; earlier stages skipped |
+| 11 | Optimize phase after parity | `OPTIMIZE` then a full-suite `M7`, `done=True` |
+| 11b | `--start-benchmark` | history is **only** `OPTIMIZE` + `M7` |
+| 11c | Optimize repair | `M7` fails twice then passes — repaired, not reverted |
+
+### B. DUT validation harness
+
+```bash
+bash tools/validate_on_dut.sh M0             # deploy-smoke: skeleton must be RUNNING
+bash tools/validate_on_dut.sh M1             # first real pytest gate (auto-resolves -k)
+bash tools/validate_on_dut.sh --all          # the ENTIRE suite, incl. T-series parity tests
+bash tools/validate_on_dut.sh --all -m "not slow" --dom-interval 5
+```
+
+`--all` (aliases `-a`, `all`) drops the milestone `-k` gate under the report label
+`ALL`. `--dom-interval N` passes `--dom_update_interval N` to the injected daemon —
+**omitted by default**, since a partially translated crate may not implement it; when
+requested, the DUT side retries without it if the daemon will not start. Set
+`RECODE_PRINT_GATE=1` to print the resolved gate and exit before any DUT work.
+
+It prints the verdict and writes `pipeline/report.json`:
+
+```json
+{ "milestone": "M0", "passed": true, "tests": {"total":1,"passed":1,"failed":0}, "failures": [] }
+```
+
+The harness **always** restores the Python xcvrd, including on failure. Confirm the
+testbed any time with `../setup-sonic-testbed.sh xcvrd_status` (read-only: reports
+`PYTHON (stock)` vs `RUST (xcvrd-rs)`, supervisor state, and the inject markers).
+
+### E. Driving the real agents
+
+Authenticate first (`copilot login`, or set `COPILOT_GITHUB_TOKEN`). To exercise a
+single agent by hand:
+
+```bash
+copilot -p "Analyze source/xcvrd and write pipeline/analysis.md" \
+  --agent analyzer --model claude-opus-4.8 --reasoning-effort high \
+  --allow-all --no-ask-user --add-dir ../xcvrd-tests
+```
+
+### Grading against the real sonic-mgmt suites
+
+Beyond this repo's `xcvrd-tests` gate, the sibling `../setup-sonic-testbed.sh` can run
+the **official sonic-mgmt** transceiver suites against a Rust xcvrd built from any
+pipeline-run folder (`transceiver_tests_rust` / `transceiver_tests_all_rust`), plus a
+`transceiver_tests_noop` negative control that proves those tests have teeth. See the
+root `README.md`.
+
+> **Test-validity note:** the sonic-mgmt suites split into STATE_DB-backed
+> (`test_sfpshow`, `test_xcvr_info_in_db`), which genuinely exercise xcvrd, and
+> platform-API-direct (`test_sfputil`, `api/test_sfp`), which read `sonic_platform`
+> and pass even if xcvrd is dead. Count only the former as xcvrd evidence — and only
+> after a STATE_DB flush, since rows survive an xcvrd restart and would otherwise let
+> a broken daemon false-pass.
+
+### 7a. Burr telemetry UI (local, live)
+
+Traces are captured to `~/.burr/recodeagent-xcvrd/` on every run. The UI server needs
+`apache-burr[start]` (pyarrow), which has no wheel for Python 3.12 ARM64 — so the
+helper runs it in a local Docker container and **bind-mounts your real `~/.burr`**,
+making it live with no syncing:
+
+```bash
+bash tools/burr_ui.sh          # build (once) + start on :7241  (BURR_PORT overrides)
+bash tools/burr_ui.sh --stop
+bash tools/burr_ui.sh --logs
+```
+
+**Per-step Copilot chat in the UI.** Every stage logs its invocation as attributes on
+that action node: `copilot_chat` (the readable transcript, reconstructed from the
+JSONL), plus `copilot_prompt`, `final_text`, `files_modified`,
+`lines_added`/`lines_removed`, `premium_requests`, `duration_s`, `returncode`, and —
+for validate — `milestone_passed` and `report_tests`/`report_failures`. So clicking a
+`translate:M2` node shows exactly what the Translator did. Raw JSONL is also on disk
+at `pipeline/logs/<agent>.stdout.jsonl`.
