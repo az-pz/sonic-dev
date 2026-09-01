@@ -25,13 +25,23 @@ State keys
   gaps             : list  untranslated-source gaps from the last parity report
   retry_pending    : bool  parity appended a retry milestone for deferred skips -> re-run the loop
   done             : bool  whole pipeline finished SUCCESSFULLY (parity complete)
+
+Optimize phase (runs AFTER parity completes; see app.py's graph)
+  opt_round        : int   1-based benchmark->optimize round in progress
+  max_opt_rounds   : int   how many optimisation rounds to attempt (0 disables the phase)
+  bench            : dict  last bench.json the Benchmarker produced
+  bench_history    : list  per-round benchmark summary, so the trend is visible in the UI
+  optimize         : dict  last optimize.json the Optimizer produced
+  opt_repairing    : bool  the appended optimize-repair milestone is the one in flight
+  opt_done         : bool  the optimize phase has run; prevents re-entering it from parity
 """
 from __future__ import annotations
 
 from . import milestones
 
 
-def initial_state(max_iter: int = 10, max_parity_rounds: int = 3) -> dict:
+def initial_state(max_iter: int = 10, max_parity_rounds: int = 3,
+                  max_opt_rounds: int = 0) -> dict:
     # Milestone count is unknown until `scope` runs (it generates the set), so it
     # starts at 0 / last_idx=-1; the scope action fills these in.
     return {
@@ -55,6 +65,14 @@ def initial_state(max_iter: int = 10, max_parity_rounds: int = 3) -> dict:
         "retry_pending": False,
         "done": False,
         "last_agent": "",
+        # --- optimize phase (skipped entirely when max_opt_rounds is 0) ---
+        "opt_round": 1,
+        "max_opt_rounds": max_opt_rounds,
+        "bench": {},
+        "bench_history": [],
+        "optimize": {},
+        "opt_repairing": False,
+        "opt_done": False,
     }
 
 

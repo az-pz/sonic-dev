@@ -16,7 +16,6 @@ ui = ["apache-burr[start]"]
 
 [project.scripts]
 recode = "orchestrator.app:main"
-recode-optimize = "orchestrator.optimize_app:main"
 
 [tool.setuptools]
 packages = ["orchestrator"]

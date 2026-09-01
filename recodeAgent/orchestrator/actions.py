@@ -499,7 +499,7 @@ def translate(state, __tracer) -> dict:
 
 
 @action(
-    reads=["milestone_idx", "iter_count", "max_iter"],
+    reads=["milestone_idx", "iter_count", "max_iter", "opt_repairing"],
     writes=["milestone_passed", "milestone_concluded", "iter_count", "report",
             "history", "skipped", "done", "last_agent"],
 )
@@ -515,7 +515,14 @@ def validate(state, __tracer) -> dict:
     # Build the exact explicit harness invocation, passing -k with the cumulative
     # selection AND `and not <func>` exclusions for skipped tests (M0 has no e2e
     # tests -> deploy-smoke, no -k).
-    if gate:
+    if m.full_suite:
+        # The post-optimisation milestone: gate on EVERYTHING. The cumulative -k covers
+        # only modules some milestone listed, but a performance change can regress
+        # anything -- including the T-series parity tests no milestone claims. Pin the
+        # DOM cadence to the one the benchmarks measured, so validation and measurement
+        # grade the same daemon; the harness falls back if the crate cannot take it.
+        e2e_cmd = f"bash tools/validate_on_dut.sh {m.id} --all --dom-interval 5"
+    elif gate:
         gate_expr = gate[1] if len(gate) >= 2 else ""
         if skip_funcs:
             gate_expr = "(" + gate_expr + ") " + "".join(f"and not {fn} " for fn in skip_funcs)
@@ -527,19 +534,34 @@ def validate(state, __tracer) -> dict:
         f" NOTE: {len(skips)} test(s) are in {PIPELINE/'skips.json'} (known-failing, deferred "
         "by earlier milestones); the -k above already deselects them via `and not <func>` -- do "
         "NOT re-add or force-run them, and do NOT count them as failures.\n"
-        if skips else "")
+        if skips and not m.full_suite else "")
+    if m.full_suite:
+        e2e_note = (
+            f"2. E2E black-box oracle (authoritative): run `{e2e_cmd}` -- the ENTIRE suite, "
+            "with NO -k gate. This milestone follows the optimize phase, where the crate was "
+            "changed for performance under only the mocked unit tests, so every behaviour is "
+            "in scope: use the whole suite, not the cumulative milestone selection. It builds "
+            "the Rust crate for pmon, injects it (reversibly), runs xcvrd-tests/run.sh, "
+            "restores the Python xcvrd, and parses results.xml into pipeline/report.json. If "
+            "the harness logs DOM_INTERVAL_FALLBACK the crate does not accept "
+            "--dom_update_interval; report it, but it is not a failure.\n"
+        )
+    else:
+        e2e_note = (
+            f"2. E2E black-box oracle (authoritative): run `{e2e_cmd}` -- pass the CUMULATIVE "
+            "gate EXPLICITLY as a pytest -k selection (this milestone's tests PLUS every "
+            "earlier milestone's; resolve it yourself with `python -m orchestrator.milestones "
+            f"--args {m.id}`, then read {PIPELINE/'skips.json'} and append `and not <func>` for "
+            "each of its tests_to_skip). It builds the Rust crate for pmon, injects it (reversibly), "
+            "runs exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
+            "results.xml into pipeline/report.json.\n"
+        )
     prompt = (
         f"Validate milestone {m.id} ({m.title}). Run BOTH validation layers on the "
         f"working copy {PIPELINE_CRATE}:\n"
         f"1. Unit tests (Part B, mocked, fast): `bash tools/unit_test.sh` -- builds + "
         "runs the crate's Rust unit tests (cargo test) in the container; no DUT needed.\n"
-        f"2. E2E black-box oracle (authoritative): run `{e2e_cmd}` -- pass the CUMULATIVE "
-        "gate EXPLICITLY as a pytest -k selection (this milestone's tests PLUS every "
-        "earlier milestone's; resolve it yourself with `python -m orchestrator.milestones "
-        f"--args {m.id}`, then read {PIPELINE/'skips.json'} and append `and not <func>` for "
-        "each of its tests_to_skip). It builds the Rust crate for pmon, injects it (reversibly), "
-        "runs exactly that -k subset of xcvrd-tests/run.sh, restores the Python xcvrd, and parses "
-        "results.xml into pipeline/report.json.\n"
+        + e2e_note
         + skip_note +
         f"Then write the authoritative verdict to {PIPELINE/'report.json'} as "
         '{"milestone","passed","tests","failures"}, where `passed` requires BOTH the unit '
@@ -562,7 +584,11 @@ def validate(state, __tracer) -> dict:
     # is caught later by the Parity Verifier). Success is decided by parity, not here.
     gave_up = (not passed) and (it >= state["max_iter"])
     concluded = passed or gave_up
-    done = False
+    # Success is normally decided by parity, not here -- EXCEPT for the post-optimisation
+    # milestone, which runs after parity and goes straight to terminal. Nothing else would
+    # ever set `done` for it, so a fully successful optimised run would report done=False.
+    # A give-up still means done=False: the optimisation left a regression unrepaired.
+    done = bool(state["opt_repairing"]) and passed
     entry = {"milestone": m.id, "iter": it, "passed": passed,
              "gave_up": gave_up}
     # On give-up, record the still-failing e2e tests into pipeline/skips.json so every

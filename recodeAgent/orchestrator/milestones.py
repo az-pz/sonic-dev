@@ -50,6 +50,11 @@ class Milestone:
     unit_only: bool = False                                 # parity milestone with no new e2e tests
     source_refs: list[str] = field(default_factory=list)   # source symbols/files covered
     deps: list[str] = field(default_factory=list)          # milestone ids that must precede
+    # Gate on the ENTIRE xcvrd-tests suite instead of the cumulative -k selection.
+    # Set by the optimize-repair milestone: a performance change can regress any
+    # behaviour, including the T-series parity tests that no milestone lists, so the
+    # cumulative selection is not a sufficient gate for it.
+    full_suite: bool = False
 
 
 # The bootstrap milestone set: the Scoper starts from this and the loader falls
@@ -123,6 +128,7 @@ def _from_dict(d: dict) -> Milestone:
         unit_only=bool(d.get("unit_only", False)),
         source_refs=list(d.get("source_refs", []) or []),
         deps=list(d.get("deps", []) or []),
+        full_suite=bool(d.get("full_suite", False)),
     )
 
 

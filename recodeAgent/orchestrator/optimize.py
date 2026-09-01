@@ -1,24 +1,37 @@
-"""Burr actions for the OPTIMIZE stage: benchmark -> optimize -> validate.
+"""Burr actions for the OPTIMIZE phase: benchmark <-> optimize, then one repair milestone.
 
-A separate stage from the translation pipeline (actions.py), run on its own. It
-starts from a crate that is already correct -- every milestone translated and the
-e2e oracle green -- and makes it faster without changing what it does:
+This phase runs INSIDE the translation pipeline (see app.py's graph), after parity
+completes. It starts from a crate that is already correct -- every milestone
+translated, the e2e oracle green, full source coverage -- and makes it faster:
 
-  benchmark   Benchmarker agent runs benchmark/bench.sh against the working copy
-              and writes pipeline/bench.json                    (measures only)
-  optimize    Optimizer agent makes ONE small focused change set to the crate,
-              guided by bench.json, and proves unit tests still pass
-  validate    the SAME Validator agent the translation stage uses: mocked unit
-              tests plus the e2e xcvrd-tests oracle on the DUT
+  parity_verify -> benchmark -> optimize -> benchmark -> ... (max_opt_rounds)
+                -> opt_repair -> select_milestone -> translate <-> validate -> terminal
 
-Reusing the existing Validator is deliberate. A performance stage that graded
-itself with a weaker gate than the translation stage would be able to "optimise"
-by regressing behaviour the translation stage worked to establish. The optimizer
-must clear exactly the bar the translation had to clear.
+  benchmark    Benchmarker agent runs benchmark/bench.sh against the working copy
+               and writes pipeline/bench.json                     (measures only)
+  optimize     Optimizer agent makes ONE small focused change set to the crate,
+               guided by bench.json, and proves the UNIT tests still pass
+  opt_repair   appends a final milestone that re-runs the ENTIRE e2e suite through
+               the normal translate <-> validate repair loop
 
-A round that fails validation is REVERTED, not repaired: the change set is small
-by construction, and a broken optimisation has no value to preserve. The revert
-is recorded in pipeline/optimize_history.json so the next round does not retry it.
+Why the e2e gate moved to the end
+---------------------------------
+Each round used to be validated against the full e2e suite and REVERTED on failure.
+Measured over 20 real rounds that was actively harmful: one flaky test
+(test_dom_gating) failed in 14 of them, INCLUDING 7 rounds where the Optimizer
+changed nothing at all -- an empty change set cannot cause a regression, so those
+reverts discarded work for a failure the round did not produce. 16 of 20 rounds
+were thrown away and the second half of the run kept nothing.
+
+So rounds are no longer individually reverted. The Optimizer still runs the mocked
+unit tests itself every round (cheap, deterministic, catches real breakage
+immediately), and the expensive e2e gate runs ONCE at the end as a normal
+milestone -- where a failure is REPAIRED by the Translator over max_iter attempts
+instead of throwing away the whole round. A flaky failure costs a repair attempt
+that finds nothing, not an entire optimisation.
+
+The crate is snapshotted once before the phase begins, so the pre-optimisation
+tree is always recoverable if the repair milestone cannot converge.
 """
 from __future__ import annotations
 
@@ -33,6 +46,7 @@ from burr.core import action
 
 from .copilot import invoke_agent
 from . import actions as _actions
+from . import milestones
 from .actions import (
     ROOT, XCVRD_TESTS,
     _crate_env, _pipeline, _is_mock, _read_json, _log_agent,
@@ -45,8 +59,8 @@ HISTORY_JSON = "optimize_history.json"
 # NOT "report.json": that is the translation stage's validator artifact, and
 # sharing a pipeline directory would have each stage clobber the other's verdict.
 REPORT_JSON = "optimize_report.json"
-# Snapshot of the crate taken before each optimize round, so a failed round can be
-# rolled back to a known-good tree rather than relying on the agent to undo itself.
+# Snapshot of the crate taken ONCE before the phase begins, so the pre-optimisation
+# tree stays recoverable if the repair milestone cannot converge.
 SNAPSHOT = "crate_snapshot"
 
 
@@ -166,11 +180,11 @@ def _mock_optimize(round_no: int) -> dict:
 
 # ----------------------------------------------------------------------- actions
 
-@action(reads=["round"], writes=["bench", "bench_history", "last_agent"])
+@action(reads=["opt_round"], writes=["bench", "bench_history", "last_agent"])
 def benchmark(state, __tracer) -> dict:
     """Benchmarker Agent: run benchmark/bench.sh against the working copy and read
     back the JSON it wrote. Measures only -- it has no edit tool."""
-    round_no = state["round"]
+    round_no = state["opt_round"]
     out_path = _pipeline() / BENCH_JSON
 
     if _is_mock():
@@ -212,38 +226,50 @@ def benchmark(state, __tracer) -> dict:
     return state.update(bench=bench, bench_history=hist, last_agent="benchmarker")
 
 
-@action(reads=["round", "bench"], writes=["optimize", "last_agent"])
+@action(reads=["opt_round", "bench", "max_opt_rounds"],
+        writes=["optimize", "opt_round", "last_agent"])
 def optimize(state, __tracer) -> dict:
     """Optimizer Agent: ONE small focused change set to the working copy, guided by
     the measured results, without altering observable behaviour."""
-    round_no = state["round"]
-    # Snapshot BEFORE the agent touches anything, so a failed validate can roll back
-    # to a known-good tree rather than trusting the agent to undo its own edits.
-    _snapshot_crate()
+    round_no = state["opt_round"]
+    # Snapshot ONCE, before the first round touches anything, so the pre-optimisation
+    # tree stays recoverable if the repair milestone cannot converge. NOT per round:
+    # rounds accumulate deliberately (see the module docstring), so re-snapshotting
+    # would overwrite the only pristine copy with an already-optimised one.
+    if round_no <= 1:
+        _snapshot_crate()
 
     if _is_mock():
         doc = _mock_optimize(round_no)
-        return state.update(optimize=doc, last_agent="optimizer")
+        return state.update(optimize=doc, opt_round=round_no + 1, last_agent="optimizer")
 
     prompt = (
-        f"Optimisation round {round_no}. Improve the PERFORMANCE of the working copy at "
-        f"{_crate()} (the daemon xcvrd-rs AND the Rust platform-bridge) without "
-        "changing observable behaviour.\n\n"
+        f"Optimisation round {round_no} of {state['max_opt_rounds']}. Improve the "
+        f"PERFORMANCE of the working copy at {_crate()} (the daemon xcvrd-rs AND the "
+        "Rust platform-bridge) without changing observable behaviour.\n\n"
         f"Evidence: {_pipeline() / BENCH_JSON} holds this round's measurements. "
-        f"{_pipeline() / HISTORY_JSON} holds every previous round including the ones that "
-        "were REVERTED and why -- read it and do not retry a failed idea.\n\n"
-        "Make ONE small, focused change set: one coherent idea, small enough that if "
-        "validation fails you know exactly what caused it. Prefer removing redundant work, "
-        "then reducing I/O round trips, then avoiding needless copies; leave concurrency "
-        "and build-profile changes until last.\n\n"
+        f"{_pipeline() / HISTORY_JSON} holds every previous round -- read it, and do not "
+        "repeat an idea that was already tried.\n\n"
+        "Make ONE small, focused change set: one coherent idea, small enough that a later "
+        "failure can be traced to it. Prefer removing redundant work, then reducing I/O "
+        "round trips, then avoiding needless copies; leave concurrency and build-profile "
+        "changes until last.\n\n"
         "The daemon is graded as a black box on what it writes to STATE_DB. Do not change "
         "which rows/fields/values are published or when. A change that is faster because it "
         "does less observable work is a behaviour change -- reject it yourself.\n\n"
-        "Before finishing, run `bash tools/unit_test.sh` and make sure it passes. If your "
-        "change breaks a unit test, fix the change or revert it -- do NOT weaken the test.\n\n"
-        f"Then write {_pipeline() / OPTIMIZE_JSON} with: round, title, files, rationale "
-        "(citing the numbers that motivated it), expected_effect (a prediction the next "
-        "benchmark will check), behaviour_risk, unit_tests, measured_before.\n\n"
+        "Rounds ACCUMULATE: your change stays in the crate and the next round builds on it. "
+        "The full e2e suite runs once after the final round, and anything it catches is "
+        "REPAIRED there rather than thrown away -- so do not gamble on a change you cannot "
+        "justify, but do not refuse a well-evidenced one for fear of a single revert.\n\n"
+        "Before finishing, run `bash tools/unit_test.sh` and make sure it passes. This is "
+        "the only automatic gate between rounds, so a broken crate here compounds into "
+        "every later round. If your change breaks a unit test, fix the change or undo it -- "
+        "do NOT weaken the test.\n\n"
+        f"Then write {_pipeline() / OPTIMIZE_JSON} with: round, title, files (EVERY file you "
+        "touched -- the pipeline records this as the change set, so an incomplete list makes "
+        "a later regression untraceable), rationale (citing the numbers that motivated it), "
+        "expected_effect (a prediction the next benchmark will check), behaviour_risk, "
+        "unit_tests, measured_before.\n\n"
         "If there is no meaningful and safe change left, say so: write optimize.json with "
         '"title": "no further safe optimisation identified" and an honest explanation. '
         "Inventing a marginal change carries regression risk for no measured gain."
@@ -256,80 +282,78 @@ def optimize(state, __tracer) -> dict:
     _log_agent(__tracer, stage=f"optimize-{round_no}", prompt=prompt, result=result)
 
     doc = _read_json(OPTIMIZE_JSON)
-    return state.update(optimize=doc, last_agent="optimizer")
-
-
-@action(reads=["round", "optimize", "bench_history"],
-        writes=["round", "validated", "report", "history", "reverted", "last_agent"])
-def validate_optimization(state, __tracer) -> dict:
-    """Validator Agent (the same one the translation stage uses): mocked unit tests
-    plus the full e2e xcvrd-tests oracle on the DUT.
-
-    On failure the round is REVERTED rather than repaired. The change set is small by
-    construction, so there is nothing worth salvaging, and repairing here would let a
-    behaviour regression survive several rounds of edits before anyone noticed.
-    """
-    round_no = state["round"]
-    doc = state["optimize"] or {}
-
-    if _is_mock():
-        passed = os.environ.get("RECODE_MOCK_OPT_FAIL", "") != str(round_no)
-        report = {"round": round_no, "passed": passed, "tests": 105,
-                  "failures": [] if passed else [{"test": "mock", "why": "scripted failure"}]}
-        (_pipeline() / REPORT_JSON).write_text(json.dumps(report, indent=2), encoding="utf-8")
-    else:
-        # Remove the previous round's verdict first. If the Validator dies without
-        # writing one, the read below must come back empty and fail the round --
-        # inheriting last round's "passed": true would silently keep a regression.
-        (_pipeline() / REPORT_JSON).unlink(missing_ok=True)
-        prompt = (
-            f"Validate optimisation round {round_no} of the working copy at {_crate()}.\n\n"
-            f"The Optimizer made a performance change described in {_pipeline() / OPTIMIZE_JSON}; "
-            "read it so you know what to scrutinise. This is a PERFORMANCE change that must not "
-            "have altered behaviour, so run the FULL gate, not a subset:\n"
-            "1. `bash tools/unit_test.sh` -- the mocked Rust unit tests.\n"
-            "2. `bash tools/validate_on_dut.sh --all --dom-interval 5` -- the entire xcvrd-tests "
-            "black-box suite on the DUT (no -k gate: a performance change can regress any "
-            "behaviour, so the cumulative-milestone selection used during translation is not "
-            "sufficient here). `--dom-interval 5` matches the cadence the benchmarks measure; if "
-            "this crate does not support the option the harness logs DOM_INTERVAL_FALLBACK and "
-            "runs at the daemon's default instead -- report that, but do not treat it as a "
-            "failure.\n\n"
-            f"Write the verdict to {_pipeline() / REPORT_JSON} as "
-            '{"round","passed","tests","failures"}, where passed requires BOTH layers to pass. '
-            "Each failure needs the test id and an actionable description of what regressed."
-        )
-        result = invoke_agent(
-            "validator", prompt, cwd=ROOT,
-            add_dirs=[str(XCVRD_TESTS)],
-            log_dir=_pipeline() / "logs", extra_env=_crate_env(),
-        )
-        _log_agent(__tracer, stage=f"validate-opt-{round_no}", prompt=prompt, result=result)
-        report = _read_json(REPORT_JSON)
-        if not report:
-            print(f"[optimize] round {round_no}: validator wrote no {REPORT_JSON} "
-                  "-- treating the round as FAILED")
-
-    passed = bool(report.get("passed"))
-    reverted = False
-    if not passed:
-        reverted = _restore_crate()
-        print(f"[optimize] round {round_no} FAILED validation; "
-              f"{'reverted to the pre-round snapshot' if reverted else 'NO SNAPSHOT TO REVERT TO'}")
-
-    entry = {
+    _append_history({
         "round": round_no,
         "title": doc.get("title", "?"),
         "files": doc.get("files", []),
         "rationale": doc.get("rationale", ""),
         "expected_effect": doc.get("expected_effect", ""),
-        "passed": passed,
-        "reverted": reverted,
-        "failures": report.get("failures", [])[:5],
         "bench_before": (state["bench_history"] or [{}])[-1],
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    hist = _append_history(entry)
+    })
+    return state.update(optimize=doc, opt_round=round_no + 1, last_agent="optimizer")
 
-    return state.update(round=round_no + 1, validated=passed, report=report,
-                        history=hist, reverted=reverted, last_agent="validator")
+
+@action(reads=["opt_round", "max_opt_rounds", "bench_history", "num_milestones"],
+        writes=["num_milestones", "last_idx", "milestone_idx", "milestone_passed",
+                "milestone_concluded", "iter_count", "opt_repairing", "opt_done",
+                "done", "history"])
+def opt_repair(state, __tracer) -> dict:
+    """Close the optimize phase by appending ONE final milestone that re-proves the
+    optimised crate against the ENTIRE e2e suite.
+
+    The rounds before this one were gated only by the mocked unit tests, so this is
+    the first time the accumulated optimisations meet the black-box oracle. Handing
+    that to the normal translate <-> validate loop (rather than a bespoke check) buys
+    the repair budget, the skips.json handling and the failure-reporting format that
+    the translation stage already has -- and means a regression is FIXED rather than
+    discarded, which is the whole reason the per-round revert was removed.
+
+    full_suite=True: the cumulative -k selection covers only modules some milestone
+    listed, but a performance change can regress anything, including the T-series
+    parity tests that no milestone claims.
+    """
+    ms = milestones.load()
+    base = len(ms)
+    nid = f"M{base}"
+    rounds_done = max(0, state["opt_round"] - 1)
+    trend = state["bench_history"] or []
+    ms.append(milestones.Milestone(
+        nid, "Post-optimisation conformance",
+        f"{rounds_done} optimisation round(s) changed the crate for performance while "
+        "only the mocked unit tests were gating. Re-prove the ENTIRE e2e suite against "
+        "the optimised crate and fix anything that regressed.\n\n"
+        "Repair by correcting the daemon so the original behaviour is restored, keeping "
+        "the performance work wherever that is possible. Where an optimisation cannot be "
+        "made correct, undo THAT optimisation rather than weakening a test -- "
+        f"{_pipeline() / HISTORY_JSON} records what each round changed and why. Never "
+        "edit the tests: they are the oracle the optimisation has to survive.",
+        test_modules=[], marker="", origin="optimize", unit_only=False,
+        source_refs=[], deps=[ms[-1].id] if ms else [], full_suite=True,
+    ))
+    milestones.save(ms)
+
+    print(f"[optimize] {rounds_done} round(s) done; appended {nid} "
+          "(post-optimisation conformance, full e2e suite)")
+    if trend:
+        print(f"[optimize] first: {json.dumps(trend[0], sort_keys=True)}")
+        print(f"[optimize] last : {json.dumps(trend[-1], sort_keys=True)}")
+
+    if __tracer is not None:
+        try:
+            __tracer.log_attributes(opt_rounds_done=rounds_done, repair_milestone=nid,
+                                    bench_history=trend)
+        except Exception:
+            pass
+
+    return state.update(
+        num_milestones=base + 1,
+        last_idx=base,           # the repair milestone is now last
+        milestone_idx=base,      # ...and is the one to run next
+        milestone_passed=False,
+        milestone_concluded=False,
+        iter_count=0,
+        opt_repairing=True,      # routes validate -> terminal instead of back to parity
+        opt_done=True,           # parity must not re-enter the optimize phase
+        done=False,              # not finished until the repair milestone concludes
+    ).append(history={"milestone": "OPTIMIZE", "iter": rounds_done, "passed": True})

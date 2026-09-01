@@ -32,6 +32,7 @@ UI:  burr   (then open the printed URL; project "recodeagent-xcvrd")
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import uuid
 from pathlib import Path
@@ -40,7 +41,7 @@ import burr.core
 from burr.core import ApplicationBuilder, default, expr
 from burr.core.persistence import SQLLitePersister
 
-from . import actions, milestones, state as S
+from . import actions, milestones, optimize, state as S
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = str(ROOT / "pipeline" / "burr.db")
@@ -135,7 +136,7 @@ def _tracker_enabled() -> bool:
 
 def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 3,
                      db_path: str = DEFAULT_DB, bootstrap_state: dict | None = None,
-                     default_entrypoint: str = "analyze"):
+                     default_entrypoint: str = "analyze", max_opt_rounds: int = 0):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     persister = SQLLitePersister.from_values(db_path=db_path, table_name="recode_state")
     persister.initialize()
@@ -150,8 +151,12 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
             translate=actions.translate,
             validate=actions.validate,
             parity_verify=actions.parity_verify,
+            benchmark=optimize.benchmark,
+            optimize=optimize.optimize,
+            opt_repair=optimize.opt_repair,
             terminal=burr.core.Result("done", "history", "milestone_idx", "skipped",
-                                      "parity_round", "parity_complete", "gaps", "report"),
+                                     "parity_round", "parity_complete", "gaps", "report",
+                                     "opt_round", "bench_history"),
         )
         .with_transitions(
             ("analyze", "scope"),
@@ -161,6 +166,11 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
             ("translate", "validate"),
             # inner loop: repair the current milestone while it fails and there's budget
             ("validate", "translate", expr("not milestone_passed and iter_count < max_iter")),
+            # The post-optimisation milestone is the LAST thing the run does. Ordered
+            # before the two transitions below so it cannot fall through to
+            # select_milestone (there is no next milestone) or back to parity_verify
+            # (which would re-enter the optimize phase and never terminate).
+            ("validate", "terminal", expr("opt_repairing")),
             # milestone concluded (passed OR budget exhausted) and more remain -> next milestone.
             # A give-up here SKIPS the stuck milestone instead of failing the run; the
             # untranslated behaviour is caught later by the Parity Verifier.
@@ -171,14 +181,26 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
             ("parity_verify", "select_milestone", expr("retry_pending")),
             # outer loop: gaps found + budget left -> re-scope new milestones
             ("parity_verify", "scope", expr("not parity_complete and parity_round < max_parity_rounds")),
+            # Translation is COMPLETE and correct -> make it faster. Requires
+            # parity_complete: optimising a translation with known gaps would tune code
+            # that is still going to change. opt_done stops a second entry.
+            ("parity_verify", "benchmark",
+             expr("parity_complete and not opt_done and max_opt_rounds > 0")),
             # complete (success) OR gaps + budget exhausted (fail) -> terminal
             ("parity_verify", "terminal", default),
+            # optimize phase: measure, change, repeat -- then hand the accumulated
+            # result to one final full-suite milestone.
+            ("benchmark", "optimize"),
+            ("optimize", "benchmark", expr("opt_round <= max_opt_rounds")),
+            ("optimize", "opt_repair", default),
+            ("opt_repair", "select_milestone"),
         )
         .initialize_from(
             persister,
             resume_at_next_action=True,      # crash-resume: pick up where we left off
             default_state=bootstrap_state or S.initial_state(
-                max_iter=max_iter, max_parity_rounds=max_parity_rounds),
+                max_iter=max_iter, max_parity_rounds=max_parity_rounds,
+                max_opt_rounds=max_opt_rounds),
             default_entrypoint=default_entrypoint,
         )
         .with_state_persister(persister)
@@ -196,6 +218,10 @@ def main() -> int:
     ap.add_argument("--max-iter", type=int, default=10, help="repair budget per milestone (default 10).")
     ap.add_argument("--max-parity-rounds", type=int, default=3,
                     help="outer-loop budget: max parity re-scope rounds before failing.")
+    ap.add_argument("--max-opt-rounds", type=int, default=0, metavar="N",
+                    help="after parity completes, run N benchmark->optimize rounds, then "
+                         "one full-suite conformance milestone to repair any regression. "
+                         "0 (default) skips the optimize phase entirely.")
     ap.add_argument(
         "--pipeline-dir", default=None,
         help="pipeline artifact directory (default: RECODE_PIPELINE_DIR or ./pipeline).")
@@ -243,6 +269,7 @@ def main() -> int:
 
     app = build_application(app_id, max_iter=args.max_iter,
                             max_parity_rounds=args.max_parity_rounds,
+                            max_opt_rounds=args.max_opt_rounds,
                             db_path=db_path,
                             bootstrap_state=bootstrap_state,
                             default_entrypoint=entrypoint)
@@ -272,6 +299,11 @@ def main() -> int:
         if h.get("retry_for"):
             flag += f"  [retry for {h['retry_for']}]"
         print(f"    {h['milestone']}  iter={h['iter']}  passed={h['passed']}{flag}")
+    trend = final_state["bench_history"]
+    if trend:
+        print(f"[recode] optimize: {len(trend)} round(s) benchmarked")
+        print(f"    first: {json.dumps(trend[0], sort_keys=True)}")
+        print(f"    last : {json.dumps(trend[-1], sort_keys=True)}")
     if skipped:
         print(f"[recode] WARNING: {len(skipped)} milestone(s) skipped after exhausting the repair "
               f"budget: {skipped}. The Parity Verifier gave deferred tests one retry milestone.")

@@ -338,8 +338,7 @@ dev/recodeAgent/
 │   ├── copilot.py                #   invoke_agent(): subprocess wrapper around `copilot`
 │   ├── mock.py                   #   offline mock agents (RECODE_MOCK=1): drive the graph w/o Copilot
 │   ├── milestones.py             #   Scoper-owned milestone ARTIFACT loader (pipeline/milestones.json; §5)
-│   ├── optimize.py               #   OPTIMIZE stage actions: benchmark / optimize / validate (§8)
-│   └── optimize_app.py           #   OPTIMIZE stage Burr graph -- separate app, separate state table
+│   ├── optimize.py               #   OPTIMIZE phase actions: benchmark / optimize / opt_repair (§8)
 ├── agents/                       # Copilot CLI custom-agent profiles (paper §3.2–3.5 + our scoper/parity)
 │   ├── analyzer.agent.md  scoper.agent.md  planner.agent.md
 │   ├── translator.agent.md  validator.agent.md  parity_verifier.agent.md
@@ -762,62 +761,75 @@ disk at `pipeline/logs/<agent>.stdout.jsonl`.)
 
 ---
 
-## 8. Optimize stage (separate loop, runs after translation)
+## 8. Optimize phase (in-pipeline, after parity)
 
-The pipeline above answers **"is it correct?"**. This one answers **"is it fast?"**,
-and only makes sense once the first has finished — there is nothing to optimise
-about a crate that does not yet pass its oracle. It is a **separate Burr app** with
-its own state table, so it cannot interfere with a translation run.
+The pipeline above answers **"is it correct?"**. This phase answers **"is it fast?"**
+— and runs *inside the same graph*, after parity confirms the translation is
+complete. There is nothing to optimise about a crate that does not yet pass its
+oracle, so it is gated on `parity_complete`.
+
+Off by default. Enable with `--max-opt-rounds N`:
+
+```bash
+python -m orchestrator.app --app-id run1 --max-opt-rounds 5
+```
 
 ```
-benchmark ──> optimize ──> validate ──┐
-    ^                                 │  rounds remain
-    └─────────────────────────────────┘
-                                      │  budget spent
-                                      └──> terminal
+parity_verify ──> benchmark ──> optimize ──┐
+                      ^                    │  rounds remain
+                      └────────────────────┘
+                                           │  budget spent
+                                           v
+                                       opt_repair          (appends one milestone)
+                                           │
+                                           v
+                       select_milestone ─> translate <─> validate ──> terminal
 ```
 
 | action | agent | does |
 |---|---|---|
-| `benchmark` | **Benchmarker** | runs `benchmark/bench.sh <crate>` and reports `bench.json`. Has **no edit tool** — it measures, it does not fix. |
-| `optimize` | **Optimizer** | **one** small focused change set to `pipeline/crate` (daemon *and* Rust platform-bridge), guided by the numbers, without changing observable behaviour. Must leave `tools/unit_test.sh` passing. |
-| `validate` | **Validator** (the same one the translation stage uses) | mocked unit tests **plus** `tools/validate_on_dut.sh --all` — the *entire* e2e suite, not a milestone gate. |
+| `benchmark` | **Benchmarker** | runs `benchmark/bench.sh <crate>`, reports `bench.json`. Has **no edit tool** — it measures, it does not fix. |
+| `optimize` | **Optimizer** | one small focused change set to `pipeline/crate`, guided by the numbers. Must leave `tools/unit_test.sh` passing. |
+| `opt_repair` | — | appends a final `full_suite` milestone and hands it to the normal repair loop |
 
-```bash
-# offline wiring check — fake agents, no Copilot or DUT
-python -m orchestrator.optimize_app --app-id demo --rounds 3 --mock
+### Why the e2e gate is at the END, not per round
 
-# real run against a translated crate
-python -m orchestrator.optimize_app --app-id opt1 --rounds 5 \
-    --pipeline-dir pipeline --scenarios B9 --reps 1
-```
+The first design validated **every** round against the full e2e suite and reverted
+on failure. Measured over 20 real rounds on `result_4`, that was actively harmful:
 
-**Design decisions worth knowing:**
+- one flaky test (`test_dom_gating`) failed in **14 of 20** rounds,
+- **including 7 rounds where the Optimizer changed nothing at all** (`files: []`) —
+  an empty change set cannot cause a regression, so those reverts discarded work
+  for a failure the round did not produce,
+- **16 of 20 rounds were thrown away**, and the second half of the run kept nothing.
 
-- **Measure every round, before changing anything.** Each optimisation is justified
-  by the state of the crate it is actually editing, not by a stale reading. After a
-  revert the re-measurement also *confirms* the rollback rather than assuming it.
-- **A failed round is reverted, not repaired.** `optimize` snapshots the crate
-  before the agent touches it (excluding `target/`). The change set is small by
-  construction, so there is nothing worth salvaging — and repairing here would let a
-  behaviour regression survive several rounds of edits before anyone noticed.
-- **The full e2e suite, every round.** During translation a milestone only needs its
-  own cumulative gate; a performance change can regress *any* behaviour, so the
-  subset is not sufficient.
-- **Fail closed.** The verdict file is deleted before the Validator runs, so a
-  Validator that dies without writing one fails the round instead of inheriting the
-  previous round's `"passed": true`.
-- **Its own artifact names.** `optimize_report.json`, not `report.json` — sharing a
-  pipeline directory with the translation stage would otherwise have each clobber
-  the other's verdict.
-- **"No change" is a valid answer.** The Optimizer is told to write
-  `"title": "no further safe optimisation identified"` rather than invent a marginal
-  change that carries regression risk for no measured gain.
-- **Behaviour is the black box.** The daemon is graded on what it writes to STATE_DB.
-  A change that is faster because it does *less observable work* is a behaviour
-  change, and the Optimizer is told to reject it itself.
+So rounds now **accumulate**. The Optimizer still runs the mocked unit tests every
+round — cheap, deterministic, and it catches real breakage immediately — and the
+expensive e2e gate runs **once**, as a normal milestone. A failure there is
+**repaired** by the Translator over `--max-iter` attempts instead of discarding the
+round. A flaky failure now costs one repair attempt that finds nothing, rather than
+an entire optimisation.
 
-Artifacts land in the pipeline directory: `bench.json`, `optimize.json`,
-`optimize_report.json`, `optimize_history.json` (append-only round log, including
-reverted rounds and why — the Optimizer reads it so it does not retry a failed idea),
-`crate_snapshot/`, and `optimize_state.db`.
+### Other decisions worth knowing
+
+- **Reuses the milestone machinery.** `opt_repair` appends a milestone exactly as
+  the Parity Verifier appends its retry milestone, so the repair loop, `skips.json`
+  handling, budget and failure-report format all come for free.
+- **`full_suite` gate.** The new `Milestone.full_suite` flag makes `validate` run
+  `validate_on_dut.sh <M> --all --dom-interval 5` instead of the cumulative `-k`
+  selection: that selection only covers modules some milestone listed, but a
+  performance change can regress anything — including the T-series parity tests no
+  milestone claims. The DOM interval matches what the benchmarks measured (with the
+  harness's `DOM_INTERVAL_FALLBACK` if the crate can't take the flag).
+- **Terminates.** `validate → terminal` is ordered **before** `select_milestone` and
+  `parity_verify` so the repair milestone cannot fall back into parity and re-enter
+  optimization; `opt_done` is a second guard.
+- **Fails loudly.** If the repair milestone exhausts its budget, `done=False` and the
+  run exits non-zero — an unrepaired regression is never reported as success.
+- **One snapshot, not per round.** `crate_snapshot/` is taken once before round 1, so
+  the pre-optimisation tree stays recoverable; re-snapshotting per round would
+  overwrite the only pristine copy with an already-optimised one.
+
+Artifacts: `bench.json`, `optimize.json`, `optimize_history.json` (append-only, one
+entry per round — the Optimizer reads it so it does not repeat an idea),
+`crate_snapshot/`.
