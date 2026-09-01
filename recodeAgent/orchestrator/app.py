@@ -46,6 +46,8 @@ from . import actions, milestones, optimize, state as S
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = str(ROOT / "pipeline" / "burr.db")
 PROJECT = "recodeagent-xcvrd"
+# Rounds the optimize phase runs when it is asked for without an explicit count.
+DEFAULT_OPT_ROUNDS = 5
 
 
 def _configure_pipeline_dir(path: str | os.PathLike) -> Path:
@@ -63,15 +65,18 @@ def _configure_pipeline_dir(path: str | os.PathLike) -> Path:
 
 def _state_from_existing_pipeline(
     pipeline_dir: Path,
+    entry: str,
     milestone_id: str | None,
     max_iter: int,
     max_parity_rounds: int,
+    max_opt_rounds: int = 0,
 ) -> dict:
     """Bootstrap a NEW Burr run from existing pipeline artifacts.
 
-    ``milestone_id`` selects the entry milestone; pass None to jump straight to the
-    Parity Verifier (every milestone is treated as already concluded, so parity runs
-    against the translation as it stands).
+    ``entry`` selects how far along the run starts:
+      "milestone"  -- at ``milestone_id``, with the earlier ones treated as done
+      "parity"     -- straight at the Parity Verifier, the whole milestone loop behind us
+      "benchmark"  -- straight at the optimize phase, parity behind us too
     """
     required = [
         pipeline_dir / "analysis.md",
@@ -87,11 +92,7 @@ def _state_from_existing_pipeline(
         )
 
     ms = milestones.load()
-    if milestone_id is None:
-        # Parity entry: sit on the LAST milestone so any loop-back (a parity retry
-        # milestone, or a re-scope) appends and advances from a consistent position.
-        idx = len(ms) - 1
-    else:
+    if entry == "milestone":
         try:
             idx = milestones.index_of(milestone_id, ms)
         except KeyError as e:
@@ -100,9 +101,15 @@ def _state_from_existing_pipeline(
                 f"milestone {milestone_id!r} is not in {pipeline_dir / 'milestones.json'} "
                 f"(available: {ids})"
             ) from e
+    else:
+        # Parity/benchmark entry: sit on the LAST milestone so any loop-back (a parity
+        # retry milestone, a re-scope, or the appended optimize-repair milestone)
+        # appends and advances from a consistent position.
+        idx = len(ms) - 1
 
     state = S.initial_state(
-        max_iter=max_iter, max_parity_rounds=max_parity_rounds)
+        max_iter=max_iter, max_parity_rounds=max_parity_rounds,
+        max_opt_rounds=max_opt_rounds)
     state.update({
         "milestone_idx": idx,
         "num_milestones": len(ms),
@@ -112,10 +119,17 @@ def _state_from_existing_pipeline(
         "plan_done": True,
         "last_agent": "pipeline-bootstrap",
     })
-    if milestone_id is None:
+    if entry != "milestone":
         # The milestone loop is behind us; mark the current one concluded/passed so
         # a retry milestone appended by parity is picked up cleanly by select_milestone.
         state.update({"milestone_passed": True, "milestone_concluded": True})
+    if entry == "benchmark":
+        # Parity is behind us too. Asserting parity_complete is what makes the optimize
+        # phase legitimate to enter -- it is the flag the graph gates on -- and it is the
+        # caller's claim to make: they are pointing at a pipeline whose translation they
+        # consider finished. Nothing re-derives it, so a wrong claim optimises an
+        # incomplete crate; the appended full-suite milestone is what would catch that.
+        state.update({"parity_complete": True, "parity_round": 1})
     return state
 
 
@@ -218,10 +232,14 @@ def main() -> int:
     ap.add_argument("--max-iter", type=int, default=10, help="repair budget per milestone (default 10).")
     ap.add_argument("--max-parity-rounds", type=int, default=3,
                     help="outer-loop budget: max parity re-scope rounds before failing.")
-    ap.add_argument("--max-opt-rounds", type=int, default=0, metavar="N",
-                    help="after parity completes, run N benchmark->optimize rounds, then "
-                         "one full-suite conformance milestone to repair any regression. "
-                         "0 (default) skips the optimize phase entirely.")
+    ap.add_argument("--optimize", action="store_true",
+                    help=f"after parity completes, run the optimize phase: "
+                         f"benchmark<->optimize rounds, then one full-suite conformance "
+                         f"milestone to repair any regression. Default {DEFAULT_OPT_ROUNDS} "
+                         "rounds; use --max-opt-rounds to change that. OFF unless asked for.")
+    ap.add_argument("--max-opt-rounds", type=int, default=None, metavar="N",
+                    help="how many benchmark->optimize rounds to run; implies --optimize "
+                         "when N > 0, and 0 disables the phase even with --optimize.")
     ap.add_argument(
         "--pipeline-dir", default=None,
         help="pipeline artifact directory (default: RECODE_PIPELINE_DIR or ./pipeline).")
@@ -234,6 +252,13 @@ def main() -> int:
         help="start a NEW app-id from an existing pipeline folder directly at the "
              "Parity Verifier, skipping analyze/scope/plan and the whole milestone "
              "loop. Same artifact requirements as --start-milestone.")
+    ap.add_argument(
+        "--start-benchmark", action="store_true",
+        help="start a NEW app-id from an existing pipeline folder directly at the "
+             "OPTIMIZE phase (benchmark), skipping analyze/scope/plan, the milestone "
+             "loop AND parity. Asserts the translation is already complete and "
+             "correct. Implies --optimize. Same artifact requirements as "
+             "--start-milestone.")
     ap.add_argument(
         "--db", default=None,
         help="SQLite persistence path (default: <pipeline-dir>/burr.db).")
@@ -254,35 +279,68 @@ def main() -> int:
     db_path = args.db or str(pipeline_dir / "burr.db")
     bootstrap_state = None
     entrypoint = "analyze"
-    if args.start_milestone and args.start_parity:
-        ap.error("--start-milestone and --start-parity are mutually exclusive")
-    if args.start_milestone or args.start_parity:
+
+    starts = [k for k, v in (("--start-milestone", args.start_milestone),
+                             ("--start-parity", args.start_parity),
+                             ("--start-benchmark", args.start_benchmark)) if v]
+    if len(starts) > 1:
+        ap.error(f"{' and '.join(starts)} are mutually exclusive")
+
+    # Resolve the optimize budget from the two ways of asking for it. --max-opt-rounds
+    # wins when given (including an explicit 0, which turns the phase off even alongside
+    # --optimize); otherwise --optimize / --start-benchmark select the default.
+    if args.max_opt_rounds is not None:
+        max_opt_rounds = args.max_opt_rounds
+        if max_opt_rounds < 0:
+            ap.error("--max-opt-rounds cannot be negative")
+    elif args.optimize or args.start_benchmark:
+        max_opt_rounds = DEFAULT_OPT_ROUNDS
+    else:
+        max_opt_rounds = 0
+    if args.start_benchmark and max_opt_rounds == 0:
+        ap.error("--start-benchmark starts AT the optimize phase, so --max-opt-rounds 0 "
+                 "would leave nothing to run")
+
+    if starts:
+        entry = ("benchmark" if args.start_benchmark else
+                 "parity" if args.start_parity else "milestone")
         try:
             bootstrap_state = _state_from_existing_pipeline(
                 pipeline_dir,
-                None if args.start_parity else args.start_milestone,
+                entry,
+                args.start_milestone,
                 max_iter=args.max_iter,
-                max_parity_rounds=args.max_parity_rounds)
+                max_parity_rounds=args.max_parity_rounds,
+                max_opt_rounds=max_opt_rounds)
         except ValueError as e:
             ap.error(str(e))
-        entrypoint = "parity_verify" if args.start_parity else "select_milestone"
+        entrypoint = {"benchmark": "benchmark", "parity": "parity_verify",
+                      "milestone": "select_milestone"}[entry]
 
     app = build_application(app_id, max_iter=args.max_iter,
                             max_parity_rounds=args.max_parity_rounds,
-                            max_opt_rounds=args.max_opt_rounds,
+                            max_opt_rounds=max_opt_rounds,
                             db_path=db_path,
                             bootstrap_state=bootstrap_state,
                             default_entrypoint=entrypoint)
 
     print(f"[recode] app_id={app_id}  mock={os.environ.get('RECODE_MOCK')=='1'}  "
           f"pipeline={pipeline_dir}  db={db_path}")
-    if args.start_milestone or args.start_parity:
-        where = "the Parity Verifier" if args.start_parity else args.start_milestone
-        flag = "--start-parity" if args.start_parity else f"--start-milestone {args.start_milestone}"
+    if starts:
+        where = {"--start-benchmark": "the optimize phase (benchmark)",
+                 "--start-parity": "the Parity Verifier"}.get(
+                     starts[0], str(args.start_milestone))
+        flag = (starts[0] if starts[0] != "--start-milestone"
+                else f"--start-milestone {args.start_milestone}")
         if app.state["last_agent"] == "pipeline-bootstrap":
-            skipped = ("analyze/scope/plan and the milestone loop are skipped"
-                       if args.start_parity else "analyze/scope/plan are skipped")
+            skipped = {
+                "--start-benchmark": "analyze/scope/plan, the milestone loop and parity are skipped",
+                "--start-parity": "analyze/scope/plan and the milestone loop are skipped",
+            }.get(starts[0], "analyze/scope/plan are skipped")
             print(f"[recode] starting from existing artifacts at {where}; {skipped}")
+            if args.start_benchmark:
+                print("[recode] --start-benchmark ASSERTS the translation is already "
+                      "complete and correct; parity is not re-checked")
         else:
             print(f"[recode] persisted state exists for app_id={app_id}; resuming it "
                   f"({flag} only initializes a NEW app-id)")

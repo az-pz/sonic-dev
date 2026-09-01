@@ -77,10 +77,25 @@ python -m orchestrator.app \
 Enters directly at `parity_verify` to grade the translation as it currently
 stands. The outer loop still works from there: if parity reports gaps it
 re-scopes / appends a retry milestone and runs the milestone loop as usual, so
-this is also the quick way to re-check coverage after a manual fix. The two
-flags are mutually exclusive.
+this is also the quick way to re-check coverage after a manual fix.
 
-Both validate the required artifacts up front and fail fast with a clear message
+**At the optimize phase** — also skips parity (see [§8](#8-optimize-phase-in-pipeline-after-parity)):
+
+```bash
+python -m orchestrator.app \
+  --pipeline-dir /path/to/existing/pipeline \
+  --start-benchmark --max-opt-rounds 5 \
+  --app-id optimise-only
+```
+
+Enters at `benchmark` and runs only benchmark <-> optimize plus the appended
+full-suite conformance milestone. It **asserts** the translation is already
+complete and correct: `parity_complete` is set from the flag, not re-derived, so
+pointing this at an unfinished translation optimises code that is still going to
+change — the appended milestone is what would eventually catch that. Implies
+`--optimize`, and rejects `--max-opt-rounds 0` (there would be nothing to run).
+
+The three start flags are mutually exclusive, and all validate the required artifacts up front and fail fast with a clear message
 if any are missing. Existing `skips.json` is preserved and used. The default state
 DB is `<pipeline-dir>/burr.db`; pass `--db PATH` to keep bootstrap runs separate.
 
@@ -202,7 +217,7 @@ Its untranslated source still shows up as a **parity gap** (→ re-scope) until 
 is complete or the outer budget is spent.
 
 Both loops (and crash-resume at every node, including `scope`/`parity_verify`) are proven
-offline with mock agents via `tools/check.sh` (11 scenarios, zero tokens).
+offline with mock agents via `tools/check.sh` (14 scenarios, zero tokens).
 
 Everything else — Analyzer, Planner, skeleton-first, name mapping, the
 translate→validate→repair loop with `maxIter` — is the paper's design.
@@ -352,7 +367,7 @@ dev/recodeAgent/
 │   ├── lib_remote.sh             # transport shim: RECODE_RUN_MODE=remote (ssh sonic-dev) | local (on sonic-dev)
 │   ├── bridge_smoke.sh           # build+run platform-bridge smoke in pmon (proves PyO3 spine)
 │   ├── env_check.sh              # build+run xcvrd-rs binding examples in pmon (bridge+swss proof)
-│   ├── check.sh                  # offline orchestrator mock checks (both loops: happy/repair/budget/parity/resume)
+│   ├── check.sh                  # offline orchestrator mock checks (all loops: happy/repair/budget/parity/resume/optimize)
 │   └── dut/                      # scripts that run on sonic-dev host / vlab / pmon
 │       ├── Dockerfile.build  build_crate.sh  run_validate.sh  dut_validate.sh
 │       ├── bridge_smoke.sh   env_check.sh   ensure_swsslib.sh   # (ensure_swsslib pulls libswsscommon.so)
@@ -768,11 +783,26 @@ The pipeline above answers **"is it correct?"**. This phase answers **"is it fas
 complete. There is nothing to optimise about a crate that does not yet pass its
 oracle, so it is gated on `parity_complete`.
 
-Off by default. Enable with `--max-opt-rounds N`:
+**Off by default** — it costs DUT time and only makes sense on a finished
+translation. Turn it on with `--optimize`, or set the count directly:
 
 ```bash
-python -m orchestrator.app --app-id run1 --max-opt-rounds 5
+# full pipeline, then 5 optimisation rounds (the --optimize default)
+python -m orchestrator.app --app-id run1 --optimize
+
+# ...with an explicit round count (implies --optimize)
+python -m orchestrator.app --app-id run1 --max-opt-rounds 8
+
+# JUST the optimize phase, against a pipeline whose translation is already done:
+# skips analyze/scope/plan, the milestone loop AND parity
+python -m orchestrator.app --app-id opt1 --start-benchmark \
+    --pipeline-dir pipeline --max-opt-rounds 5
 ```
+
+`--max-opt-rounds` wins when both are given, so `--optimize --max-opt-rounds 0`
+turns the phase back off. `--start-benchmark` **asserts** the translation is
+complete and correct — parity is not re-checked — and is mutually exclusive with
+`--start-milestone` / `--start-parity`.
 
 ```
 parity_verify ──> benchmark ──> optimize ──┐

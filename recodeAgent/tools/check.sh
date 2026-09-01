@@ -146,6 +146,23 @@ rm -f "$START_DIR"/.mock_* "$START_DIR/report.json" "$START_DIR/parity_report.js
 RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
   --pipeline-dir "$START_DIR" --start-parity \
   --app-id chk-start-parity --db "$START_DIR/parity.db" --mock
+
+echo; echo "===== 11) OPTIMIZE PHASE - runs after parity, ends on a full-suite milestone ====="
+reset_run; export RECODE_MOCK_PARITY_GAPS=0
+"$PY" -m orchestrator.app --app-id chk-opt --mock --max-opt-rounds 2
+
+echo; echo "===== 11b) START AT BENCHMARK - optimize only, nothing before it ====="
+rm -f "$START_DIR"/.mock_* "$START_DIR/report.json" "$START_DIR/parity_report.json" \
+      "$START_DIR/skips.json"
+RECODE_PIPELINE_DIR="$START_DIR" "$PY" -m orchestrator.app \
+  --pipeline-dir "$START_DIR" --start-benchmark --max-opt-rounds 2 \
+  --app-id chk-start-bench --db "$START_DIR/bench.db" --mock
+
+echo; echo "===== 11c) OPTIMIZE REPAIR - the appended milestone is REPAIRED, not reverted ====="
+reset_run; export RECODE_MOCK_PARITY_GAPS=0 RECODE_MOCK_FAIL="M7:2"
+"$PY" -m orchestrator.app --app-id chk-opt-repair --mock --max-opt-rounds 1 --max-iter 3
+unset RECODE_MOCK_FAIL
+
 rm -rf "$START_DIR"
 export RECODE_PIPELINE_DIR="$HERE/pipeline"
 
@@ -161,4 +178,7 @@ echo "  6 done=False parity_complete=False (outer give-up, no deferral)"
 echo "  7 proc-2 resumes at scope, done=True   8 proc-2 resumes at parity, done=True"
 echo "  9 starts at M3 (history begins M3; no M0/M1/M2, analyze/scope/plan skipped)"
 echo " 10 starts at PARITY (history is just PARITY; no milestones run at all)"
+echo " 11 OPTIMIZE iter=2 then M7 (full suite) passes, done=True"
+echo " 11b history is ONLY OPTIMIZE + M7 (no M0-M6, no PARITY -- started at benchmark)"
+echo " 11c M7 fails twice then PASSES on iter 3 (repaired, not reverted), done=True"
 echo "Artifacts: pipeline/{milestones,report,parity_report,skips}.json ; traces: ~/.burr/recodeagent-xcvrd"
