@@ -5,6 +5,7 @@
 #   ./bench.sh recodeAgent/results/result_4              # build + run everything
 #   ./bench.sh result_4                                  # same, shorthand
 #   ./bench.sh result_4 --scenario B9                    # one scenario
+#   ./bench.sh result_4 --scenario B4,B9                 # just those two
 #   ./bench.sh result_4 --build-only                     # build, do not measure
 #   ./bench.sh --list                                    # what can be run
 #
@@ -21,7 +22,9 @@
 # always be traced back to a specific translation.
 #
 # Options:
-#   -s, --scenario ID     run one scenario (B1 B2 B3 B4 B5 B6 B8 B9 B10 B11 B12)
+#   -s, --scenario IDS    run only these scenarios; comma- or space-separated, and
+#                         repeatable (B1 B2 B3 B4 B5 B6 B7 B8 B9 B10 B11 B12).
+#                         An unknown id is an error, not a silent skip.
 #   -b, --build-only      build the daemon (and harness), then stop
 #       --skip-build      measure using the existing binary (NOT recommended; the
 #                         result is only as attributable as that binary)
@@ -70,7 +73,7 @@ usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -s|--scenario)  ONE="${2:?}"; shift 2 ;;
+    -s|--scenario)  ONE="$ONE ${2:?}"; shift 2 ;;
     -b|--build-only) BUILD_ONLY=1; shift ;;
     --skip-build)   SKIP_BUILD=1; shift ;;
     --variants)     VARIANTS="${2:?}"; shift 2 ;;
@@ -105,6 +108,18 @@ scenario_meta() {  # id -> "harness|description"
     *)   echo "" ;;
   esac
 }
+
+# Normalise the requested set: -s/--scenario may be repeated and may carry a
+# comma-separated list, so "B4,B9", "-s B4 -s B9" and "-s 'B4 B9'" all mean the same
+# thing. Uppercased so "b9" works.
+ONE="$(printf '%s' "$ONE" | tr ',' ' ' | tr '[:lower:]' '[:upper:]' | xargs 2>/dev/null || true)"
+# Validate every id NOW. Previously an unknown id just failed to match any scenario
+# and the run quietly produced a shorter result set that still looked complete --
+# exactly how B7 stayed silently unmeasured for several runs.
+for s in $ONE; do
+  [ -n "$(scenario_meta "$s")" ] \
+    || die "unknown scenario '$s' (see --list for the valid ids)"
+done
 
 if [ "$LIST" = 1 ]; then
   printf '%-5s %-11s %s\n' ID HARNESS DESCRIPTION

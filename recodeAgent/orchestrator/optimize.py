@@ -74,6 +74,18 @@ def _crate() -> Path:
     return _actions.PIPELINE_CRATE
 
 
+def _scenarios(state) -> list[str]:
+    """The scenario ids this run is focused on, or [] for the whole suite.
+
+    Read from state, with RECODE_BENCH_SCENARIOS as an override for one-off runs.
+    Both the Benchmarker and the Optimizer resolve it through here so they cannot
+    disagree about the target -- optimising for a scenario nobody measured, or
+    measuring one nobody is optimising, is worse than not scoping at all.
+    """
+    raw = os.environ.get("RECODE_BENCH_SCENARIOS", "") or (state["bench_scenarios"] or "")
+    return [s for s in raw.replace(",", " ").upper().split() if s]
+
+
 # --------------------------------------------------------------------------- io
 
 def _history() -> list:
@@ -180,7 +192,8 @@ def _mock_optimize(round_no: int) -> dict:
 
 # ----------------------------------------------------------------------- actions
 
-@action(reads=["opt_round"], writes=["bench", "bench_history", "last_agent"])
+@action(reads=["opt_round", "bench_scenarios"],
+        writes=["bench", "bench_history", "last_agent"])
 def benchmark(state, __tracer) -> dict:
     """Benchmarker Agent: run benchmark/bench.sh against the working copy and read
     back the JSON it wrote. Measures only -- it has no edit tool."""
@@ -193,21 +206,26 @@ def benchmark(state, __tracer) -> dict:
         hist = list(state["bench_history"]) + [{"round": round_no, **summary}]
         return state.update(bench=bench, bench_history=hist, last_agent="benchmarker")
 
-    scenarios = os.environ.get("RECODE_BENCH_SCENARIOS", "").strip()
-    scen_arg = f" --scenario {scenarios}" if scenarios else ""
+    scenarios = _scenarios(state)
+    scen_arg = f" --scenario {','.join(scenarios)}" if scenarios else ""
     reps = os.environ.get("RECODE_BENCH_REPS", "1")
     cmd = (f"bash {BENCH_DIR}/bench.sh {_crate()} --reps {reps}{scen_arg} "
            f"--out {out_path}")
+    focus = (f"This run is scoped to {', '.join(scenarios)} ONLY -- the command already "
+             "says so. Do not add scenarios that were not asked for, and do not report "
+             "the others as missing: they were deliberately not run.\n\n"
+             if scenarios else "")
     prompt = (
         f"Benchmark round {round_no} of the working copy at {_crate()}.\n\n"
         f"Run EXACTLY this command and let it finish:\n    {cmd}\n\n"
+        + focus +
         f"Then read {out_path} and verify before reporting: provenance.crate names the "
-        "crate you measured and built_this_run is true; every scenario produced records "
-        "for BOTH the rust and python variants; and no scenario reports null, skipped, or "
-        "an error field. Report the per-scenario rust vs python figures with ratios, and "
-        "state whether the run is usable evidence. Pass through any note or caveat the "
-        "JSON carries on a scenario verbatim rather than deciding yourself whether it "
-        "matters.\n\n"
+        "crate you measured and built_this_run is true; every scenario THAT WAS REQUESTED "
+        "produced records for BOTH the rust and python variants; and none of them reports "
+        "null, skipped, or an error field. Report the per-scenario rust vs python figures "
+        "with ratios, and state whether the run is usable evidence. Pass through any note "
+        "or caveat the JSON carries on a scenario verbatim rather than deciding yourself "
+        "whether it matters.\n\n"
         "Do not edit anything. Do not re-run to get a nicer number. Do not fill in a "
         "missing value with an estimate."
     )
@@ -226,7 +244,7 @@ def benchmark(state, __tracer) -> dict:
     return state.update(bench=bench, bench_history=hist, last_agent="benchmarker")
 
 
-@action(reads=["opt_round", "bench", "max_opt_rounds"],
+@action(reads=["opt_round", "bench", "max_opt_rounds", "bench_scenarios"],
         writes=["optimize", "opt_round", "last_agent"])
 def optimize(state, __tracer) -> dict:
     """Optimizer Agent: ONE small focused change set to the working copy, guided by
@@ -243,10 +261,27 @@ def optimize(state, __tracer) -> dict:
         doc = _mock_optimize(round_no)
         return state.update(optimize=doc, opt_round=round_no + 1, last_agent="optimizer")
 
+    scenarios = _scenarios(state)
+    if scenarios:
+        focus = (
+            f"FOCUS: this run targets {', '.join(scenarios)} ONLY. Those are the only "
+            "scenarios being measured, so they are the only evidence you have and the only "
+            "thing your change will be judged on. Optimise for them specifically rather "
+            "than for general tidiness.\n"
+            "Two consequences worth being explicit about. A change that helps something "
+            "NOT in that set is unmeasured here -- you cannot claim it as a win, so do not "
+            "spend a round on it. And a change that speeds these up while plausibly slowing "
+            "something outside the set is still a REGRESSION; nothing in this run would "
+            "catch it, which is exactly why you must not make it.\n\n"
+        )
+    else:
+        focus = ""
+
     prompt = (
         f"Optimisation round {round_no} of {state['max_opt_rounds']}. Improve the "
         f"PERFORMANCE of the working copy at {_crate()} (the daemon xcvrd-rs AND the "
         "Rust platform-bridge) without changing observable behaviour.\n\n"
+        + focus +
         f"Evidence: {_pipeline() / BENCH_JSON} holds this round's measurements. "
         f"{_pipeline() / HISTORY_JSON} holds every previous round -- read it, and do not "
         "repeat an idea that was already tried.\n\n"

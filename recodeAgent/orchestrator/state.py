@@ -29,6 +29,7 @@ State keys
 Optimize phase (runs AFTER parity completes; see app.py's graph)
   opt_round        : int   1-based benchmark->optimize round in progress
   max_opt_rounds   : int   how many optimisation rounds to attempt (0 disables the phase)
+  bench_scenarios  : str   space-separated scenario ids to focus on ("B4 B9"); "" = all
   bench            : dict  last bench.json the Benchmarker produced
   bench_history    : list  per-round benchmark summary, so the trend is visible in the UI
   optimize         : dict  last optimize.json the Optimizer produced
@@ -41,7 +42,7 @@ from . import milestones
 
 
 def initial_state(max_iter: int = 10, max_parity_rounds: int = 3,
-                  max_opt_rounds: int = 0) -> dict:
+                  max_opt_rounds: int = 0, bench_scenarios: str = "") -> dict:
     # Milestone count is unknown until `scope` runs (it generates the set), so it
     # starts at 0 / last_idx=-1; the scope action fills these in.
     return {
@@ -68,6 +69,10 @@ def initial_state(max_iter: int = 10, max_parity_rounds: int = 3,
         # --- optimize phase (skipped entirely when max_opt_rounds is 0) ---
         "opt_round": 1,
         "max_opt_rounds": max_opt_rounds,
+        # Scenario ids to focus on, e.g. "B4 B9". Empty = the whole suite. Both the
+        # Benchmarker (what it runs) and the Optimizer (what it optimises for) read
+        # this, so the two cannot drift apart.
+        "bench_scenarios": bench_scenarios,
         "bench": {},
         "bench_history": [],
         "optimize": {},

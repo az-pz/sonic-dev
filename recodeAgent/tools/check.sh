@@ -163,6 +163,15 @@ reset_run; export RECODE_MOCK_PARITY_GAPS=0 RECODE_MOCK_FAIL="M7:2"
 "$PY" -m orchestrator.app --app-id chk-opt-repair --mock --max-opt-rounds 1 --max-iter 3
 unset RECODE_MOCK_FAIL
 
+echo; echo "===== 11d) SCENARIO FOCUS - only the named benchmarks are targeted ====="
+reset_run; export RECODE_MOCK_PARITY_GAPS=0
+"$PY" -m orchestrator.app --app-id chk-opt-focus --mock --optimize --benchmarks B4,B9 \
+  | grep -E 'optimize phase:|OPTIMIZE'
+echo "-- and the two rejections --"
+"$PY" -m orchestrator.app --app-id chk-x1 --mock --optimize --benchmarks B4,nope 2>&1 \
+  | tail -1
+"$PY" -m orchestrator.app --app-id chk-x2 --mock --benchmarks B9 2>&1 | tail -1
+
 rm -rf "$START_DIR"
 export RECODE_PIPELINE_DIR="$HERE/pipeline"
 
@@ -181,4 +190,5 @@ echo " 10 starts at PARITY (history is just PARITY; no milestones run at all)"
 echo " 11 OPTIMIZE iter=2 then M7 (full suite) passes, done=True"
 echo " 11b history is ONLY OPTIMIZE + M7 (no M0-M6, no PARITY -- started at benchmark)"
 echo " 11c M7 fails twice then PASSES on iter 3 (repaired, not reverted), done=True"
+echo " 11d scenarios=B4 B9 in the banner; bad id and no-phase both rejected"
 echo "Artifacts: pipeline/{milestones,report,parity_report,skips}.json ; traces: ~/.burr/recodeagent-xcvrd"

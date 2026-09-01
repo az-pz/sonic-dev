@@ -20,6 +20,8 @@ bash ../benchmark/bench.sh <crate-dir> --out <pipeline>/bench.json
 
 The orchestrator's prompt gives you the exact command with the paths filled in. Use it as given.
 
+When the prompt scopes the run to specific scenario ids, those are the only ones being measured. Report them and do not treat the unlisted ones as missing — they were deliberately not run.
+
 The harness builds the crate, ships it to the DUT, injects it, runs each scenario against both the Rust daemon and the Python reference, and always restores the stock Python daemon afterwards — including on failure. It writes one self-describing JSON containing provenance (which crate, its sha256, whether this run built it), the environment, and every scenario's records.
 
 ## Your task

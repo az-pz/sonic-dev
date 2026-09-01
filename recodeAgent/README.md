@@ -37,6 +37,7 @@ python -m orchestrator.app --app-id run1
 
 # 3c. ...and then make it faster (see §6)
 python -m orchestrator.app --app-id run1 --optimize
+python -m orchestrator.app --app-id run1 --optimize --benchmarks B4,B9   # focused
 ```
 
 Also installed as a console script: `recode --app-id run1`.
@@ -50,6 +51,7 @@ persisted node; use a fresh id to start over.
 | `--max-parity-rounds N` | outer parity budget (default 3) |
 | `--optimize` | run the optimize phase after parity (default 5 rounds; §6) |
 | `--max-opt-rounds N` | optimisation round count; implies `--optimize`, `0` disables |
+| `--benchmarks IDS` | focus the phase on these scenarios only, e.g. `B4,B9` (default: all) |
 | `--mock` | offline, no Copilot or DUT |
 | `--pipeline-dir PATH` | artifact directory (default `./pipeline`) |
 | `--db PATH` | state file (default `<pipeline-dir>/burr.db`) |
@@ -442,6 +444,24 @@ going to change.
 count directly with `--max-opt-rounds N`; `--max-opt-rounds` wins when both are
 given, so `--optimize --max-opt-rounds 0` turns it back off.
 
+**Focus it on specific benchmarks** with `--benchmarks B4,B9` (comma- or
+space-separated, case-insensitive). This scopes **both** halves of the loop from one
+flag: the Benchmarker runs only those scenarios, and the Optimizer is told they are
+the only evidence it has and the only thing its change is judged on. Scoping just
+one half would be worse than not scoping at all — optimising for a scenario nobody
+measured, or measuring one nobody is optimising, so both read the same state key.
+
+The Optimizer is also told the two consequences explicitly: a change helping
+something outside the set is unmeasured here and cannot be claimed as a win, and a
+change that speeds these up while plausibly slowing something outside the set is
+still a regression that *nothing in this run would catch*.
+
+A focused run is much cheaper — a full sweep drives the live DUT through plug
+storms, soaks and shutdowns for every round — so it is the practical way to iterate
+on one hot path. Unknown ids are rejected up front by `bench.sh`, which is
+deliberate: an unrecognised id used to just produce a shorter result set that still
+looked complete, which is how B7 stayed silently unmeasured for several runs.
+
 ```
 parity_verify ──▶ benchmark ──▶ optimize ──┐
                       ▲                    │ rounds remain
@@ -516,7 +536,7 @@ Only **E** spends tokens. Run the shell ones from **Git Bash**, not PowerShell.
 
 ### A. Deterministic orchestrator (offline, no DUT)
 
-`bash tools/check.sh` runs 15 scenarios against the mock agents:
+`bash tools/check.sh` runs 16 scenarios against the mock agents:
 
 | # | Scenario | Look for |
 |---|---|---|
@@ -531,6 +551,7 @@ Only **E** spends tokens. Run the shell ones from **Git Bash**, not PowerShell.
 | 11 | Optimize phase after parity | `OPTIMIZE` then a full-suite `M7`, `done=True` |
 | 11b | `--start-benchmark` | history is **only** `OPTIMIZE` + `M7` |
 | 11c | Optimize repair | `M7` fails twice then passes — repaired, not reverted |
+| 11d | Scenario focus | `scenarios=B4 B9`; a bad id and a no-phase use are both rejected |
 
 ### B. DUT validation harness
 

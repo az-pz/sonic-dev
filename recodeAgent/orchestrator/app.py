@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -70,6 +71,7 @@ def _state_from_existing_pipeline(
     max_iter: int,
     max_parity_rounds: int,
     max_opt_rounds: int = 0,
+    bench_scenarios: str = "",
 ) -> dict:
     """Bootstrap a NEW Burr run from existing pipeline artifacts.
 
@@ -109,7 +111,7 @@ def _state_from_existing_pipeline(
 
     state = S.initial_state(
         max_iter=max_iter, max_parity_rounds=max_parity_rounds,
-        max_opt_rounds=max_opt_rounds)
+        max_opt_rounds=max_opt_rounds, bench_scenarios=bench_scenarios)
     state.update({
         "milestone_idx": idx,
         "num_milestones": len(ms),
@@ -150,7 +152,8 @@ def _tracker_enabled() -> bool:
 
 def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 3,
                      db_path: str = DEFAULT_DB, bootstrap_state: dict | None = None,
-                     default_entrypoint: str = "analyze", max_opt_rounds: int = 0):
+                     default_entrypoint: str = "analyze", max_opt_rounds: int = 0,
+                     bench_scenarios: str = ""):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     persister = SQLLitePersister.from_values(db_path=db_path, table_name="recode_state")
     persister.initialize()
@@ -214,7 +217,7 @@ def build_application(app_id: str, max_iter: int = 10, max_parity_rounds: int = 
             resume_at_next_action=True,      # crash-resume: pick up where we left off
             default_state=bootstrap_state or S.initial_state(
                 max_iter=max_iter, max_parity_rounds=max_parity_rounds,
-                max_opt_rounds=max_opt_rounds),
+                max_opt_rounds=max_opt_rounds, bench_scenarios=bench_scenarios),
             default_entrypoint=default_entrypoint,
         )
         .with_state_persister(persister)
@@ -240,6 +243,11 @@ def main() -> int:
     ap.add_argument("--max-opt-rounds", type=int, default=None, metavar="N",
                     help="how many benchmark->optimize rounds to run; implies --optimize "
                          "when N > 0, and 0 disables the phase even with --optimize.")
+    ap.add_argument("--benchmarks", default="", metavar="IDS",
+                    help="focus the optimize phase on these benchmark scenarios only "
+                         "(e.g. B4,B9). The Benchmarker runs only these and the Optimizer "
+                         "targets only these. Default: the whole suite. See "
+                         "`bash ../benchmark/bench.sh --list` for the ids.")
     ap.add_argument(
         "--pipeline-dir", default=None,
         help="pipeline artifact directory (default: RECODE_PIPELINE_DIR or ./pipeline).")
@@ -301,6 +309,19 @@ def main() -> int:
         ap.error("--start-benchmark starts AT the optimize phase, so --max-opt-rounds 0 "
                  "would leave nothing to run")
 
+    # Normalise "B4,B9" / "b4 b9" -> "B4 B9". Shape-check only: bench.sh owns the list
+    # of ids that actually exist and rejects unknown ones, so duplicating it here would
+    # just create something to drift. This catches the typo class worth catching early
+    # (a stray word, a bad separator) before a run spends minutes getting to the phase.
+    bench_scenarios = " ".join(args.benchmarks.replace(",", " ").upper().split())
+    bad = [t for t in bench_scenarios.split() if not re.fullmatch(r"B\d+", t)]
+    if bad:
+        ap.error(f"--benchmarks: not a scenario id: {', '.join(bad)} "
+                 "(expected ids like B4,B9 -- see `bash ../benchmark/bench.sh --list`)")
+    if bench_scenarios and max_opt_rounds == 0:
+        ap.error("--benchmarks only affects the optimize phase, which is off; "
+                 "add --optimize (or --max-opt-rounds N)")
+
     if starts:
         entry = ("benchmark" if args.start_benchmark else
                  "parity" if args.start_parity else "milestone")
@@ -311,7 +332,8 @@ def main() -> int:
                 args.start_milestone,
                 max_iter=args.max_iter,
                 max_parity_rounds=args.max_parity_rounds,
-                max_opt_rounds=max_opt_rounds)
+                max_opt_rounds=max_opt_rounds,
+                bench_scenarios=bench_scenarios)
         except ValueError as e:
             ap.error(str(e))
         entrypoint = {"benchmark": "benchmark", "parity": "parity_verify",
@@ -320,12 +342,16 @@ def main() -> int:
     app = build_application(app_id, max_iter=args.max_iter,
                             max_parity_rounds=args.max_parity_rounds,
                             max_opt_rounds=max_opt_rounds,
+                            bench_scenarios=bench_scenarios,
                             db_path=db_path,
                             bootstrap_state=bootstrap_state,
                             default_entrypoint=entrypoint)
 
     print(f"[recode] app_id={app_id}  mock={os.environ.get('RECODE_MOCK')=='1'}  "
           f"pipeline={pipeline_dir}  db={db_path}")
+    if max_opt_rounds:
+        print(f"[recode] optimize phase: {max_opt_rounds} round(s), scenarios="
+              f"{bench_scenarios or 'ALL'}")
     if starts:
         where = {"--start-benchmark": "the optimize phase (benchmark)",
                  "--start-parity": "the Parity Verifier"}.get(
