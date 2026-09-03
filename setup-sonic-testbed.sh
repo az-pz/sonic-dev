@@ -281,6 +281,69 @@ setup_mgmt_network() {
 }
 
 # ---------------------------------------------------------------------------
+# Attach the DUT's mgmt tap to br1.
+#
+# sonic-mgmt's add-topo enslaves the NEIGHBOUR VMs' -m interfaces to br1 but not
+# the DUT's own tap ($DUT-0). Everything then looks healthy -- the VM runs, br1
+# exists, virsh is happy -- while the DUT is invisible on the mgmt network and
+# every ssh/scp to it dies with "No route to host". It is the single most common
+# post-reboot failure on this testbed, so it is fixed automatically here rather
+# than being rediscovered by hand each time.
+#
+# Idempotent and safe to re-run: it is a no-op when the tap is already enslaved.
+# ---------------------------------------------------------------------------
+_ensure_dut_bridged() {
+  local tap="${DUT}-0" br=br1
+
+  if ! ip link show "$br" >/dev/null 2>&1; then
+    warn "$br does not exist -- run: $0 setup_mgmt_network"
+    return 1
+  fi
+  if ! ip link show "$tap" >/dev/null 2>&1; then
+    # The tap is created with the DUT VM, so its absence means the VM is not up.
+    warn "$tap does not exist (is the $DUT VM running? try: sudo virsh list --all)"
+    return 1
+  fi
+
+  local cur
+  cur="$(ip -o link show "$tap" 2>/dev/null | sed -n 's/.*master \([^ ]*\).*/\1/p')"
+  if [ "$cur" = "$br" ]; then
+    ok "$tap already enslaved to $br"
+  else
+    [ -n "$cur" ] && warn "$tap is enslaved to '$cur', moving it to $br"
+    sudo ip link set "$tap" master "$br" || { warn "could not enslave $tap to $br"; return 1; }
+    ok "attached $tap -> $br"
+  fi
+  sudo ip link set "$tap" up 2>/dev/null || true
+}
+
+# Standalone phase: diagnose + repair the DUT mgmt path, then prove it.
+fix_dut_network() {
+  log "Repair the DUT management path"
+  local DUT_IP="${DUT_IP:-10.250.0.101}"
+
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$MGMT_CONTAINER" \
+    || { warn "container $MGMT_CONTAINER is not running -- starting it"
+         docker start "$MGMT_CONTAINER" >/dev/null 2>&1 || true; }
+
+  _ensure_dut_bridged || true
+
+  echo "  br1 members: $(bridge link show 2>/dev/null | awk '/master br1/{printf "%s ", $2}' | tr -d ':')"
+  if dexec "$MGMT_CONTAINER" ping -c2 -W2 "$DUT_IP" >/dev/null 2>&1; then
+    ok "DUT $DUT_IP is reachable from $MGMT_CONTAINER"
+  else
+    warn "DUT $DUT_IP still unreachable. Remaining suspects, in order:
+    1. the $DUT VM is not running        -> sudo virsh list --all ; $0 start_vms
+    2. the topology was never deployed   -> $0 add_topo
+    3. $MGMT_CONTAINER is not on br1     -> docker network inspect bridge
+  After a host reboot the usual full recovery is:
+    docker start $MGMT_CONTAINER ptf_vms6-1 && $0 setup_mgmt_network && \\
+      $0 start_vms && $0 add_topo && $0 fix_dut_network && $0 deploy_mg"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Phase 5: download sonic-vs image into the image dirs
 # ---------------------------------------------------------------------------
 download_image() {
@@ -370,6 +433,10 @@ start_vms() {
 add_topo() {
   log "Phase 9: add-topo $TESTBED_NAME"
   tbcli "-t $TB_FILE -m $INV -k $VM_TYPE add-topo $TESTBED_NAME $VAULT_FILE"
+  # add-topo does not attach the DUT's own tap to br1 (see _ensure_dut_bridged).
+  # Doing it here means a fresh setup and a post-reboot recovery both end with a
+  # DUT that is actually reachable, instead of one that only looks deployed.
+  _ensure_dut_bridged || true
   ok "topology $TESTBED_NAME deployed (DUT + neighbors + PTF)"
 }
 
@@ -1482,6 +1549,7 @@ setup_container||setup|Start the docker-sonic-mgmt container
 setup_ssh||setup|Set up key-based SSH from the container to the vm_host
 start_vms||setup|Start the neighbor VMs (see VM_TYPE / NUM_VMS below)
 add_topo||setup|Deploy the topology (see TESTBED_NAME below)
+fix_dut_network||setup|Repair the DUT mgmt path (attach its tap to br1) -- fixes "No route to host"
 deploy_mg||setup|Deploy the minigraph/config to the DUT
 verify||setup|Verify the DUT is reachable and BGP sessions are up
 inject_conn_graph||setup|Inject the connection graph used by the transceiver tests

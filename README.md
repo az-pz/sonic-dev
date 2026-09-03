@@ -179,3 +179,53 @@ git clone --recurse-submodules https://github.com/gsoosk/sonic-dev
 # already cloned:
 git submodule update --init --recursive
 ```
+
+## Troubleshooting
+
+### `No route to host` / `Connection closed` talking to the DUT
+
+```
+[ship] scp image + bundle + scripts to DUT
+ssh: connect to host 10.250.0.101 port 22: No route to host
+```
+
+`No route to host` is an L2/L3 failure, not an SSH one — ARP never resolved, so
+nothing is at that address. (Contrast `Connection refused` = host up, sshd down;
+`Connection timed out` = reachable but filtered.) Almost always this is a host that
+rebooted: `br1` and the VMs do not survive one.
+
+```bash
+./setup-sonic-testbed.sh fix_dut_network     # diagnose + repair, then prove it
+```
+
+That attaches the DUT's mgmt tap (`vlab-01-0`) to `br1` and pings the DUT from the
+`mgmt` container. It is idempotent, so it is safe to run when you are only guessing.
+If it still cannot reach the DUT it prints the remaining suspects in order.
+
+Full post-reboot recovery:
+
+```bash
+docker start mgmt ptf_vms6-1
+./setup-sonic-testbed.sh setup_mgmt_network   # recreate br1
+./setup-sonic-testbed.sh start_vms
+./setup-sonic-testbed.sh add_topo             # now attaches the DUT tap itself
+./setup-sonic-testbed.sh deploy_mg
+./setup-sonic-testbed.sh emulator
+```
+
+**Why the tap needs attaching at all.** sonic-mgmt's `add-topo` enslaves the
+*neighbour* VMs' `-m` interfaces to `br1` but not the DUT's own tap. Everything then
+looks healthy — the VM runs, `br1` exists, `virsh list` is happy — while the DUT is
+invisible on the mgmt network. `add_topo` now does this itself, so a fresh setup and
+a recovery both end with a DUT that is actually reachable rather than one that only
+looks deployed.
+
+### Which xcvrd is live?
+
+```bash
+./setup-sonic-testbed.sh xcvrd_status    # PYTHON (stock) vs RUST (xcvrd-rs)
+```
+
+Read-only: reports supervisor state, the running process image, and the
+inject/backup markers. Useful after an interrupted benchmark or validation run,
+which restore the Python daemon on exit but cannot if they are killed outright.
